@@ -33,17 +33,48 @@ export function AuthProvider({ children }) {
     supabase.auth.getSession().then(({ data, error }) => {
       if (!mounted) return;
 
-      if (error) setAuthError(error.message);
+      if (error) {
+        setAuthError(error.message);
+      }
 
       setSession(data.session);
 
-      loadProfile(data.session?.user).finally(() => setLoading(false));
+      loadProfile(data.session?.user).finally(() => {
+        if (mounted) {
+          setLoading(false);
+        }
+      });
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, newSession) => {
+      (event, newSession) => {
         setSession(newSession);
         loadProfile(newSession?.user);
+
+        // Reload once after successful login
+        if (event === 'SIGNED_IN' && newSession) {
+          const alreadyReloaded = sessionStorage.getItem(
+            'streamflix_login_reloaded'
+          );
+
+          if (!alreadyReloaded) {
+            sessionStorage.setItem(
+              'streamflix_login_reloaded',
+              'true'
+            );
+
+            window.location.reload();
+          }
+        }
+
+        // Reload after logout
+        if (event === 'SIGNED_OUT') {
+          sessionStorage.removeItem(
+            'streamflix_login_reloaded'
+          );
+
+          window.location.reload();
+        }
       }
     );
 
@@ -63,13 +94,17 @@ export function AuthProvider({ children }) {
       },
     });
 
-    if (error) setAuthError(error.message);
+    if (error) {
+      setAuthError(error.message);
+    }
   }, []);
 
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut();
 
-    if (error) setAuthError(error.message);
+    if (error) {
+      setAuthError(error.message);
+    }
   }, []);
 
   const refreshProfile = useCallback(
