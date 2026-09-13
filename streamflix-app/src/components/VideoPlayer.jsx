@@ -3,8 +3,7 @@ import Hls from 'hls.js';
 import Plyr from 'plyr';
 import 'plyr/dist/plyr.css';
 
-const API_BASE_URL = 'https://YOUR-RENDER-API-URL.onrender.com';
-
+const API_BASE_URL = 'https://streamflix-api-x0ku.onrender.com';
 export default function VideoPlayer({ tmdbId, type = 'movie', season, episode }) {
   const videoRef = useRef(null);
   const [loading, setLoading] = useState(true);
