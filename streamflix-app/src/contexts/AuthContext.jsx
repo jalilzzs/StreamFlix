@@ -13,11 +13,14 @@ export function AuthProvider({ children }) {
   const loadProfile = useCallback(async (user) => {
     if (!user) {
       setProfile(null);
+      setAuthError(null);
       return;
     }
+
     try {
       const p = await ensureProfile(user);
       setProfile(p);
+      setAuthError(null);
     } catch (err) {
       console.error('Failed to load/create profile:', err);
       setAuthError('We could not load your profile. Please refresh.');
@@ -29,15 +32,20 @@ export function AuthProvider({ children }) {
 
     supabase.auth.getSession().then(({ data, error }) => {
       if (!mounted) return;
+
       if (error) setAuthError(error.message);
+
       setSession(data.session);
+
       loadProfile(data.session?.user).finally(() => setLoading(false));
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
-      loadProfile(newSession?.user);
-    });
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, newSession) => {
+        setSession(newSession);
+        loadProfile(newSession?.user);
+      }
+    );
 
     return () => {
       mounted = false;
@@ -47,19 +55,27 @@ export function AuthProvider({ children }) {
 
   const signInWithGoogle = useCallback(async () => {
     setAuthError(null);
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin },
+      options: {
+        redirectTo: window.location.origin,
+      },
     });
+
     if (error) setAuthError(error.message);
   }, []);
 
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut();
+
     if (error) setAuthError(error.message);
   }, []);
 
-  const refreshProfile = useCallback(() => loadProfile(session?.user), [loadProfile, session]);
+  const refreshProfile = useCallback(
+    () => loadProfile(session?.user),
+    [loadProfile, session]
+  );
 
   const value = {
     session,
@@ -74,11 +90,19 @@ export function AuthProvider({ children }) {
     setProfile,
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+
+  if (!ctx) {
+    throw new Error('useAuth must be used within AuthProvider');
+  }
+
   return ctx;
 }
