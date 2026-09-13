@@ -248,7 +248,7 @@ export default function Friends() {
     } catch (err) {
       console.error(err);
       setError(err?.message || 'Unable to upload image.');
-    } fontinally {
+    } finally {
       setUploadingMedia(false);
     }
   };
