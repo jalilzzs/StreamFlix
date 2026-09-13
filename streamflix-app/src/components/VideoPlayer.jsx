@@ -9,11 +9,9 @@ export default function VideoPlayer({ episode, title, onProgress }) {
   const saveIntervalRef = useRef(null);
   const [activeServer, setActiveServer] = useState(null);
 
-  // جلب البيانات سواء تم تمرير episode أو title
   const mediaData = episode || title || {};
   let streamUrls = mediaData.stream_urls || {};
 
-  // إذا كانت stream_urls فارغة والرابط مخزن في العمود url المباشر (مثلما يفعل ملف Import.jsx)
   if (Object.keys(streamUrls).length === 0 && (mediaData.url || mediaData.stream_url)) {
     streamUrls = { server1: mediaData.url || mediaData.stream_url };
   }
@@ -30,7 +28,6 @@ export default function VideoPlayer({ episode, title, onProgress }) {
   const isEmbed = currentUrl.includes('embed') || currentUrl.includes('iframe') || currentUrl.includes('vidsrc');
 
   useEffect(() => {
-    // إذا كان رابط embed أو فارغاً، لا نفعل Plyr
     if (isEmbed || !currentUrl || !videoRef.current) return;
 
     plyrRef.current = new Plyr(videoRef.current, {
@@ -70,24 +67,15 @@ export default function VideoPlayer({ episode, title, onProgress }) {
     <div className="player-block">
       <div className="player-container" style={{ position: 'relative', width: '100%', aspectRatio: '16/9' }}>
         {isEmbed ? (
-          /* عرض رابط vidsrc داخل Iframe */
           <iframe 
             src={currentUrl} 
-            className="w-full h-full rounded-lg border-0" 
-            style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}
+            title={mediaData?.name || 'Video Player'}
+            style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, border: 'none' }}
             allowFullScreen 
+            sandbox="allow-scripts allow-same-origin allow-forms"
+            referrerPolicy="origin"
           />
-         <iframe 
-           src={currentUrl} 
-           title={mediaData?.name || 'Video Player'}
-           style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, border: 'none' }}
-           allowFullScreen 
-           /* حظر الفتح التلقائي للإعلانات والنوافذ الجديدة */
-           sandbox="allow-scripts allow-same-origin allow-forms"
-           referrerPolicy="origin"
-          />
-      ) : (
-          /* عرض الفيديو المباشر بمشغل Plyr */
+        ) : (
           <video ref={videoRef} playsInline controls src={currentUrl} style={{ width: '100%', height: '100%' }} />
         )}
       </div>
