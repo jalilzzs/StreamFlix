@@ -3,13 +3,21 @@ import Plyr from 'plyr';
 import { STREAM_SERVER_LABELS } from '../lib/config';
 import './VideoPlayer.css';
 
-export default function VideoPlayer({ episode, onProgress }) {
+export default function VideoPlayer({ episode, title, onProgress }) {
   const videoRef = useRef(null);
   const plyrRef = useRef(null);
   const saveIntervalRef = useRef(null);
   const [activeServer, setActiveServer] = useState(null);
 
-  const streamUrls = episode?.stream_urls || {};
+  // جلب البيانات سواء تم تمرير episode أو title
+  const mediaData = episode || title || {};
+  let streamUrls = mediaData.stream_urls || {};
+
+  // إذا كانت stream_urls فارغة والرابط مخزن في العمود url المباشر (مثلما يفعل ملف Import.jsx)
+  if (Object.keys(streamUrls).length === 0 && (mediaData.url || mediaData.stream_url)) {
+    streamUrls = { server1: mediaData.url || mediaData.stream_url };
+  }
+
   const availableServers = Object.keys(streamUrls);
 
   useEffect(() => {
@@ -19,19 +27,19 @@ export default function VideoPlayer({ episode, onProgress }) {
   }, [availableServers, activeServer]);
 
   const currentUrl = streamUrls[activeServer] || '';
-  const isEmbed = currentUrl.includes('embed') || currentUrl.includes('iframe');
+  const isEmbed = currentUrl.includes('embed') || currentUrl.includes('iframe') || currentUrl.includes('vidsrc');
 
   useEffect(() => {
-    // إذا كان رابط embed، ما نخدموش بـ Plyr تفادياً للأخطاء
-    if (isEmbed || !videoRef.current) return;
+    // إذا كان رابط embed أو فارغاً، لا نفعل Plyr
+    if (isEmbed || !currentUrl || !videoRef.current) return;
 
     plyrRef.current = new Plyr(videoRef.current, {
       controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'fullscreen'],
     });
 
-    if (episode?.resumeAt) {
+    if (mediaData?.resumeAt) {
       plyrRef.current.once('loadedmetadata', () => {
-        plyrRef.current.currentTime = episode.resumeAt;
+        plyrRef.current.currentTime = mediaData.resumeAt;
       });
     }
 
@@ -45,25 +53,14 @@ export default function VideoPlayer({ episode, onProgress }) {
       clearInterval(saveIntervalRef.current);
       plyrRef.current?.destroy();
     };
-  }, [activeServer, episode?.id, isEmbed]);
+  }, [activeServer, mediaData?.id, isEmbed, currentUrl]);
 
-  if (!episode) {
+  if (!mediaData || availableServers.length === 0 || !currentUrl) {
     return (
       <div className="player-container">
         <div className="player-placeholder">
           <div className="play-icon">▶</div>
-          Select an episode to start watching.
-        </div>
-      </div>
-    );
-  }
-
-  if (availableServers.length === 0) {
-    return (
-      <div className="player-container">
-        <div className="player-placeholder">
-          <div className="play-icon">▶</div>
-          No stream sources configured yet for this episode.
+          لا يوجد رابط عرض متاح لهذا الفيلم.
         </div>
       </div>
     );
@@ -73,7 +70,7 @@ export default function VideoPlayer({ episode, onProgress }) {
     <div className="player-block">
       <div className="player-container" style={{ position: 'relative', width: '100%', aspectRatio: '16/9' }}>
         {isEmbed ? (
-          /* إذا كان الرابط Embed (مثل vidsrc)، اعرضه داخل Iframe */
+          /* عرض رابط vidsrc داخل Iframe */
           <iframe 
             src={currentUrl} 
             className="w-full h-full rounded-lg border-0" 
@@ -81,23 +78,25 @@ export default function VideoPlayer({ episode, onProgress }) {
             allowFullScreen 
           />
         ) : (
-          /* إذا كان رابط فيديو مباشر، اعرضه بمشغل Plyr العادي */
+          /* عرض الفيديو المباشر بمشغل Plyr */
           <video ref={videoRef} playsInline controls src={currentUrl} style={{ width: '100%', height: '100%' }} />
         )}
       </div>
 
-      <div className="server-row" style={{ marginTop: '10px' }}>
-        <span className="server-label">Server:</span>
-        {availableServers.map((key) => (
-          <button
-            key={key}
-            className={`server-btn ${activeServer === key ? 'active' : ''}`}
-            onClick={() => setActiveServer(key)}
-          >
-            {STREAM_SERVER_LABELS[key] || key}
-          </button>
-        ))}
-      </div>
+      {availableServers.length > 1 && (
+        <div className="server-row" style={{ marginTop: '10px' }}>
+          <span className="server-label">Server:</span>
+          {availableServers.map((key) => (
+            <button
+              key={key}
+              className={`server-btn ${activeServer === key ? 'active' : ''}`}
+              onClick={() => setActiveServer(key)}
+            >
+              {STREAM_SERVER_LABELS[key] || key}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
