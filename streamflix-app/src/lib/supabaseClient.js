@@ -1,7 +1,7 @@
-import { createClient } from '@supabase/supabase-js';
+ Import { createClient } from '@supabase/supabase-js';
 
-const url = 'https://uevrxllwooinittongel.supabase.co';
-const anonKey = 'Sb_secret_zY_YLSTuzgvyzPJ2cs4JlQ_WeDpM8VN';
+const url = import.meta.env.VITE_SUPABASE_URL;
+const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!url || !anonKey || url.includes('YOUR_') || anonKey.includes('YOUR_')) {
   // eslint-disable-next-line no-console
