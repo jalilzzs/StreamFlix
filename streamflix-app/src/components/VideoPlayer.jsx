@@ -3,8 +3,6 @@ import Plyr from 'plyr';
 import { STREAM_SERVER_LABELS } from '../lib/config';
 import './VideoPlayer.css';
 
-// episode.stream_urls is expected to look like: { server1: "https://...", server2: "https://..." }
-// You'll populate this jsonb column yourself per episode row in Supabase.
 export default function VideoPlayer({ episode, onProgress }) {
   const videoRef = useRef(null);
   const plyrRef = useRef(null);
@@ -20,13 +18,17 @@ export default function VideoPlayer({ episode, onProgress }) {
     }
   }, [availableServers, activeServer]);
 
+  const currentUrl = streamUrls[activeServer] || '';
+  const isEmbed = currentUrl.includes('embed') || currentUrl.includes('iframe');
+
   useEffect(() => {
-    if (!videoRef.current) return;
+    // إذا كان رابط embed، ما نخدموش بـ Plyr تفادياً للأخطاء
+    if (isEmbed || !videoRef.current) return;
+
     plyrRef.current = new Plyr(videoRef.current, {
       controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'fullscreen'],
     });
 
-    // Resume where the user left off, if we have a saved position.
     if (episode?.resumeAt) {
       plyrRef.current.once('loadedmetadata', () => {
         plyrRef.current.currentTime = episode.resumeAt;
@@ -43,8 +45,7 @@ export default function VideoPlayer({ episode, onProgress }) {
       clearInterval(saveIntervalRef.current);
       plyrRef.current?.destroy();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeServer, episode?.id]);
+  }, [activeServer, episode?.id, isEmbed]);
 
   if (!episode) {
     return (
@@ -63,9 +64,6 @@ export default function VideoPlayer({ episode, onProgress }) {
         <div className="player-placeholder">
           <div className="play-icon">▶</div>
           No stream sources configured yet for this episode.
-          <div className="placeholder-note" style={{ marginTop: 12 }}>
-            Add a value to episodes.stream_urls in Supabase, e.g. {'{ "server1": "https://..." }'}
-          </div>
         </div>
       </div>
     );
@@ -73,10 +71,22 @@ export default function VideoPlayer({ episode, onProgress }) {
 
   return (
     <div className="player-block">
-      <div className="player-container">
-        <video ref={videoRef} playsInline controls src={streamUrls[activeServer]} />
+      <div className="player-container" style={{ position: 'relative', width: '100%', aspectRatio: '16/9' }}>
+        {isEmbed ? (
+          /* إذا كان الرابط Embed (مثل vidsrc)، اعرضه داخل Iframe */
+          <iframe 
+            src={currentUrl} 
+            className="w-full h-full rounded-lg border-0" 
+            style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}
+            allowFullScreen 
+          />
+        ) : (
+          /* إذا كان رابط فيديو مباشر، اعرضه بمشغل Plyr العادي */
+          <video ref={videoRef} playsInline controls src={currentUrl} style={{ width: '100%', height: '100%' }} />
+        )}
       </div>
-      <div className="server-row">
+
+      <div className="server-row" style={{ marginTop: '10px' }}>
         <span className="server-label">Server:</span>
         {availableServers.map((key) => (
           <button
