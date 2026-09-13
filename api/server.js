@@ -3,7 +3,9 @@ const cors = require('cors');
 const axios = require('axios');
 
 const app = express();
-app.use(cors());
+
+// إعداد CORS بشكل مفتوح لجميع المصادر
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 const PORT = process.env.PORT || 5000;
@@ -12,30 +14,35 @@ app.get('/api/extract', async (req, res) => {
   const { tmdb, type = 'movie', season, episode } = req.query;
 
   if (!tmdb) {
-    return res.status(400).json({ error: 'tmdb ID مطلوب' });
+    return res.status(400).json({ success: false, error: 'tmdb ID مطلوب' });
   }
 
-  try {
-    const embedUrl = type === 'tv' 
-      ? `https://vidsrc.to/embed/tv/${tmdb}/${season || 1}/${episode || 1}`
-      : `https://vidsrc.to/embed/movie/${tmdb}`;
+  const embedUrl = type === 'tv' 
+    ? `https://vidsrc.to/embed/tv/${tmdb}/${season || 1}/${episode || 1}`
+    : `https://vidsrc.to/embed/movie/${tmdb}`;
 
+  try {
     const response = await axios.get(embedUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Referer': 'https://vidsrc.to/'
-      }
+      },
+      timeout: 5000
     });
 
+    // البحث عن روابط .m3u8
     const m3u8Match = response.data.match(/(https?:\/\/[^\s"'<>]+\.m3u8[^\s"'<>]*)/i);
 
     if (m3u8Match) {
       return res.json({ success: true, streamUrl: m3u8Match[0] });
     }
 
-    res.json({ success: false, fallbackUrl: embedUrl });
+    // إرجاع الـ Fallback مباشرة للفرونتاند في حال التشفير
+    return res.json({ success: false, fallbackUrl: embedUrl });
+
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    // التحويل التلقائي للـ Fallback عند أي خطأ في السيرفر
+    return res.json({ success: false, fallbackUrl: embedUrl });
   }
 });
 
