@@ -3,8 +3,6 @@ import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 
 const tmdbApiKey = import.meta.env.VITE_TMDB_API_KEY;
-
-// ضَع كلمة السر التي تريدها هنا
 const ADMIN_SECRET_KEY = '050830'; 
 
 export default function Import() {
@@ -16,7 +14,6 @@ export default function Import() {
   const [moviePage, setMoviePage] = useState(1);
   const [tvPage, setTvPage] = useState(1);
 
-  // إذا كانت كلمة السر في الرابط خاطئة أو غير موجودة
   if (secret !== ADMIN_SECRET_KEY) {
     return (
       <div style={{ padding: '50px', textAlign: 'center', color: '#fff' }}>
@@ -44,8 +41,11 @@ export default function Import() {
 
       let count = 0;
       for (const item of data.results) {
+        // TMDB يستعمل title للأفلام و name للمسلسلات
         const titleName = item.title || item.name;
+        if (!titleName) continue;
 
+        // 1. إضافة أو تحديث المسلسل/الفيلم في جدول titles
         const { data: insertedTitle, error: titleErr } = await supabase
           .from('titles')
           .upsert({
@@ -67,15 +67,20 @@ export default function Import() {
         }
 
         if (insertedTitle) {
-          await supabase.from('episodes').upsert({
+          // 2. إضافة حلقة أولى تجريبية في جدول episodes
+          const { error: epErr } = await supabase.from('episodes').upsert({
             title_id: insertedTitle.id,
             season: 1,
             episode_number: 1,
-            name: titleName,
+            name: type === 'tv' ? 'الحلقة 1' : titleName,
             stream_urls: {
               server1: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
             }
           }, { onConflict: 'title_id, season, episode_number' });
+
+          if (epErr) {
+            console.error(`خطأ إضافة الحلقة لـ ${titleName}:`, epErr.message);
+          }
 
           count++;
         }
@@ -84,7 +89,7 @@ export default function Import() {
       if (type === 'movie') setMoviePage(prev => prev + 1);
       else setTvPage(prev => prev + 1);
 
-      setStatus(`🎉 تم استيراد الصفحة ${currentPage} بنجاح (${count} عنصر)! يمكنك الضغط مجدداً لجلب الصفحة التالية.`);
+      setStatus(`🎉 تم استيراد الصفحة ${currentPage} من ${type === 'movie' ? 'الأفلام' : 'المسلسلات'} بنجاح (${count} عنصر)!`);
     } catch (err) {
       setStatus(`حدث خطأ أثناء العملية: ${err.message}`);
     } finally {
