@@ -1,99 +1,99 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import Hls from 'hls.js';
 import Plyr from 'plyr';
-import { STREAM_SERVER_LABELS } from '../lib/config';
-import './VideoPlayer.css';
+import 'plyr/dist/plyr.css';
 
-export default function VideoPlayer({ episode, title, onProgress }) {
+const API_BASE_URL = 'https://YOUR-RENDER-API-URL.onrender.com';
+
+export default function VideoPlayer({ tmdbId, type = 'movie', season, episode }) {
   const videoRef = useRef(null);
-  const plyrRef = useRef(null);
-  const saveIntervalRef = useRef(null);
-  const [activeServer, setActiveServer] = useState(null);
-
-  const mediaData = episode || title || {};
-  let streamUrls = mediaData.stream_urls || {};
-
-  if (Object.keys(streamUrls).length === 0 && (mediaData.url || mediaData.stream_url)) {
-    streamUrls = { server1: mediaData.url || mediaData.stream_url };
-  }
-
-  const availableServers = Object.keys(streamUrls);
+  const [loading, setLoading] = useState(true);
+  const [useFallback, setUseFallback] = useState(false);
+  const [fallbackUrl, setFallbackUrl] = useState('');
 
   useEffect(() => {
-    if (availableServers.length > 0 && !activeServer) {
-      setActiveServer(availableServers[0]);
-    }
-  }, [availableServers, activeServer]);
+    let plyrInstance = null;
+    let hlsInstance = null;
 
-  const currentUrl = streamUrls[activeServer] || '';
-  const isEmbed = currentUrl.includes('embed') || currentUrl.includes('iframe') || currentUrl.includes('vidsrc');
+    async function fetchAndSetupStream() {
+      setLoading(true);
+      try {
+        const query = type === 'tv' 
+          ? `tmdb=${tmdbId}&type=tv&season=${season || 1}&episode=${episode || 1}`
+          : `tmdb=${tmdbId}&type=movie`;
 
-  useEffect(() => {
-    if (isEmbed || !currentUrl || !videoRef.current) return;
+        const res = await fetch(`${API_BASE_URL}/api/extract?${query}`);
+        const data = await res.json();
 
-    plyrRef.current = new Plyr(videoRef.current, {
-      controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'fullscreen'],
-    });
+        if (data.success && data.streamUrl) {
+          const video = videoRef.current;
 
-    if (mediaData?.resumeAt) {
-      plyrRef.current.once('loadedmetadata', () => {
-        plyrRef.current.currentTime = mediaData.resumeAt;
-      });
-    }
+          if (Hls.isSupported()) {
+            hlsInstance = new Hls();
+            hlsInstance.loadSource(data.streamUrl);
+            hlsInstance.attachMedia(video);
+          } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = data.streamUrl;
+          }
 
-    saveIntervalRef.current = setInterval(() => {
-      if (plyrRef.current && !plyrRef.current.paused && onProgress) {
-        onProgress(plyrRef.current.currentTime, plyrRef.current.duration);
+          plyrInstance = new Plyr(video, {
+            controls: [
+              'play-large', 'play', 'progress', 'current-time', 
+              'duration', 'mute', 'volume', 'captions', 'settings', 'pip', 'fullscreen'
+            ],
+            // رابط إعلان الفيديو VAST تحطه هنا
+            ads: {
+              enabled: true,
+              tagUrl: 'YOUR_VAST_AD_TAG_URL_HERE'
+            }
+          });
+
+          setUseFallback(false);
+        } else {
+          setFallbackUrl(data.fallbackUrl || `https://vidsrc.to/embed/${type}/${tmdbId}`);
+          setUseFallback(true);
+        }
+      } catch (err) {
+        setFallbackUrl(`https://vidsrc.to/embed/${type}/${tmdbId}`);
+        setUseFallback(true);
+      } finally {
+        setLoading(false);
       }
-    }, 10000);
+    }
+
+    if (tmdbId) fetchAndSetupStream();
 
     return () => {
-      clearInterval(saveIntervalRef.current);
-      plyrRef.current?.destroy();
+      if (plyrInstance) plyrInstance.destroy();
+      if (hlsInstance) hlsInstance.destroy();
     };
-  }, [activeServer, mediaData?.id, isEmbed, currentUrl]);
+  }, [tmdbId, type, season, episode]);
 
-  if (!mediaData || availableServers.length === 0 || !currentUrl) {
+  if (loading) {
     return (
-      <div className="player-container">
-        <div className="player-placeholder">
-          <div className="play-icon">▶</div>
-          لا يوجد رابط عرض متاح لهذا الفيلم.
-        </div>
+      <div className="w-full h-64 bg-black/80 flex items-center justify-center text-white text-sm rounded-lg">
+        جاري جلب البث الصافي...
+      </div>
+    );
+  }
+
+  if (useFallback) {
+    return (
+      <div className="w-full h-full relative aspect-video">
+        <iframe 
+          src={fallbackUrl} 
+          title="Video Player"
+          className="w-full h-full border-0 absolute top-0 left-0 rounded-lg" 
+          allowFullScreen 
+          allow="autoplay; encrypted-media; picture-in-picture"
+        />
       </div>
     );
   }
 
   return (
-    <div className="player-block">
-      <div className="player-container" style={{ position: 'relative', width: '100%', aspectRatio: '16/9' }}>
-        {isEmbed ? (
-          <iframe 
-            src={currentUrl} 
-            title={mediaData?.name || 'Video Player'}
-            style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, border: 'none' }}
-            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
-            allowFullScreen 
-            referrerPolicy="origin"
-          />
-        ) : (
-          <video ref={videoRef} playsInline controls src={currentUrl} style={{ width: '100%', height: '100%' }} />
-        )}
-      </div>
-
-      {availableServers.length > 1 && (
-        <div className="server-row" style={{ marginTop: '10px' }}>
-          <span className="server-label">Server:</span>
-          {availableServers.map((key) => (
-            <button
-              key={key}
-              className={`server-btn ${activeServer === key ? 'active' : ''}`}
-              onClick={() => setActiveServer(key)}
-            >
-              {STREAM_SERVER_LABELS[key] || key}
-            </button>
-          ))}
-        </div>
-      )}
+    <div className="w-full h-full aspect-video bg-black rounded-lg overflow-hidden">
+      <video ref={videoRef} className="plyr-react plyr" playsInline controls />
     </div>
   );
 }
