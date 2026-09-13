@@ -10,8 +10,7 @@ export default function Import() {
   const [importStatus, setImportStatus] = useState(true);
   const [message, setMessage] = useState('');
 
-  const TMDB_API_KEY = 'ضع_مفتاح_api_هنا'; 
-
+  const TMDB_API_KEY = 'bb04576f643a69128d4924c5aea7c339';
   const handleSearch = async (e) => {
     e.preventDefault();
     if (!query.trim()) return;
