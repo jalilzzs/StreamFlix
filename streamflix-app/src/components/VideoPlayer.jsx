@@ -1,93 +1,63 @@
-import React, { useEffect, useRef, useState } from 'react';
-import Hls from 'hls.js';
-import Plyr from 'plyr';
-import 'plyr/dist/plyr.css';
+import React, { useEffect, useState } from 'react';
 
-const API_BASE_URL = 'https://streamflix-api-atzd.onrender.com'; // حط رابط الـ API تاعك هنا
+const API_BASE_URL = 'https://streamflix-api-atzd.onrender.com';
 
 export default function VideoPlayer({ tmdbId, type = 'movie', season, episode }) {
-  const videoRef = useRef(null);
-  const [loading, setLoading] = useState(true);
-  const [useFallback, setUseFallback] = useState(false);
-  const [fallbackUrl, setFallbackUrl] = useState('');
+  const [timeLeft, setTimeLeft] = useState(15);
+  const [streamUrl, setStreamUrl] = useState(null);
+  const [showIframe, setShowIframe] = useState(false);
+
+  const fallbackUrl = type === 'tv' 
+    ? `https://vidsrc.to/embed/tv/${tmdbId}/${season || 1}/${episode || 1}`
+    : `https://vidsrc.to/embed/movie/${tmdbId}`;
 
   useEffect(() => {
-    let plyrInstance = null;
-    let hlsInstance = null;
-    let isMounted = true;
-
-    async function fetchAndSetupStream() {
-      setLoading(true);
-      const query = type === 'tv' 
-        ? `tmdb=${tmdbId}&type=tv&season=${season || 1}&episode=${episode || 1}`
-        : `tmdb=${tmdbId}&type=movie`;
-
-      const defaultFallback = `https://vidsrc.to/embed/${type === 'tv' ? 'tv/' + tmdbId + '/' + (season || 1) + '/' + (episode || 1) : 'movie/' + tmdbId}`;
-
+    // 1. محاولة استخراج البث في الخلفية
+    async function checkStream() {
       try {
-        // تحديد مهلة 6 ثوانٍ فقط للـ API قبل التحويل التلقائي
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const query = type === 'tv' 
+          ? `tmdb=${tmdbId}&type=tv&season=${season || 1}&episode=${episode || 1}`
+          : `tmdb=${tmdbId}&type=movie`;
 
-        const res = await fetch(`${API_BASE_URL}/api/extract?${query}`, {
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-
+        const res = await fetch(`${API_BASE_URL}/api/extract?${query}`);
         const data = await res.json();
 
-        if (isMounted && data.success && data.streamUrl) {
-          setLoading(false);
-          setUseFallback(false);
-
-          setTimeout(() => {
-            const video = videoRef.current;
-            if (!video) return;
-
-            if (Hls.isSupported()) {
-              hlsInstance = new Hls();
-              hlsInstance.loadSource(data.streamUrl);
-              hlsInstance.attachMedia(video);
-            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-              video.src = data.streamUrl;
-            }
-
-            plyrInstance = new Plyr(video, {
-              controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'captions', 'settings', 'pip', 'fullscreen']
-            });
-          }, 100);
-
-        } else {
-          throw new Error("Extract failed");
+        if (data.success && data.streamUrl) {
+          setStreamUrl(data.streamUrl);
         }
-      } catch (err) {
-        if (isMounted) {
-          setFallbackUrl(defaultFallback);
-          setUseFallback(true);
-          setLoading(false);
-        }
+      } catch (e) {
+        console.log("Extraction error, using fallback");
       }
     }
 
-    if (tmdbId) fetchAndSetupStream();
+    if (tmdbId) checkStream();
 
-    return () => {
-      isMounted = false;
-      if (plyrInstance) plyrInstance.destroy();
-      if (hlsInstance) hlsInstance.destroy();
-    };
+    // 2. العد التنازلي لمدة 15 ثانية
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          setShowIframe(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
   }, [tmdbId, type, season, episode]);
 
-  if (loading) {
+  // إذا تم العثور على رابط مباشر صافي قبل انتهاء الوقت
+  if (streamUrl && !showIframe) {
     return (
-      <div className="w-full aspect-video bg-black/80 flex flex-col items-center justify-center text-white text-sm rounded-lg gap-2">
-        <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
-        <span>جاري تحميل المشغل...</span>
+      <div className="w-full aspect-video bg-black rounded-lg overflow-hidden">
+        <video src={streamUrl} controls autoPlay className="w-full h-full" />
       </div>
     );
   }
 
-  if (useFallback) {
+  // إذا انتهى العد التنازلي أو ضغط المستخدم على تخطي
+  if (showIframe) {
     return (
       <div className="w-full h-full relative aspect-video rounded-lg overflow-hidden">
         <iframe 
@@ -101,9 +71,25 @@ export default function VideoPlayer({ tmdbId, type = 'movie', season, episode })
     );
   }
 
+  // واجهة العد التنازلي الاحترافية (15 ثانية)
   return (
-    <div className="w-full h-full aspect-video bg-black rounded-lg overflow-hidden">
-      <video ref={videoRef} className="plyr-react plyr" playsInline controls />
+    <div className="w-full aspect-video bg-gray-900 border border-gray-800 rounded-lg flex flex-col items-center justify-center text-white p-4 gap-4">
+      <div className="relative flex items-center justify-center">
+        <div className="w-16 h-16 border-4 border-red-600 border-t-transparent rounded-full animate-spin"></div>
+        <span className="absolute text-xl font-bold">{timeLeft}</span>
+      </div>
+
+      <div className="text-center">
+        <p className="font-semibold text-base">جاري تحضير البث بأعلى جودة...</p>
+        <p className="text-xs text-gray-400 mt-1">سيتم تشغيل المشغل تلقائياً خلال ثوانٍ</p>
+      </div>
+
+      <button 
+        onClick={() => setShowIframe(true)}
+        className="mt-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-lg transition-all"
+      >
+        تخطي والانتشار المباشر ➔
+      </button>
     </div>
   );
 }
