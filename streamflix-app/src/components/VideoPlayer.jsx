@@ -77,7 +77,16 @@ export default function VideoPlayer({ episode, title, onProgress }) {
             style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}
             allowFullScreen 
           />
-        ) : (
+         <iframe 
+           src={currentUrl} 
+           title={mediaData?.name || 'Video Player'}
+           style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, border: 'none' }}
+           allowFullScreen 
+           /* حظر الفتح التلقائي للإعلانات والنوافذ الجديدة */
+           sandbox="allow-scripts allow-same-origin allow-forms"
+           referrerPolicy="origin"
+          />
+      ) : (
           /* عرض الفيديو المباشر بمشغل Plyr */
           <video ref={videoRef} playsInline controls src={currentUrl} style={{ width: '100%', height: '100%' }} />
         )}
