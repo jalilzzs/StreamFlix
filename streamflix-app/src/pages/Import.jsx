@@ -26,6 +26,9 @@ export default function Import() {
   const startImport = async (type = 'movie') => {
     setLoading(true);
     const currentPage = type === 'movie' ? moviePage : tvPage;
+    // حفظ المسلسلات بـ 'series' لضمان توافقها مع قاعدة البيانات إذا كانت ترفض 'tv'
+    const dbType = type === 'tv' ? 'series' : 'movie';
+    
     setStatus(`جاري جلب الصفحة ${currentPage} من ${type === 'movie' ? 'الأفلام' : 'المسلسلات'}...`);
 
     try {
@@ -41,15 +44,14 @@ export default function Import() {
 
       let count = 0;
       for (const item of data.results) {
-        // TMDB يستعمل title للأفلام و name للمسلسلات
         const titleName = item.title || item.name;
         if (!titleName) continue;
 
-        // 1. إضافة أو تحديث المسلسل/الفيلم في جدول titles
+        // 1. إدخال أو تحديث العنوان
         const { data: insertedTitle, error: titleErr } = await supabase
           .from('titles')
           .upsert({
-            type: type,
+            type: dbType,
             name: titleName,
             synopsis: item.overview || 'لا يوجد وصف متوفر حالياً.',
             poster_url: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null,
@@ -62,13 +64,13 @@ export default function Import() {
           .single();
 
         if (titleErr) {
-          console.error(`خطأ أثناء إدخال ${titleName}:`, titleErr.message);
+          console.error(`خطأ إدخال ${titleName}:`, titleErr.message);
           continue;
         }
 
         if (insertedTitle) {
-          // 2. إضافة حلقة أولى تجريبية في جدول episodes
-          const { error: epErr } = await supabase.from('episodes').upsert({
+          // 2. إدخال الحلقة
+          await supabase.from('episodes').upsert({
             title_id: insertedTitle.id,
             season: 1,
             episode_number: 1,
@@ -77,10 +79,6 @@ export default function Import() {
               server1: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
             }
           }, { onConflict: 'title_id, season, episode_number' });
-
-          if (epErr) {
-            console.error(`خطأ إضافة الحلقة لـ ${titleName}:`, epErr.message);
-          }
 
           count++;
         }
