@@ -5,13 +5,15 @@ import { supabase } from '../lib/supabaseClient';
 export default function TitleDetail() {
   const { id } = useParams();
   
-  // الحالة الافتراضية أثناء التحميل
   const [title, setTitle] = useState({
     name: 'جاري التحميل...',
-    synopsis: 'يرجى الانتظار قليلاً ريثما يتم جلب تفاصيل العرض من قاعدة البيانات.',
+    synopsis: 'يرجى الانتظار قليلاً ريثما يتم جلب التفاصيل...',
     release_year: 2026,
     rating_avg: 0,
-    video_url: ''
+    type: 'movie',
+    is_premium: false,
+    poster_url: '',
+    url: '' // عمود رابط الفيديو
   });
   
   const [loading, setLoading] = useState(true);
@@ -20,7 +22,7 @@ export default function TitleDetail() {
     async function fetchRealData() {
       try {
         setLoading(true);
-        // جلب البيانات الحقيقية من جدول titles حسب الـ id
+        // جلب البيانات من جدول titles حسب الـ id
         const { data, error } = await supabase
           .from('titles')
           .select('*')
@@ -28,12 +30,12 @@ export default function TitleDetail() {
           .single();
 
         if (error) {
-          console.error("خطأ في جلب البيانات من Supabase:", error.message);
+          console.error("خطأ في جلب البيانات:", error.message);
         } else if (data) {
           setTitle(data);
         }
       } catch (err) {
-        console.error("حدث خطأ غير متوقع:", err);
+        console.error("خطأ غير متوقع:", err);
       } finally {
         setLoading(false);
       }
@@ -44,11 +46,13 @@ export default function TitleDetail() {
     }
   }, [id]);
 
-  // استخراج رابط الفيديو من قاعدة البيانات (يمكنك تعديل اسم العمود حسب جدولك مثل video_url أو server1)
-  const currentVideoUrl = title.video_url || title.server1 || "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4";
+  // استخدام الرابط الموجود في Supabase، وإذا لم يوجد يتم وضع الرابط التجريبي مؤقتاً
+  const currentVideoUrl = title.url || "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4";
 
   return (
     <div style={{ background: '#111', color: '#fff', minHeight: '100vh', padding: '20px', direction: 'rtl' }}>
+      
+      {/* عنوان العمل */}
       <h1 style={{ fontSize: '24px', marginBottom: '15px', textAlign: 'center' }}>
         {loading ? 'جاري التحميل...' : title.name}
       </h1>
@@ -60,6 +64,7 @@ export default function TitleDetail() {
           controls 
           autoPlay 
           playsInline
+          poster={title.poster_url}
           style={{ width: '100%', height: 'auto', aspectRatio: '16/9', display: 'block' }}
         >
           <source src={currentVideoUrl} type="video/mp4" />
@@ -67,13 +72,26 @@ export default function TitleDetail() {
         </video>
       </div>
 
-      {/* --- وصف العمل والبيانات الحقيقية --- */}
+      {/* --- تفاصيل العمل ومعلوماته --- */}
       <div style={{ maxWidth: '900px', margin: '20px auto', background: '#1a1a1a', padding: '15px', borderRadius: '8px' }}>
-        <p style={{ color: '#ccc', lineHeight: '1.6' }}>
-          {loading ? '...' : (title.synopsis || 'لا يوجد وصف متاح حالياً.')}
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {title.is_premium && (
+            <span style={{ background: '#e50914', color: '#fff', padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>
+              بريميوم ⭐
+            </span>
+          )}
+          <span style={{ background: '#333', color: '#fff', padding: '2px 8px', borderRadius: '4px', fontSize: '12px' }}>
+            النوع: {title.type || 'فيلم'}
+          </span>
+        </div>
+
+        <p style={{ color: '#ccc', lineHeight: '1.6', marginBottom: '15px' }}>
+          {loading ? '...' : (title.synopsis || title.description || 'لا يوجد وصف متاح.')}
         </p>
-        <div style={{ marginTop: '10px', fontSize: '14px', color: '#888' }}>
-          <span>سنة الإصدار: {title.release_year}</span> | <span style={{ marginLeft: '10px' }}>التقييم: ⭐ {title.rating_avg}</span>
+
+        <div style={{ fontSize: '14px', color: '#888', display: 'flex', gap: '15px' }}>
+          <span>سنة الإصدار: {title.release_year}</span>
+          <span>التقييم: ⭐ {title.rating_avg}</span>
         </div>
       </div>
     </div>
