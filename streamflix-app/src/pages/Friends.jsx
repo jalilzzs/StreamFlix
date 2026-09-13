@@ -28,9 +28,7 @@ export default function Friends() {
   const [addValue, setAddValue] = useState('');
   const [error, setError] = useState(null);
 
-  const [showAttach, setShowAttach] = useState(false);
   const [showWatchParty, setShowWatchParty] = useState(false);
-
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [recordingVoice, setRecordingVoice] = useState(false);
 
@@ -228,7 +226,6 @@ export default function Friends() {
 
     try {
       setUploadingMedia(true);
-      setShowAttach(false);
       setError(null);
 
       const uploaded = await uploadChatMedia({
@@ -251,7 +248,7 @@ export default function Friends() {
     } catch (err) {
       console.error(err);
       setError(err?.message || 'Unable to upload image.');
-    } finally {
+    } fontinally {
       setUploadingMedia(false);
     }
   };
@@ -296,7 +293,6 @@ export default function Friends() {
     }
 
     try {
-      setShowAttach(false);
       setError(null);
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -520,12 +516,8 @@ export default function Friends() {
     <div className={`friends-app ${activeFriend ? 'has-active-chat' : ''}`}>
       <div className="app-grid">
 
-        {/* =========================
-            FRIENDS SIDEBAR
-        ========================= */}
-
+        {/* SIDEBAR */}
         <aside className="friends-col">
-
           <div className="friends-head">
             <div className="friends-title-row">
               <div>
@@ -546,17 +538,12 @@ export default function Friends() {
                 placeholder="Friend code..."
                 autoComplete="off"
               />
-
-              <button type="submit">
-                Add
-              </button>
+              <button type="submit">Add</button>
             </form>
 
             {userId && (
               <div className="my-uid">
-                Your code:
-                {' '}
-                <span>{userId}</span>
+                Your code: <span>{userId}</span>
               </div>
             )}
           </div>
@@ -577,29 +564,18 @@ export default function Friends() {
                   'User';
 
                 return (
-                  <div
-                    className="pending-item"
-                    key={request.id}
-                  >
-                    <span>
-                      {requesterName} sent you a request
-                    </span>
-
+                  <div className="pending-item" key={request.id}>
+                    <span>{requesterName} sent you a request</span>
                     <div className="pending-actions">
                       <button
                         type="button"
-                        onClick={() =>
-                          handleFriendRequest(request.id, true)
-                        }
+                        onClick={() => handleFriendRequest(request.id, true)}
                       >
                         Accept
                       </button>
-
                       <button
                         type="button"
-                        onClick={() =>
-                          handleFriendRequest(request.id, false)
-                        }
+                        onClick={() => handleFriendRequest(request.id, false)}
                       >
                         ×
                       </button>
@@ -613,25 +589,16 @@ export default function Friends() {
           <div className="friend-list">
             {friends.length === 0 ? (
               <div className="friends-empty">
-                <div className="friends-empty-icon">
-                  👥
-                </div>
-
+                <div className="friends-empty-icon">👥</div>
                 <strong>No friends yet</strong>
-
-                <span>
-                  Add someone using their friend code.
-                </span>
+                <span>Add someone using their friend code.</span>
               </div>
             ) : (
               friends.map((friend) => {
                 const friendId = getFriendId(friend);
                 const friendName = getFriendName(friend);
                 const avatar = getFriendAvatar(friend);
-
-                const active =
-                  activeFriend &&
-                  getFriendId(activeFriend) === friendId;
+                const active = activeFriend && getFriendId(activeFriend) === friendId;
 
                 return (
                   <button
@@ -640,18 +607,13 @@ export default function Friends() {
                     key={friendId}
                     onClick={() => {
                       setActiveFriend(friend);
-                      setShowAttach(false);
                       setError(null);
                     }}
                   >
                     <div
                       className="fav"
                       style={
-                        avatar
-                          ? {
-                              backgroundImage: `url("${avatar}")`,
-                            }
-                          : undefined
+                        avatar ? { backgroundImage: `url("${avatar}")` } : undefined
                       }
                     >
                       {!avatar && (
@@ -659,25 +621,17 @@ export default function Friends() {
                           {friendName.charAt(0).toUpperCase()}
                         </span>
                       )}
-
                       <span className="dot online" />
                     </div>
 
                     <div className="finfo">
-                      <div className="fname">
-                        {friendName}
-                      </div>
-
+                      <div className="fname">{friendName}</div>
                       <div className="flast">
-                        {active
-                          ? 'Active conversation'
-                          : 'Tap to chat'}
+                        {active ? 'Active conversation' : 'Tap to chat'}
                       </div>
                     </div>
 
-                    <span className="friend-arrow">
-                      ›
-                    </span>
+                    <span className="friend-arrow">›</span>
                   </button>
                 );
               })
@@ -685,29 +639,16 @@ export default function Friends() {
           </div>
         </aside>
 
-        {/* =========================
-            CHAT
-        ========================= */}
-
+        {/* CHAT MAIN */}
         <main className="chat-col">
-
           {!activeFriend ? (
             <div className="chat-empty">
-              <div className="chat-empty-orb">
-                💬
-              </div>
-
+              <div className="chat-empty-orb">💬</div>
               <h2>Your conversations</h2>
-
-              <p>
-                Select a friend and start watching, chatting
-                and sharing moments together.
-              </p>
+              <p>Select a friend and start watching and chatting together.</p>
             </div>
           ) : (
             <>
-              {/* CHAT HEADER */}
-
               <header className="chat-head">
                 <button 
                   type="button" 
@@ -722,34 +663,21 @@ export default function Friends() {
                   className="fav"
                   style={
                     getFriendAvatar(activeFriend)
-                      ? {
-                          backgroundImage: `url("${getFriendAvatar(
-                            activeFriend
-                          )}")`,
-                        }
+                      ? { backgroundImage: `url("${getFriendAvatar(activeFriend)}")` }
                       : undefined
                   }
                 >
                   {!getFriendAvatar(activeFriend) && (
                     <span className="avatar-letter">
-                      {getFriendName(activeFriend)
-                        .charAt(0)
-                        .toUpperCase()}
+                      {getFriendName(activeFriend).charAt(0).toUpperCase()}
                     </span>
                   )}
-
                   <span className="dot online" />
                 </div>
 
                 <div className="chat-head-info">
-                  <div className="chat-head-name">
-                    {getFriendName(activeFriend)}
-                  </div>
-
-                  <div className="chat-head-status">
-                    <span className="status-live-dot" />
-                    Online
-                  </div>
+                  <div className="chat-head-name">{getFriendName(activeFriend)}</div>
+                  <div className="chat-head-status">Online</div>
                 </div>
 
                 <button
@@ -762,188 +690,60 @@ export default function Friends() {
                 </button>
               </header>
 
-              {/* ERROR */}
-
               {error && (
                 <div className="chat-error">
-                  <span>!</span>
                   <span>{error}</span>
-
-                  <button
-                    type="button"
-                    onClick={() => setError(null)}
-                  >
-                    ×
-                  </button>
+                  <button type="button" onClick={() => setError(null)}>×</button>
                 </div>
               )}
-
-              {/* MESSAGES */}
 
               <div className="messages">
                 {messages.length === 0 ? (
                   <div className="conversation-empty">
-                    <div className="conversation-empty-icon">
-                      ✨
-                    </div>
-
-                    <strong>
-                      Start the conversation
-                    </strong>
-
-                    <span>
-                      Send a message, photo or voice note.
-                    </span>
+                    <div className="conversation-empty-icon">✨</div>
+                    <strong>Start the conversation</strong>
+                    <span>Send a message, photo or voice note.</span>
                   </div>
                 ) : (
                   messages.map((message) => {
                     const mine = isMine(message);
-
                     return (
-                      <div
-                        className={`msg-row ${
-                          mine ? 'mine' : 'theirs'
-                        }`}
-                        key={message.id}
-                      >
+                      <div className={`msg-row ${mine ? 'mine' : 'theirs'}`} key={message.id}>
                         <div className="message-content">
-
-                          <div
-                            className={`bubble ${
-                              message.kind === 'image'
-                                ? 'img-bubble'
-                                : ''
-                            } ${
-                              message.kind === 'voice'
-                                ? 'voice-bubble'
-                                : ''
-                            }`}
-                          >
-
+                          <div className={`bubble ${message.kind === 'image' ? 'img-bubble' : ''}`}>
                             {message.kind === 'image' ? (
-                              <a
-                                href={getMessageText(message)}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                <img
-                                  src={getMessageText(message)}
-                                  alt="Shared"
-                                />
+                              <a href={getMessageText(message)} target="_blank" rel="noreferrer">
+                                <img src={getMessageText(message)} alt="Shared" />
                               </a>
                             ) : message.kind === 'voice' ? (
                               <div className="voice-note">
-                                <div className="voice-icon">
-                                  🎙️
-                                </div>
-
-                                <div className="voice-info">
-                                  <strong>
-                                    Voice message
-                                  </strong>
-
-                                  <audio
-                                    controls
-                                    preload="metadata"
-                                    src={getMessageText(message)}
-                                  />
-                                </div>
+                                <audio controls preload="metadata" src={getMessageText(message)} />
                               </div>
                             ) : (
-                              <span>
-                                {getMessageText(message)}
-                              </span>
+                              <span>{getMessageText(message)}</span>
                             )}
                           </div>
-
-                          <span className="msg-time">
-                            {formatTime(message.created_at)}
-                          </span>
+                          <span className="msg-time">{formatTime(message.created_at)}</span>
                         </div>
                       </div>
                     );
                   })
                 )}
-
                 <div ref={messagesEndRef} />
               </div>
 
               {/* COMPOSER */}
-
-              <form
-                className="composer"
-                onSubmit={handleSendMessage}
-              >
-                <div className="attach-menu">
-
-                  <button
-                    type="button"
-                    className={`icon-btn attach-main ${
-                      showAttach ? 'open' : ''
-                    }`}
-                    onClick={() =>
-                      setShowAttach((value) => !value)
-                    }
-                    disabled={uploadingMedia || recordingVoice}
-                    aria-label="Attachments"
-                  >
-                    {showAttach ? '×' : '+'}
-                  </button>
-
-                  {showAttach && (
-                    <div className="attach-popover">
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowAttach(false);
-                          imageInputRef.current?.click();
-                        }}
-                      >
-                        <span className="attach-icon image">
-                          🖼️
-                        </span>
-
-                        <span>
-                          <strong>Photo</strong>
-                          <small>Send an image</small>
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleVoiceButton}
-                      >
-                        <span className="attach-icon voice">
-                          🎙️
-                        </span>
-
-                        <span>
-                          <strong>Voice</strong>
-                          <small>Record a voice note</small>
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowAttach(false);
-                          navigate('/movies');
-                        }}
-                      >
-                        <span className="attach-icon movie">
-                          🎬
-                        </span>
-
-                        <span>
-                          <strong>Movie</strong>
-                          <small>Recommend a movie</small>
-                        </span>
-                      </button>
-                    </div>
-                  )}
-
-                </div>
+              <form className="composer" onSubmit={handleSendMessage}>
+                <button
+                  type="button"
+                  className="action-icon-btn"
+                  onClick={() => imageInputRef.current?.click()}
+                  disabled={uploadingMedia || recordingVoice}
+                  title="إرسال صورة"
+                  aria-label="Upload Image"
+                >
+                  📷
+                </button>
 
                 <input
                   ref={imageInputRef}
@@ -953,55 +753,45 @@ export default function Friends() {
                   onChange={handleImageSelect}
                 />
 
-                <div className="composer-field">
+                <button
+                  type="button"
+                  className={`action-icon-btn ${recordingVoice ? 'recording' : ''}`}
+                  onClick={handleVoiceButton}
+                  disabled={uploadingMedia}
+                  title={recordingVoice ? "إيقاف التسجيل والإرسال" : "تسجيل فويس"}
+                  aria-label="Record Voice"
+                >
+                  {recordingVoice ? '⏹️' : '🎙️'}
+                </button>
 
+                <div className="composer-field">
                   {recordingVoice ? (
                     <div className="recording-state">
                       <span className="recording-dot" />
-
-                      <span>
-                        Recording voice...
-                      </span>
-
-                      <button
-                        type="button"
-                        onClick={stopVoiceRecording}
-                      >
-                        Stop
-                      </button>
+                      <span>جاري تسجيل الفويس...</span>
                     </div>
                   ) : uploadingMedia ? (
                     <div className="uploading-state">
-                      <span className="loading-spinner" />
-                      <span>Uploading...</span>
+                      <span>جاري الرفع...</span>
                     </div>
                   ) : (
                     <input
                       value={input}
-                      onChange={(event) =>
-                        setInput(event.target.value)
-                      }
-                      placeholder={`Message ${getFriendName(
-                        activeFriend
-                      )}...`}
+                      onChange={(event) => setInput(event.target.value)}
+                      placeholder={`Message ${getFriendName(activeFriend)}...`}
                       autoComplete="off"
                       disabled={uploadingMedia}
                     />
                   )}
-
                 </div>
 
                 <button
                   type="submit"
                   className="send-btn"
-                  disabled={
-                    recordingVoice ||
-                    uploadingMedia ||
-                    !input.trim()
-                  }
+                  disabled={recordingVoice || uploadingMedia || !input.trim()}
                   aria-label="Send message"
                 >
-                  <span>➤</span>
+                  ➤
                 </button>
               </form>
             </>
@@ -1009,46 +799,17 @@ export default function Friends() {
         </main>
       </div>
 
-      {/* =========================
-          WATCH PARTY MODAL
-      ========================= */}
-
       {showWatchParty && activeFriend && (
-        <div
-          className="modal-backdrop"
-          onClick={() => setShowWatchParty(false)}
-        >
-          <div
-            className="wp-modal"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="wp-modal-icon">
-              🎬
-            </div>
-
-            <h3>
-              Start a Watch Party
-            </h3>
-
-            <p>
-              Invite {getFriendName(activeFriend)} to watch
-              something together on StreamFlix.
-            </p>
-
+        <div className="modal-backdrop" onClick={() => setShowWatchParty(false)}>
+          <div className="wp-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="wp-modal-icon">🎬</div>
+            <h3>Start a Watch Party</h3>
+            <p>Invite {getFriendName(activeFriend)} to watch something together.</p>
             <div className="wp-sync-row">
-              <button
-                type="button"
-                className="modal-cancel"
-                onClick={() => setShowWatchParty(false)}
-              >
+              <button type="button" className="modal-cancel" onClick={() => setShowWatchParty(false)}>
                 Cancel
               </button>
-
-              <button
-                type="button"
-                className="modal-confirm"
-                onClick={handleCreateWatchParty}
-              >
+              <button type="button" className="modal-confirm" onClick={handleCreateWatchParty}>
                 Start Party
               </button>
             </div>
