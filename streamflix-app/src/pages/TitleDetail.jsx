@@ -79,7 +79,7 @@ export default function TitleDetail() {
       {/* --- وصف العمل --- */}
       <div style={{ maxWidth: '900px', margin: '20px auto', background: '#1a1a1a', padding: '15px', borderRadius: '8px' }}>
         <p style={{ color: '#ccc', lineHeight: '1.6' }}>{title.synopsis}</p>
-        <div style::{{ marginTop: '10px', fontSize: '14px', color: '#888' }}>
+        <div style={{ marginTop: '10px', fontSize: '14px', color: '#888' }}>
           <span>سنة الإصدار: {title.release_year}</span> | <span style={{ marginLeft: '10px' }}>التقييم: ⭐ {title.rating_avg}</span>
         </div>
       </div>
