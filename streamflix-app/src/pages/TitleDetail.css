@@ -1,0 +1,54 @@
+.title-hero{
+  position:relative;padding:50px 40px 30px;
+  background:
+    linear-gradient(180deg, rgba(10,14,20,.2) 0%, var(--bg) 95%),
+    var(--hero-image) center/cover;
+}
+@media(max-width:640px){.title-hero{padding:30px 16px 20px;}}
+.title-flex{display:flex;gap:28px;max-width:1100px;margin:0 auto;}
+@media(max-width:640px){.title-flex{flex-direction:column;}}
+.poster{width:190px;flex-shrink:0;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);box-shadow:0 20px 50px rgba(0,0,0,.5);}
+.poster img{width:100%;display:block;}
+.title-info{flex:1;min-width:0;}
+.title-name{font-family:var(--serif);font-size:clamp(26px,4vw,40px);font-weight:600;margin-bottom:10px;}
+.meta-row{display:flex;gap:14px;flex-wrap:wrap;align-items:center;color:var(--muted);font-size:13px;margin-bottom:14px;}
+.rating-badge{color:var(--gold);font-weight:600;display:flex;align-items:center;gap:4px;}
+.genre-tags{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.genre-tag{padding:5px 12px;border-radius:20px;background:var(--panel-raised);border:1px solid var(--border);font-size:12px;color:var(--muted);}
+.synopsis{color:var(--text);font-size:14px;line-height:1.65;max-width:640px;opacity:.9;margin-bottom:18px;}
+.action-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+.icon-only{padding:11px;}
+
+.user-rate{display:flex;align-items:center;gap:6px;margin-inline-start:auto;}
+.stars{display:flex;gap:2px;}
+.star{font-size:19px;color:var(--border);cursor:pointer;transition:.15s;}
+.star.filled{color:var(--gold);}
+.rate-label{font-size:12px;color:var(--muted);}
+
+.main-grid{display:grid;grid-template-columns:1fr 300px;gap:24px;padding:30px 40px;max-width:1400px;margin:0 auto;}
+@media(max-width:900px){.main-grid{grid-template-columns:1fr;}}
+@media(max-width:640px){.main-grid{padding:20px 16px;}}
+
+.player-col{display:flex;flex-direction:column;gap:14px;}
+.ad-slot-top,.ad-slot-bottom{border:1px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:11px;letter-spacing:.04em;text-align:center;}
+.ad-slot-top{height:60px;}
+.ad-slot-bottom{height:90px;}
+.ad-slot-side{min-height:250px;border:1px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:11px;text-align:center;padding:10px;}
+
+.episodes-block{margin-top:6px;}
+.tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;}
+.tab{padding:9px 16px;border-radius:7px;font-size:13px;background:var(--panel);border:1px solid var(--border);color:var(--muted);}
+.tab.active{background:var(--gold);color:#1a1608;border-color:var(--gold);font-weight:600;}
+.episode-list{display:flex;flex-direction:column;gap:2px;}
+.episode-row{display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:8px;transition:.15s;cursor:pointer;}
+.episode-row:hover{background:var(--panel);}
+.episode-num{width:30px;height:30px;border-radius:6px;background:var(--panel-raised);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted);flex-shrink:0;}
+.episode-info{flex:1;min-width:0;}
+.episode-title{font-size:14px;font-weight:500;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.episode-duration{font-size:12px;color:var(--muted);}
+.watched-check{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:transparent;font-size:12px;}
+.watched-check.done{background:var(--gold);border-color:var(--gold);color:#1a1608;}
+
+.sidebar{display:flex;flex-direction:column;gap:16px;}
+.side-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px;}
+.side-card h4{font-family:var(--serif);font-size:15px;margin-bottom:10px;font-weight:600;}

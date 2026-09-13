@@ -1,0 +1,5 @@
+.browse-page{padding-top:30px;padding-bottom:50px;}
+.browse-title{font-family:var(--serif);font-size:28px;font-weight:600;margin-bottom:20px;}
+.browse-filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px;}
+.browse-filters select{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:9px 12px;font-size:13px;}
+.browse-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px;}

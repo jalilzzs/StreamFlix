@@ -1,0 +1,20 @@
+.hero{
+  position:relative;min-height:78vh;display:flex;align-items:flex-end;
+  background:
+    linear-gradient(180deg, rgba(10,14,20,0) 0%, rgba(10,14,20,.4) 55%, var(--bg) 100%),
+    linear-gradient(90deg, rgba(10,14,20,.9) 10%, rgba(10,14,20,.1) 60%),
+    var(--hero-image) center/cover;
+  padding:60px 40px;
+}
+@media(max-width:640px){.hero{padding:40px 16px;min-height:70vh;}}
+.hero-content{max-width:560px;}
+.hero-eyebrow{color:var(--gold);font-size:13px;font-weight:600;margin-bottom:10px;}
+.hero-title{font-family:var(--serif);font-size:clamp(32px,5vw,56px);line-height:1.05;margin-bottom:16px;font-weight:600;}
+.hero-desc{color:var(--muted);font-size:15px;line-height:1.6;margin-bottom:22px;max-width:460px;}
+.hero-actions{display:flex;gap:12px;flex-wrap:wrap;}
+
+.progress-bar{height:3px;background:rgba(255,255,255,.15);}
+.progress-fill{height:100%;background:var(--gold);}
+
+.lock-badge{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);color:var(--gold);font-size:10px;padding:3px 7px;border-radius:5px;border:1px solid var(--gold-dim);z-index:2;}
+[dir="rtl"] .lock-badge{right:auto;left:8px;}
