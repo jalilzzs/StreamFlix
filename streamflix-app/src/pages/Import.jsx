@@ -1,28 +1,43 @@
 import { useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { useSearchParams } from 'react-router-dom';
+import { supabase } from '../lib/supabaseClient';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const tmdbApiKey = import.meta.env.VITE_TMDB_API_KEY;
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// ضَع كلمة السر التي تريدها هنا
+const ADMIN_SECRET_KEY = '050830'; 
 
 export default function Import() {
+  const [searchParams] = useSearchParams();
+  const secret = searchParams.get('key');
+
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
+  const [moviePage, setMoviePage] = useState(1);
+  const [tvPage, setTvPage] = useState(1);
+
+  // إذا كانت كلمة السر في الرابط خاطئة أو غير موجودة
+  if (secret !== ADMIN_SECRET_KEY) {
+    return (
+      <div style={{ padding: '50px', textAlign: 'center', color: '#fff' }}>
+        <h2>404 - الصفحة غير موجودة</h2>
+        <p>عذراً، ليس لديك صلاحية للوصول لهذه الصفحة.</p>
+      </div>
+    );
+  }
 
   const startImport = async (type = 'movie') => {
     setLoading(true);
-    setStatus(`جاري جلب ${type === 'movie' ? 'الأفلام' : 'المسلسلات'} من TMDB...`);
+    const currentPage = type === 'movie' ? moviePage : tvPage;
+    setStatus(`جاري جلب الصفحة ${currentPage} من ${type === 'movie' ? 'الأفلام' : 'المسلسلات'}...`);
 
     try {
-      // 1. طلب البيانات باستخدام VITE_TMDB_API_KEY لتفادي حظر المتصفح
-      const url = `https://api.themoviedb.org/3/${type}/popular?api_key=${tmdbApiKey}&language=ar-SA&page=1`;
+      const url = `https://api.themoviedb.org/3/${type}/popular?api_key=${tmdbApiKey}&language=ar-SA&page=${currentPage}`;
       const res = await fetch(url);
       const data = await res.json();
 
       if (!data.results || data.results.length === 0) {
-        setStatus(`خطأ من TMDB: ${data.status_message || 'لم يتم العثور على نتائج. تأكد من VITE_TMDB_API_KEY'}`);
+        setStatus(`خطأ من TMDB: ${data.status_message || 'لم يتم العثور على نتائج'}`);
         setLoading(false);
         return;
       }
@@ -31,7 +46,6 @@ export default function Import() {
       for (const item of data.results) {
         const titleName = item.title || item.name;
 
-        // 2. إدخال أو تحديث العنوان في جدول titles
         const { data: insertedTitle, error: titleErr } = await supabase
           .from('titles')
           .upsert({
@@ -53,7 +67,6 @@ export default function Import() {
         }
 
         if (insertedTitle) {
-          // 3. إضافة حلقة وسيرفر تجريبي للفيلم/المسلسل
           await supabase.from('episodes').upsert({
             title_id: insertedTitle.id,
             season: 1,
@@ -68,7 +81,10 @@ export default function Import() {
         }
       }
 
-      setStatus(`🎉 تم استيراد ${count} عنصر بنجاح! اذهب للصفحة الرئيسية لمعاينتها.`);
+      if (type === 'movie') setMoviePage(prev => prev + 1);
+      else setTvPage(prev => prev + 1);
+
+      setStatus(`🎉 تم استيراد الصفحة ${currentPage} بنجاح (${count} عنصر)! يمكنك الضغط مجدداً لجلب الصفحة التالية.`);
     } catch (err) {
       setStatus(`حدث خطأ أثناء العملية: ${err.message}`);
     } finally {
@@ -78,7 +94,7 @@ export default function Import() {
 
   return (
     <div style={{ padding: '40px 20px', textAlign: 'center', color: '#fff', maxWidth: '600px', margin: '0 auto' }}>
-      <h2>لوحة استيراد المحتوى</h2>
+      <h2>لوحة استيراد المحتوى (الآدمن)</h2>
       <p style={{ margin: '20px 0', background: '#222', padding: '15px', borderRadius: '8px', wordBreak: 'break-word' }}>
         {status || 'اضغط على أحد الأزرار للبدء'}
       </p>
@@ -88,14 +104,14 @@ export default function Import() {
           onClick={() => startImport('movie')}
           style={{ padding: '12px 20px', background: '#e50914', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
         >
-          {loading ? 'جاري الاستيراد...' : 'استيراد أفلام (TMDB)'}
+          {loading ? 'جاري الاستيراد...' : `استيراد أفلام (صفحة ${moviePage})`}
         </button>
         <button 
           disabled={loading}
           onClick={() => startImport('tv')}
           style={{ padding: '12px 20px', background: '#333', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
         >
-          {loading ? 'جاري الاستيراد...' : 'استيراد مسلسلات (TMDB)'}
+          {loading ? 'جاري الاستيراد...' : `استيراد مسلسلات (صفحة ${tvPage})`}
         </button>
       </div>
     </div>
