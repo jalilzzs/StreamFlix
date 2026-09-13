@@ -10,6 +10,8 @@ import Settings from './pages/Settings';
 import Subscription from './pages/Subscription';
 import Friends from './pages/Friends';
 import StaticPage from './pages/StaticPage';
+import Import from './pages/Import';
+
 
 export default function App() {
   const { t } = useI18n();
@@ -29,6 +31,8 @@ export default function App() {
         <Route path="/privacy" element={<StaticPage title={t('settings_privacy')} body={t('empty_privacy')} />} />
         <Route path="/about" element={<StaticPage title={t('settings_about')} body={t('empty_about')} />} />
         <Route path="*" element={<StaticPage title="404" body="Page not found." />} />
+        <Route path="/import" element={<Import />} />
+
       </Routes>
       <Footer />
     </ErrorBoundary>
