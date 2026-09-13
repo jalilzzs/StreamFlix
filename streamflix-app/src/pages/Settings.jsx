@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -12,9 +12,20 @@ export default function Settings() {
   const { theme, toggleTheme } = useTheme();
 
   const fileInputRef = useRef(null);
+
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [avatarError, setAvatarError] = useState('');
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '');
+
+  const [displayName, setDisplayName] = useState(profile?.display_name || '');
+  const [savingName, setSavingName] = useState(false);
+  const [nameMessage, setNameMessage] = useState('');
+  const [nameError, setNameError] = useState('');
+
+  useEffect(() => {
+    setDisplayName(profile?.display_name || '');
+    setAvatarUrl(profile?.avatar_url || '');
+  }, [profile]);
 
   const handleAvatarClick = () => {
     if (!user || uploadingAvatar) return;
@@ -98,6 +109,46 @@ export default function Settings() {
     }
   };
 
+  const handleSaveName = async () => {
+    if (!user) return;
+
+    const trimmedName = displayName.trim();
+
+    setNameMessage('');
+    setNameError('');
+
+    if (!trimmedName) {
+      setNameError('Please enter a name.');
+      return;
+    }
+
+    if (trimmedName.length > 40) {
+      setNameError('Name must be 40 characters or less.');
+      return;
+    }
+
+    setSavingName(true);
+
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ display_name: trimmedName })
+        .eq('id', user.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setDisplayName(trimmedName);
+      setNameMessage('Name updated successfully.');
+    } catch (error) {
+      console.error('Name update error:', error);
+      setNameError(error?.message || 'Could not update your name.');
+    } finally {
+      setSavingName(false);
+    }
+  };
+
   const currentAvatar =
     avatarUrl ||
     profile?.avatar_url ||
@@ -142,7 +193,7 @@ export default function Settings() {
                 />
                 <path
                   fill="#FBBC05"
-                  d="M10.3 19.2c-.5 1.5-.8 3.1-.8 4.8s.3 3.3.8 4.8l-7.7 6C1 31.5 0 27.9 0 24s1-7.5-2.6-10.8l7.7 6z"
+                  d="M10.3 19.2c-.5 1.5-.8 3.1-.8 4.8l-7.7 6C1 31.5 0 27.9 2.6 24z"
                 />
                 <path
                   fill="#34A853"
@@ -164,7 +215,7 @@ export default function Settings() {
             <div>
               <div className="settings-label">Profile picture</div>
               <div className="settings-desc">
-                Upload a profile picture for your StreamFlix account.
+                Upload or change your profile picture.
               </div>
             </div>
 
@@ -262,7 +313,83 @@ export default function Settings() {
 
           <div className="settings-row">
             <div>
-              <div className="settings-label">{t('settings_user_id')}</div>
+              <div className="settings-label">Display name</div>
+              <div className="settings-desc">
+                Change the name displayed on your StreamFlix profile.
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                flexWrap: 'wrap',
+                justifyContent: 'flex-end',
+              }}
+            >
+              <input
+                type="text"
+                value={displayName}
+                onChange={(e) => {
+                  setDisplayName(e.target.value);
+                  setNameMessage('');
+                  setNameError('');
+                }}
+                maxLength={40}
+                placeholder="Your name"
+                style={{
+                  width: '220px',
+                  maxWidth: '100%',
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  background: 'rgba(255,255,255,0.06)',
+                  color: 'inherit',
+                  outline: 'none',
+                }}
+              />
+
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={handleSaveName}
+                disabled={savingName}
+              >
+                {savingName ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+
+          {nameError && (
+            <div
+              className="error-banner"
+              style={{ marginTop: '10px' }}
+            >
+              {nameError}
+            </div>
+          )}
+
+          {nameMessage && (
+            <div
+              style={{
+                marginTop: '10px',
+                padding: '10px 12px',
+                borderRadius: '10px',
+                background: 'rgba(52, 168, 83, 0.12)',
+                color: '#34A853',
+              }}
+            >
+              {nameMessage}
+            </div>
+          )}
+
+          <div className="settings-row">
+            <div>
+              <div className="settings-label">
+                {t('settings_user_id')}
+              </div>
+
               <div className="settings-desc">
                 {t('settings_user_id_desc')}
               </div>
