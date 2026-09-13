@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabaseClient';
 export default function TitleDetail() {
   const { id } = useParams();
   const [title, setTitle] = useState({
-    name: 'آل سيمبسون (عرض مباشر)',
+    name: 'عرض ترفيهي مباشر',
     synopsis: 'عرض تجريبي مباشر لضمان عمل المشغل وسيرفرات البث بسلاسة تامة.',
     release_year: 2026,
     rating_avg: 4.9,
@@ -14,16 +14,15 @@ export default function TitleDetail() {
   
   const [activeServer, setActiveServer] = useState('server1');
   
-  // روابط فيديو مباشرة ومستقرة لا تسبب خطأ 403
+  // روابط فيديو مجانية ومباشرة 100% تعمل على جميع المتصفحات بدون خطأ 403
   const servers = {
-    server1: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
-    server2: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4"
+    server1: "https://www.w3schools.com/html/mov_bbb.mp4",
+    server2: "https://www.w3schools.com/html/movie.mp4"
   };
 
   const currentVideoUrl = servers[activeServer];
 
   useEffect(() => {
-    // محاولة جلب البيانات من Supabase في الخلفية دون تعطيل المشغل
     async function fetchRealData() {
       try {
         const { data } = await supabase.from('titles').select('*').eq('id', id).single();
@@ -80,7 +79,7 @@ export default function TitleDetail() {
       {/* --- وصف العمل --- */}
       <div style={{ maxWidth: '900px', margin: '20px auto', background: '#1a1a1a', padding: '15px', borderRadius: '8px' }}>
         <p style={{ color: '#ccc', lineHeight: '1.6' }}>{title.synopsis}</p>
-        <div style={{ marginTop: '10px', fontSize: '14px', color: '#888' }}>
+        <div style::{{ marginTop: '10px', fontSize: '14px', color: '#888' }}>
           <span>سنة الإصدار: {title.release_year}</span> | <span style={{ marginLeft: '10px' }}>التقييم: ⭐ {title.rating_avg}</span>
         </div>
       </div>
