@@ -4,6 +4,7 @@
 
 .friends-app {
   height: calc(100vh - 71px);
+  max-height: calc(100dvh - 71px);
   overflow: hidden;
   background: var(--bg, #0b0c10);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -235,17 +236,21 @@
   padding: 12px 18px;
   background: rgba(20, 21, 28, 0.8);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
 }
 
 .chat-back-btn {
   display: none;
-  background: none;
-  border: none;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: #ffbe3c;
-  font-size: 28px;
+  font-size: 20px;
+  border-radius: 10px;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  padding: 0 8px 0 0;
-  line-height: 1;
 }
 
 .chat-head-name {
@@ -288,7 +293,7 @@
 
 .msg-row {
   display: flex;
-  max-width: 75%;
+  max-width: 78%;
 }
 
 .msg-row.mine {
@@ -322,9 +327,11 @@
 }
 
 .img-bubble img {
-  max-width: 220px;
+  max-width: 100%;
+  max-height: 250px;
   border-radius: 10px;
   display: block;
+  object-fit: cover;
 }
 
 .msg-time {
@@ -341,10 +348,12 @@
 .composer {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
+  gap: 8px;
+  padding: 10px 14px;
   background: #14151c;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+  position: relative;
+  flex-shrink: 0;
 }
 
 .composer-field {
@@ -360,49 +369,100 @@
   padding: 0 14px;
   color: #ffffff;
   outline: none;
+  font-size: 14px;
 }
 
-.icon-btn, .send-btn {
+.send-btn, .action-icon-btn {
   width: 40px;
   height: 40px;
   border-radius: 12px;
   border: none;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
 }
 
-.icon-btn {
+.action-icon-btn {
   background: rgba(255, 255, 255, 0.05);
-  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #ffbe3c;
+  font-size: 16px;
+}
+
+.action-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.action-icon-btn.recording {
+  background: #ef4444;
+  color: #fff;
+  animation: pulse 1.5s infinite;
 }
 
 .send-btn {
   background: #ffbe3c;
   color: #111;
-  font-size: 14px;
+  font-size: 15px;
+}
+
+.send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.recording-state, .uploading-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #ffbe3c;
+  padding: 0 8px;
+}
+
+.recording-dot {
+  width: 10px;
+  height: 10px;
+  background: #ef4444;
+  border-radius: 50%;
+  animation: pulse 1s infinite;
 }
 
 /* =========================
-   RESPONSIVE DESIGN (MOBILE FIX)
+   RESPONSIVE (MOBILE FIX)
 ========================= */
 
 @media (max-width: 768px) {
-  .app-grid {
-    grid-template-columns: 1fr;
+  .friends-app {
+    height: calc(100vh - 60px);
+    max-height: calc(100dvh - 60px);
   }
 
-  /* عند عدم فتح أي محادثة: تظهر قائمة الأصدقاء ويختفي الشات */
+  .app-grid {
+    grid-template-columns: 100%;
+    position: relative;
+  }
+
+  /* قائمة الأصدقاء فقط بدون شات */
   .friends-col {
+    width: 100%;
     display: flex;
   }
 
   .chat-col {
     display: none;
+    width: 100%;
   }
 
-  /* عند فتح محادثة: تخفي قائمة الأصدقاء وتظهر الشات كاملاً */
+  /* الشات فقط عند اختيار صديق */
   .friends-app.has-active-chat .friends-col {
     display: none;
   }
@@ -411,9 +471,8 @@
     display: flex;
   }
 
-  /* إظهار زر الرجوع فقط في الهاتف */
   .chat-back-btn {
-    display: block;
+    display: flex;
   }
 
   .wp-btn-text {
@@ -421,6 +480,6 @@
   }
   
   .wp-btn {
-    padding: 7px;
+    padding: 7px 10px;
   }
 }
