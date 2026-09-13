@@ -40,7 +40,6 @@ export default function Settings() {
         </div>
         {!user && (
           <div className="placeholder-note">
-            Uses VITE_GOOGLE_CLIENT_ID + Supabase Auth (Google provider must be enabled in your Supabase project).
           </div>
         )}
       </div>
