@@ -459,19 +459,14 @@ export default function Friends() {
 
   const getFriendProfile = (friend) => {
     if (!friend) return null;
-
     if (friend.profile) return friend.profile;
-
     if (friend.friend) return friend.friend;
-
     if (friend.user) return friend.user;
-
     return friend;
   };
 
   const getFriendName = (friend) => {
     const profile = getFriendProfile(friend);
-
     return (
       profile?.display_name ||
       profile?.username ||
@@ -482,17 +477,11 @@ export default function Friends() {
 
   const getFriendAvatar = (friend) => {
     const profile = getFriendProfile(friend);
-
-    return (
-      profile?.avatar_url ||
-      profile?.avatar ||
-      ''
-    );
+    return profile?.avatar_url || profile?.avatar || '';
   };
 
   const getFriendId = (friend) => {
     const profile = getFriendProfile(friend);
-
     return (
       profile?.id ||
       friend?.friend_id ||
@@ -503,7 +492,6 @@ export default function Friends() {
 
   const getMessageText = (message) => {
     if (!message) return '';
-
     return message.content || '';
   };
 
@@ -529,7 +517,7 @@ export default function Friends() {
   ========================= */
 
   return (
-    <div className="friends-app">
+    <div className={`friends-app ${activeFriend ? 'has-active-chat' : ''}`}>
       <div className="app-grid">
 
         {/* =========================
@@ -721,6 +709,14 @@ export default function Friends() {
               {/* CHAT HEADER */}
 
               <header className="chat-head">
+                <button 
+                  type="button" 
+                  className="chat-back-btn" 
+                  onClick={() => setActiveFriend(null)}
+                  aria-label="Back to friends list"
+                >
+                  ‹
+                </button>
 
                 <div
                   className="fav"
@@ -762,7 +758,7 @@ export default function Friends() {
                   onClick={() => setShowWatchParty(true)}
                 >
                   <span>🎬</span>
-                  <span>Watch Party</span>
+                  <span className="wp-btn-text">Watch Party</span>
                 </button>
               </header>
 
