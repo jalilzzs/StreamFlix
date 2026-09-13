@@ -1,5 +1,5 @@
 /* ==========================================
-   STREAMFLIX - MODERN CHAT & WATCH PARTY
+   STREAMFLIX - FRIENDS & CHAT SYSTEM
 ========================================== */
 
 .friends-app {
@@ -7,44 +7,44 @@
   overflow: hidden;
   background: var(--bg, #0b0c10);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #ffffff;
 }
 
 .app-grid {
   display: grid;
-  grid-template-columns: 300px 1fr;
+  grid-template-columns: 320px 1fr;
   height: 100%;
+  width: 100%;
   background: var(--bg, #0b0c10);
 }
 
-@media (max-width: 800px) {
-  .app-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .friends-col {
-    display: none;
-  }
-}
-
 /* =========================
-   FRIENDS SIDEBAR
+   SIDEBAR (FRIENDS LIST)
 ========================= */
 
 .friends-col {
-  border-inline-end: 1px solid rgba(255, 255, 255, 0.06);
+  border-inline-end: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   flex-direction: column;
+  height: 100%;
   overflow: hidden;
-  background: linear-gradient(
-    180deg,
-    var(--panel, #14151c) 0%,
-    var(--bg, #0b0c10) 100%
-  );
+  background: linear-gradient(180deg, #14151c 0%, #0b0c10 100%);
 }
 
 .friends-head {
-  padding: 18px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.friends-head h2 {
+  font-size: 18px;
+  margin: 0;
+  font-weight: 700;
+}
+
+.friends-subtitle {
+  font-size: 11px;
+  color: #9ca3af;
 }
 
 .add-friend-row {
@@ -56,186 +56,134 @@
 .add-friend-row input {
   flex: 1;
   min-width: 0;
-  background: rgba(255, 255, 255, 0.035);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 11px;
-  padding: 10px 12px;
-  color: var(--text, #ffffff);
-  font-size: 12.5px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 9px 12px;
+  color: #ffffff;
+  font-size: 13px;
   outline: none;
-  transition: all 0.2s ease;
 }
 
 .add-friend-row input:focus {
-  border-color: var(--gold-dim, #d69a24);
-  background: rgba(255, 255, 255, 0.055);
-  box-shadow: 0 0 0 3px rgba(255, 190, 60, 0.1);
+  border-color: #ffbe3c;
 }
 
 .add-friend-row button {
-  background: linear-gradient(
-    135deg,
-    var(--gold, #ffbe3c),
-    #d69a24
-  );
-  color: #17130a;
+  background: linear-gradient(135deg, #ffbe3c, #d69a24);
+  color: #111;
   border: none;
   border-radius: 10px;
-  padding: 9px 13px;
-  font-size: 12.5px;
+  padding: 0 14px;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.18s ease;
-  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.18);
-}
-
-.add-friend-row button:hover {
-  transform: translateY(-1px);
-  filter: brightness(1.08);
-  box-shadow: 0 7px 20px rgba(255, 190, 60, 0.25);
-}
-
-.add-friend-row button:active {
-  transform: scale(0.96);
 }
 
 .my-uid {
   font-size: 11px;
-  color: var(--muted, #9ca3af);
-  margin-top: 9px;
+  color: #9ca3af;
+  margin-top: 8px;
 }
 
 .my-uid span {
+  color: #ffbe3c;
   font-family: monospace;
-  color: var(--gold, #ffbe3c);
-  font-weight: 600;
 }
 
-/* =========================
-   PENDING
-========================= */
+/* PENDING LIST */
 
 .pending-list {
-  padding: 9px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.015);
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 190, 60, 0.03);
 }
 
 .pending-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
   font-size: 12px;
-  color: var(--muted, #9ca3af);
-  padding: 7px 0;
 }
 
-.pending-item button {
-  background: var(--gold, #ffbe3c);
-  color: #1a1608;
+.pending-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.pending-actions button {
+  background: #ffbe3c;
   border: none;
-  border-radius: 8px;
-  padding: 6px 11px;
-  font-size: 11px;
+  border-radius: 6px;
+  padding: 4px 8px;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.18s ease;
 }
 
-.pending-item button:hover {
-  transform: translateY(-1px);
-  filter: brightness(1.06);
-}
-
-/* =========================
-   FRIEND LIST
-========================= */
+/* FRIENDS LIST items */
 
 .friend-list {
   flex: 1;
   overflow-y: auto;
-  padding: 7px 6px;
-}
-
-.friend-list::-webkit-scrollbar,
-.messages::-webkit-scrollbar {
-  width: 5px;
-}
-
-.friend-list::-webkit-scrollbar-thumb,
-.messages::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.10);
-  border-radius: 20px;
-}
-
-.friend-list::-webkit-scrollbar-track,
-.messages::-webkit-scrollbar-track {
-  background: transparent;
+  padding: 8px;
 }
 
 .friend-item {
+  width: 100%;
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 11px 10px;
-  margin: 2px 0;
-  cursor: pointer;
+  gap: 12px;
+  padding: 10px;
+  background: transparent;
   border: 1px solid transparent;
   border-radius: 12px;
-  transition: all 0.18s ease;
+  color: #ffffff;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .friend-item:hover {
-  background: rgba(255, 255, 255, 0.045);
-  border-color: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .friend-item.active {
-  background: linear-gradient(
-    90deg,
-    rgba(255, 190, 60, 0.12),
-    rgba(255, 255, 255, 0.025)
-  );
-  border-color: rgba(255, 190, 60, 0.18);
-  border-inline-start: 3px solid var(--gold, #ffbe3c);
+  background: rgba(255, 190, 60, 0.12);
+  border-color: rgba(255, 190, 60, 0.25);
 }
 
 .fav {
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   background-size: cover;
   background-position: center;
-  flex-shrink: 0;
+  background-color: #262938;
   position: relative;
-  background-color: var(--panel-raised, #1f222e);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.18);
-}
-
-.fav .dot {
-  position: absolute;
-  bottom: -1px;
-  right: -1px;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  border: 2px solid var(--bg, #0b0c10);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  flex-shrink: 0;
 }
 
 .dot.online {
-  background: #4CAF6D;
-  box-shadow: 0 0 7px rgba(76, 175, 109, 0.65);
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  background: #4caf50;
+  border-radius: 50%;
+  border: 2px solid #0b0c10;
 }
 
 .finfo {
-  min-width: 0;
   flex: 1;
+  min-width: 0;
 }
 
 .fname {
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -243,47 +191,61 @@
 }
 
 .flast {
-  font-size: 11.5px;
-  color: var(--muted, #9ca3af);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 11px;
+  color: #9ca3af;
   margin-top: 2px;
 }
 
+.friend-arrow {
+  color: #4b5563;
+}
+
 /* =========================
-   CHAT
+   CHAT COLUMN
 ========================= */
 
 .chat-col {
   display: flex;
   flex-direction: column;
+  height: 100%;
   overflow: hidden;
-  min-width: 0;
-  background:
-    radial-gradient(
-      circle at 50% -20%,
-      rgba(255, 190, 60, 0.06),
-      transparent 45%
-    ),
-    var(--bg, #0b0c10);
+  background: #0b0c10;
+}
+
+.chat-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  text-align: center;
+  padding: 20px;
+}
+
+.chat-empty-orb {
+  font-size: 40px;
+  margin-bottom: 10px;
 }
 
 .chat-head {
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 13px 18px;
-  min-height: 64px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(0, 0, 0, 0.25);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  gap: 12px;
+  padding: 12px 18px;
+  background: rgba(20, 21, 28, 0.8);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.chat-head .fav {
-  width: 38px;
-  height: 38px;
+.chat-back-btn {
+  display: none;
+  background: none;
+  border: none;
+  color: #ffbe3c;
+  font-size: 28px;
+  cursor: pointer;
+  padding: 0 8px 0 0;
+  line-height: 1;
 }
 
 .chat-head-name {
@@ -293,72 +255,44 @@
 
 .chat-head-status {
   font-size: 11px;
-  color: var(--muted, #9ca3af);
-  margin-top: 2px;
+  color: #4caf50;
 }
 
 .wp-btn {
   margin-inline-start: auto;
-  background: rgba(255, 190, 60, 0.09);
-  border: 1px solid rgba(255, 190, 60, 0.25);
-  color: var(--gold, #ffbe3c);
-  padding: 8px 14px;
-  border-radius: 11px;
-  font-size: 12px;
+  background: rgba(255, 190, 60, 0.1);
+  border: 1px solid rgba(255, 190, 60, 0.3);
+  color: #ffbe3c;
+  padding: 7px 14px;
+  border-radius: 10px;
   font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 7px;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
-}
-
-.wp-btn:hover {
-  background: rgba(255, 190, 60, 0.18);
-  border-color: rgba(255, 190, 60, 0.45);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(255, 190, 60, 0.2);
-}
-
-.wp-btn:active {
-  transform: scale(0.96);
+  gap: 6px;
 }
 
 /* =========================
-   MESSAGES
+   MESSAGES AREA
 ========================= */
 
 .messages {
   flex: 1;
   overflow-y: auto;
-  padding: 22px 20px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  scroll-behavior: smooth;
+  gap: 12px;
 }
 
 .msg-row {
   display: flex;
-  max-width: 72%;
-  animation: messageIn 0.18s ease-out;
-}
-
-@keyframes messageIn {
-  from {
-    opacity: 0;
-    transform: translateY(5px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  max-width: 75%;
 }
 
 .msg-row.mine {
   align-self: flex-end;
-  justify-content: flex-end;
 }
 
 .msg-row.theirs {
@@ -366,186 +300,38 @@
 }
 
 .bubble {
-  padding: 11px 15px;
-  border-radius: 17px;
+  padding: 10px 14px;
+  border-radius: 16px;
   font-size: 13.5px;
-  line-height: 1.5;
-  position: relative;
+  line-height: 1.4;
   word-break: break-word;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
 }
 
 .msg-row.mine .bubble {
-  background: linear-gradient(
-    135deg,
-    var(--bubble-mine, #2a2517),
-    rgba(255, 190, 60, 0.16)
-  );
-  border: 1px solid rgba(255, 190, 60, 0.22);
-  border-bottom-right-radius: 5px;
+  background: #2a2415;
+  border: 1px solid rgba(255, 190, 60, 0.25);
+  color: #ffffff;
+  border-bottom-right-radius: 4px;
 }
 
 .msg-row.theirs .bubble {
-  background: linear-gradient(
-    135deg,
-    var(--bubble-theirs, #171922),
-    rgba(255, 255, 255, 0.025)
-  );
+  background: #181a24;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-bottom-left-radius: 5px;
-}
-
-.msg-time {
-  font-size: 9.5px;
-  color: var(--muted, #9ca3af);
-  margin-top: 4px;
-  display: block;
-  opacity: 0.75;
-}
-
-/* =========================
-   WATCH PARTY INVITE CARD IN CHAT
-========================= */
-
-.wp-invite-card {
-  background: linear-gradient(135deg, rgba(35, 28, 14, 0.95), rgba(18, 19, 26, 0.95));
-  border: 1px solid rgba(255, 190, 60, 0.3);
-  border-radius: 18px;
-  padding: 16px;
-  width: 310px;
-  max-width: 100%;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 0 20px rgba(255, 190, 60, 0.1);
-  backdrop-filter: blur(12px);
-  animation: messageIn 0.2s ease-out;
-}
-
-.wp-invite-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.wp-invite-icon {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  background: rgba(255, 190, 60, 0.15);
-  border: 1px solid rgba(255, 190, 60, 0.3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--gold, #ffbe3c);
-  font-size: 18px;
-  flex-shrink: 0;
-}
-
-.wp-invite-info h4 {
-  font-size: 14px;
-  font-weight: 700;
   color: #ffffff;
-  margin: 0;
-}
-
-.wp-invite-info p {
-  font-size: 11.5px;
-  color: var(--gold, #ffbe3c);
-  margin: 2px 0 0 0;
-}
-
-.wp-join-btn {
-  width: 100%;
-  margin-top: 10px;
-  background: linear-gradient(135deg, var(--gold, #ffbe3c), #d69a24);
-  color: #17130a;
-  border: none;
-  border-radius: 11px;
-  padding: 11px 16px;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  transition: all 0.2s ease;
-  box-shadow: 0 4px 16px rgba(255, 190, 60, 0.25);
-}
-
-.wp-join-btn:hover {
-  transform: translateY(-1px);
-  filter: brightness(1.1);
-  box-shadow: 0 6px 20px rgba(255, 190, 60, 0.35);
-}
-
-.wp-join-btn:active {
-  transform: scale(0.97);
-}
-
-/* =========================
-   IMAGE MESSAGE
-========================= */
-
-.img-bubble {
-  padding: 4px !important;
-  overflow: hidden;
+  border-bottom-left-radius: 4px;
 }
 
 .img-bubble img {
-  width: 210px;
-  max-width: 100%;
-  max-height: 300px;
-  object-fit: cover;
-  border-radius: 13px;
+  max-width: 220px;
+  border-radius: 10px;
   display: block;
-  cursor: pointer;
-  transition: all 0.2s ease;
 }
 
-.img-bubble img:hover {
-  transform: scale(1.015);
-}
-
-/* =========================
-   VOICE MESSAGE
-========================= */
-
-.voice-note {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 190px;
-  padding: 2px;
-}
-
-.voice-note .play {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: linear-gradient(
-    135deg,
-    var(--gold, #ffbe3c),
-    #d69a24
-  );
-  color: #1a1608;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
-  cursor: pointer;
-}
-
-.voice-dur {
-  font-size: 10.5px;
-  color: var(--muted, #9ca3af);
-}
-
-.voice-note audio {
-  width: 190px;
-  max-width: 100%;
-  height: 34px;
+.msg-time {
+  font-size: 9px;
+  color: #6b7280;
+  margin-top: 4px;
+  display: block;
 }
 
 /* =========================
@@ -555,321 +341,86 @@
 .composer {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 11px 14px 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(0, 0, 0, 0.22);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  gap: 10px;
+  padding: 12px 16px;
+  background: #14151c;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.icon-btn {
+.composer-field {
+  flex: 1;
+}
+
+.composer-field input {
+  width: 100%;
+  height: 40px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 0 14px;
+  color: #ffffff;
+  outline: none;
+}
+
+.icon-btn, .send-btn {
   width: 40px;
   height: 40px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: none;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--muted, #9ca3af);
-  flex-shrink: 0;
-  cursor: pointer;
-  transition: all 0.18s ease;
 }
 
-.icon-btn:hover {
-  color: var(--gold, #ffbe3c);
-  background: rgba(255, 190, 60, 0.08);
-  border-color: rgba(255, 190, 60, 0.20);
-  transform: translateY(-1px);
-}
-
-.icon-btn:active {
-  transform: scale(0.93);
-}
-
-.composer input {
-  flex: 1;
-  min-width: 0;
-  height: 42px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  padding: 0 15px;
-  color: var(--text, #ffffff);
-  font-size: 13.5px;
-  outline: none;
-  transition: all 0.2s ease;
-}
-
-.composer input::placeholder {
-  color: var(--muted, #9ca3af);
-  opacity: 0.8;
-}
-
-.composer input:focus {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 190, 60, 0.28);
-  box-shadow: 0 0 0 3px rgba(255, 190, 60, 0.055);
+.icon-btn {
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
 }
 
 .send-btn {
-  background: linear-gradient(
-    135deg,
-    var(--gold, #ffbe3c),
-    #d69a24
-  );
-  color: #17130a;
-  border: none;
-  width: 42px;
-  height: 42px;
-  border-radius: 13px;
-  flex-shrink: 0;
-  font-size: 15px;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
-  transition: all 0.18s ease;
-}
-
-.send-btn:hover {
-  transform: translateY(-2px);
-  filter: brightness(1.08);
-  box-shadow: 0 8px 22px rgba(255, 190, 60, 0.25);
-}
-
-.send-btn:active {
-  transform: scale(0.91);
+  background: #ffbe3c;
+  color: #111;
+  font-size: 14px;
 }
 
 /* =========================
-   ATTACHMENT MENU
+   RESPONSIVE DESIGN (MOBILE FIX)
 ========================= */
 
-.attach-menu {
-  position: relative;
-}
-
-.attach-popover {
-  position: absolute;
-  bottom: 50px;
-  left: 0;
-  background: rgba(25, 25, 25, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 14px;
-  padding: 7px;
-  display: flex;
-  flex-direction: column;
-  min-width: 190px;
-  box-shadow:
-    0 18px 45px rgba(0, 0, 0, 0.45),
-    0 4px 12px rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  animation: attachIn 0.16s ease-out;
-  z-index: 50;
-}
-
-@keyframes attachIn {
-  from {
-    opacity: 0;
-    transform: translateY(7px) scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.attach-popover button {
-  background: none;
-  border: none;
-  color: var(--text, #ffffff);
-  padding: 10px 12px;
-  text-align: left;
-  font-size: 13px;
-  border-radius: 9px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.attach-popover button:hover {
-  background: rgba(255, 255, 255, 0.07);
-  color: var(--gold, #ffbe3c);
-}
-
-.attach-popover button:active {
-  transform: scale(0.98);
-}
-
-/* =========================
-   WATCH PARTY MODAL
-========================= */
-
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.72);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 200;
-  backdrop-filter: blur(7px);
-  -webkit-backdrop-filter: blur(7px);
-  padding: 20px;
-}
-
-.wp-modal {
-  background: linear-gradient(
-    145deg,
-    var(--panel-raised, #1f222e),
-    var(--panel, #14151c)
-  );
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 18px;
-  width: 420px;
-  max-width: 90vw;
-  padding: 24px;
-  box-shadow:
-    0 25px 70px rgba(0, 0, 0, 0.55),
-    0 0 0 1px rgba(255, 255, 255, 0.02);
-  animation: modalIn 0.2s ease-out;
-}
-
-@keyframes modalIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px) scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.wp-modal h3 {
-  font-family: var(--serif, inherit);
-  font-size: 20px;
-  margin-bottom: 7px;
-}
-
-.wp-modal p {
-  font-size: 13px;
-  color: var(--muted, #9ca3af);
-  margin-bottom: 17px;
-  line-height: 1.55;
-}
-
-.wp-sync-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* =========================
-   MOBILE CHAT
-========================= */
-
-@media (max-width: 600px) {
-  .friends-app {
-    height: calc(100vh - 60px);
+@media (max-width: 768px) {
+  .app-grid {
+    grid-template-columns: 1fr;
   }
 
-  .chat-head {
-    padding: 10px 12px;
-    min-height: 58px;
+  /* عند عدم فتح أي محادثة: تظهر قائمة الأصدقاء ويختفي الشات */
+  .friends-col {
+    display: flex;
   }
 
-  .chat-head .fav {
-    width: 35px;
-    height: 35px;
+  .chat-col {
+    display: none;
   }
 
-  .chat-head-name {
-    font-size: 13.5px;
+  /* عند فتح محادثة: تخفي قائمة الأصدقاء وتظهر الشات كاملاً */
+  .friends-app.has-active-chat .friends-col {
+    display: none;
   }
 
+  .friends-app.has-active-chat .chat-col {
+    display: flex;
+  }
+
+  /* إظهار زر الرجوع فقط في الهاتف */
+  .chat-back-btn {
+    display: block;
+  }
+
+  .wp-btn-text {
+    display: none;
+  }
+  
   .wp-btn {
-    padding: 7px 9px;
-    font-size: 11px;
-  }
-
-  .messages {
-    padding: 16px 11px;
-    gap: 7px;
-  }
-
-  .msg-row {
-    max-width: 82%;
-  }
-
-  .bubble {
-    padding: 9px 12px;
-    font-size: 13px;
-    border-radius: 15px;
-  }
-
-  .wp-invite-card {
-    width: 100%;
-    padding: 14px;
-  }
-
-  .img-bubble img {
-    width: 190px;
-    max-height: 260px;
-  }
-
-  .composer {
-    gap: 6px;
-    padding: 8px 9px 10px;
-  }
-
-  .icon-btn {
-    width: 38px;
-    height: 38px;
-    border-radius: 11px;
-  }
-
-  .composer input {
-    height: 40px;
-    padding: 0 12px;
-    font-size: 13px;
-  }
-
-  .send-btn {
-    width: 40px;
-    height: 40px;
-    border-radius: 12px;
-  }
-
-  .attach-popover {
-    left: auto;
-    right: 0;
-    bottom: 48px;
-  }
-}
-
-@media (max-width: 380px) {
-  .wp-btn {
-    font-size: 0;
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    justify-content: center;
-  }
-
-  .msg-row {
-    max-width: 88%;
-  }
-
-  .voice-note audio {
-    width: 150px;
+    padding: 7px;
   }
 }
