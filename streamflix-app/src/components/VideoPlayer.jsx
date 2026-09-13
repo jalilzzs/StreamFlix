@@ -71,8 +71,8 @@ export default function VideoPlayer({ episode, title, onProgress }) {
             src={currentUrl} 
             title={mediaData?.name || 'Video Player'}
             style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, border: 'none' }}
+            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
             allowFullScreen 
-            sandbox="allow-scripts allow-same-origin allow-forms"
             referrerPolicy="origin"
           />
         ) : (
