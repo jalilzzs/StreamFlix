@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 
-export default function Watch() {
-  const { id } = useParams(); // معرف العرض في Supabase
+export default function TitleDetail() {
+  const { id } = useParams();
   const [title, setTitle] = useState(null);
   const [episodes, setEpisodes] = useState([]);
   const [selectedEpisode, setSelectedEpisode] = useState(null);
@@ -16,7 +16,8 @@ export default function Watch() {
 
   const fetchData = async () => {
     setLoading(true);
-    // 1. جلب تفاصيل الفيلم أو المسلسل
+    
+    // 1. جلب تفاصيل الفيلم/المسلسل
     const { data: titleData } = await supabase
       .from('titles')
       .select('*')
@@ -25,7 +26,7 @@ export default function Watch() {
     
     if (titleData) setTitle(titleData);
 
-    // 2. جلب الحلقات الخاصة به
+    // 2. جلب الحلقات المرتبطة به
     const { data: epsData } = await supabase
       .from('episodes')
       .select('*')
@@ -35,21 +36,46 @@ export default function Watch() {
 
     if (epsData && epsData.length > 0) {
       setEpisodes(epsData);
-      setSelectedEpisode(epsData[0]); // اختيار الحلقة الأولى افتراضياً
+      setSelectedEpisode(epsData[0]);
+    } else {
+      // إذا لم تكن هناك حلقة مسجلة في القاعدة، نقوم بإنشاء حلقة افتراضية مؤقتة ليعمل المشغل فوراً
+      setEpisodes([{
+        id: 'default',
+        season: 1,
+        episode_number: 1,
+        name: titleData?.name || 'عرض تجريبي',
+        stream_urls: {
+          server1: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+          server2: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"
+        }
+      }]);
+      setSelectedEpisode({
+        id: 'default',
+        season: 1,
+        episode_number: 1,
+        name: titleData?.name || 'عرض تجريبي',
+        stream_urls: {
+          server1: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+          server2: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"
+        }
+      });
     }
+    
     setLoading(false);
   };
 
   if (loading) return <div style={{ color: '#fff', textAlign: 'center', padding: '50px' }}>جاري التحميل...</div>;
   if (!title) return <div style={{ color: '#fff', textAlign: 'center', padding: '50px' }}>العنوان غير موجود</div>;
 
-  // استخراج روابط السيرفرات من الحقل stream_urls (JSONB)
-  const servers = selectedEpisode?.stream_urls || { server1: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" };
-  const currentVideoUrl = servers[activeServer] || Object.values(servers)[0];
+  // استخراج روابط السيرفرات بأمان تام
+  const servers = selectedEpisode?.stream_urls || {
+    server1: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+  };
+  const currentVideoUrl = servers[activeServer] || Object.values(servers)[0] || "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
 
   return (
-    <div style={{ background: '#111', color: '#fff', minHeight: '100vh', padding: '20px' }}>
-      <h1 style={{ fontSize: '24px', marginBottom: '10px' }}>{title.name}</h1>
+    <div style={{ background: '#111', color: '#fff', minHeight: '100vh', padding: '20px', direction: 'rtl' }}>
+      <h1 style={{ fontSize: '24px', marginBottom: '15px', textAlign: 'center' }}>{title.name}</h1>
       
       {/* --- مشغل الفيديو --- */}
       <div style={{ width: '100%', maxWidth: '900px', margin: '0 auto', background: '#000', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 4px 15px rgba(0,0,0,0.5)' }}>
@@ -61,12 +87,12 @@ export default function Watch() {
           style={{ width: '100%', height: 'auto', aspectRatio: '16/9', display: 'block' }}
         >
           <source src={currentVideoUrl} type="video/mp4" />
-          متصفحك لا يدعم تشغل الفيديو.
+          متصفحك لا يدعم تشغيل الفيديو.
         </video>
       </div>
 
-      {/* --- أزرار اختيار السيرفرات --- */}
-      <div style={{ maxWidth: '900px', margin: '20px auto', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+      {/* --- أزرار سيرفرات التشغيل --- */}
+      <div style={{ maxWidth: '900px', margin: '20px auto', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
         <span style={{ fontWeight: 'bold', color: '#aaa' }}>اختر السيرفر:</span>
         {Object.keys(servers).map((srvKey) => (
           <button
@@ -82,13 +108,21 @@ export default function Watch() {
               fontWeight: 'bold'
             }}
           >
-            {srvKey === 'server1' ? 'سيرفر سريع (1)' : srvKey === 'server2' ? 'سيرفر احتياطي (2)' : srvKey}
+            {srvKey === 'server1' ? 'السيرفر السريع (1)' : srvKey === 'server2' ? 'السيرفر الاحتياطي (2)' : srvKey}
           </button>
         ))}
       </div>
 
-      {/* --- قائمة الحلقات (إذا كان مسلسل) --- */}
-      {title.type === 'series' && episodes.length > 0 && (
+      {/* --- وصف العمل --- */}
+      <div style={{ maxWidth: '900px', margin: '20px auto', background: '#1a1a1a', padding: '15px', borderRadius: '8px' }}>
+        <p style={{ color: '#ccc', lineHeight: '1.6' }}>{title.synopsis}</p>
+        <div style={{ marginTop: '10px', fontSize: '14px', color: '#888' }}>
+          <span>سنة الإصدار: {title.release_year}</span> | <span style={{ marginLeft: '10px' }}>التقييم: ⭐ {title.rating_avg}</span>
+        </div>
+      </div>
+
+      {/* --- قائمة الحلقات للمسلسلات --- */}
+      {title.type === 'series' && episodes.length > 1 && (
         <div style={{ maxWidth: '900px', margin: '30px auto' }}>
           <h3>الحلقات:</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '10px', marginTop: '10px' }}>
@@ -106,7 +140,7 @@ export default function Watch() {
                   textAlign: 'center'
                 }}
               >
-                الموسم {ep.season} - الحلقة {ep.episode_number}
+                الحلقة {ep.episode_number}
               </button>
             ))}
           </div>
