@@ -1,13 +1,15 @@
- import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 
 const url = import.meta.env.VITE_SUPABASE_URL;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+// سطر للتأكد في Console المتصفح
+console.log('[StreamFlix Debug] Supabase URL:', url);
+console.log('[StreamFlix Debug] Has Anon Key?:', !!anonKey);
+
 if (!url || !anonKey || url.includes('YOUR_') || anonKey.includes('YOUR_')) {
-  // eslint-disable-next-line no-console
-  console.warn(
-    '[StreamFlix] Supabase credentials are not set. Add VITE_SUPABASE_URL and ' +
-    'VITE_SUPABASE_ANON_KEY to your .env file. Auth and data features will fail until then.'
+  console.error(
+    '[StreamFlix] Supabase credentials are missing or set to placeholder values!'
   );
 }
 
