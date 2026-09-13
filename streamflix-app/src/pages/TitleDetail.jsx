@@ -4,41 +4,54 @@ import { supabase } from '../lib/supabaseClient';
 
 export default function TitleDetail() {
   const { id } = useParams();
+  
+  // الحالة الافتراضية أثناء التحميل
   const [title, setTitle] = useState({
-    name: 'عرض ترفيهي مباشر',
-    synopsis: 'عرض تجريبي مباشر لضمان عمل المشغل وسيرفرات البث بسلاسة تامة.',
+    name: 'جاري التحميل...',
+    synopsis: 'يرجى الانتظار قليلاً ريثما يتم جلب تفاصيل العرض من قاعدة البيانات.',
     release_year: 2026,
-    rating_avg: 4.9,
-    type: 'movie'
+    rating_avg: 0,
+    video_url: ''
   });
   
-  const [activeServer, setActiveServer] = useState('server1');
-  
-  // روابط فيديو مجانية ومباشرة 100% تعمل على جميع المتصفحات بدون خطأ 403
-  const servers = {
-    server1: "https://www.w3schools.com/html/mov_bbb.mp4",
-    server2: "https://www.w3schools.com/html/movie.mp4"
-  };
-
-  const currentVideoUrl = servers[activeServer];
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchRealData() {
       try {
-        const { data } = await supabase.from('titles').select('*').eq('id', id).single();
-        if (data) {
-          setTitle(prev => ({ ...prev, ...data }));
+        setLoading(true);
+        // جلب البيانات الحقيقية من جدول titles حسب الـ id
+        const { data, error } = await supabase
+          .from('titles')
+          .select('*')
+          .eq('id', id)
+          .single();
+
+        if (error) {
+          console.error("خطأ في جلب البيانات من Supabase:", error.message);
+        } else if (data) {
+          setTitle(data);
         }
       } catch (err) {
-        console.log("استخدام البيانات المحلية المؤقتة");
+        console.error("حدث خطأ غير متوقع:", err);
+      } finally {
+        setLoading(false);
       }
     }
-    fetchRealData();
+
+    if (id) {
+      fetchRealData();
+    }
   }, [id]);
+
+  // استخراج رابط الفيديو من قاعدة البيانات (يمكنك تعديل اسم العمود حسب جدولك مثل video_url أو server1)
+  const currentVideoUrl = title.video_url || title.server1 || "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4";
 
   return (
     <div style={{ background: '#111', color: '#fff', minHeight: '100vh', padding: '20px', direction: 'rtl' }}>
-      <h1 style={{ fontSize: '24px', marginBottom: '15px', textAlign: 'center' }}>{title.name}</h1>
+      <h1 style={{ fontSize: '24px', marginBottom: '15px', textAlign: 'center' }}>
+        {loading ? 'جاري التحميل...' : title.name}
+      </h1>
       
       {/* --- مشغل الفيديو --- */}
       <div style={{ width: '100%', maxWidth: '900px', margin: '0 auto', background: '#000', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 4px 15px rgba(0,0,0,0.5)' }}>
@@ -54,31 +67,11 @@ export default function TitleDetail() {
         </video>
       </div>
 
-      {/* --- أزرار سيرفرات التشغيل --- */}
-      <div style={{ maxWidth: '900px', margin: '20px auto', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
-        <span style={{ fontWeight: 'bold', color: '#aaa' }}>اختر السيرفر:</span>
-        {Object.keys(servers).map((srvKey) => (
-          <button
-            key={srvKey}
-            onClick={() => setActiveServer(srvKey)}
-            style={{
-              padding: '8px 16px',
-              background: activeServer === srvKey ? '#e50914' : '#333',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: 'bold'
-            }}
-          >
-            {srvKey === 'server1' ? 'السيرفر السريع (1)' : 'السيرفر الاحتياطي (2)'}
-          </button>
-        ))}
-      </div>
-
-      {/* --- وصف العمل --- */}
+      {/* --- وصف العمل والبيانات الحقيقية --- */}
       <div style={{ maxWidth: '900px', margin: '20px auto', background: '#1a1a1a', padding: '15px', borderRadius: '8px' }}>
-        <p style={{ color: '#ccc', lineHeight: '1.6' }}>{title.synopsis}</p>
+        <p style={{ color: '#ccc', lineHeight: '1.6' }}>
+          {loading ? '...' : (title.synopsis || 'لا يوجد وصف متاح حالياً.')}
+        </p>
         <div style={{ marginTop: '10px', fontSize: '14px', color: '#888' }}>
           <span>سنة الإصدار: {title.release_year}</span> | <span style={{ marginLeft: '10px' }}>التقييم: ⭐ {title.rating_avg}</span>
         </div>
