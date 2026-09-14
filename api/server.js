@@ -8,9 +8,7 @@ app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 const PORT = process.env.PORT || 5000;
-
-// استبدل الرابط أدناه أو ضعه في Environment Variables في Render
-const FLARESOLVERR_URL = process.env.FLARESOLVERR_URL || 'https://your-public-flaresolverr.com/v1';
+const FLARESOLVERR_URL = process.env.FLARESOLVERR_URL;
 
 const flixhq = new MOVIES.FlixHQ();
 
@@ -25,18 +23,22 @@ app.get('/api/extract', async (req, res) => {
   }
 
   try {
-    // 1. إرسال الطلب لـ FlareSolverr الخارجي لتجاوز Cloudflare أولاً
+    if (!FLARESOLVERR_URL) {
+      return res.status(500).json({ success: false, error: 'رابط FLARESOLVERR_URL غير معرف في متغيرات البيئة' });
+    }
+
+    // إرسال الطلب لـ FlareSolverr مع وقت انتظار ممدد (90 ثانية) لتجاوز ثقل السبّات والـ Cold Start
     const solverResponse = await axios.post(FLARESOLVERR_URL, {
       cmd: 'request.get',
       url: `https://flixhq.to/search/${tmdbId}`,
-      maxTimeout: 60000
-    }, { timeout: 65000 });
+      maxTimeout: 80000
+    }, { timeout: 90000 });
 
     if (!solverResponse.data || solverResponse.data.status !== 'ok') {
       return res.status(500).json({ success: false, error: 'فشل تجاوز حماية Cloudflare عبر FlareSolverr' });
     }
 
-    // 2. البحث عبر مكتبة Consumet بعد تخطي الحظر بنجاح
+    // البحث عبر مكتبة Consumet بعد تخطي الحظر بنجاح
     const searchResults = await flixhq.search(String(tmdbId));
     if (!searchResults || !searchResults.results || searchResults.results.length === 0) {
       return res.status(404).json({ success: false, error: 'لم يتم العثور على المحتوى' });
