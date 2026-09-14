@@ -70,17 +70,15 @@ export default function Home() {
     (async () => {
       setLoadingCatalog(true);
       try {
-        const offset = (currentPage - 1) * ITEMS_PER_PAGE;
-        const res = await fetchTitles({ limit: ITEMS_PER_PAGE, offset, page: currentPage });
+        const res = await fetchTitles({ limit: ITEMS_PER_PAGE, page: currentPage });
         
-        // دعم مرن لسواء رجعت البيانات كمصفوفة أو كائن يحتوي على count
         if (Array.isArray(res)) {
           setCatalog(res);
-          // تقدير إجمالي التصفح إذا لم يُرجع السيرفر الرقم الإجمالي
-          setTotalCount((prev) => Math.max(prev, offset + res.length));
+          // استخراج العدد الإجمالي من الخصائص المرفقة بالمصفوفة
+          setTotalCount(res.count || res.length);
         } else if (res?.data) {
           setCatalog(res.data);
-          if (res.count) setTotalCount(res.count);
+          setTotalCount(res.count || res.data.length);
         }
       } catch (err) {
         console.error('خطأ في جلب الكتالوج:', err);
@@ -90,7 +88,7 @@ export default function Home() {
     })();
   }, [currentPage]);
 
-  const totalPages = Math.ceil((totalCount || 683) / ITEMS_PER_PAGE);
+  const totalPages = Math.max(1, Math.ceil(totalCount / ITEMS_PER_PAGE));
 
   return (
     <div className="home-page" style={{ direction: 'rtl' }}>
@@ -161,11 +159,11 @@ export default function Home() {
         emptyText="لا توجد مقترحات." 
       />
 
-      {/* --- شبكة الكتالوج الشامل لجميع الـ 683+ عنوان مع الصفحات --- */}
+      {/* --- شبكة الكتالوج الشامل لجميع العناوين مع الصفحات --- */}
       <section className="catalog-section" style={{ padding: '30px 4%', background: '#0d0d0d', marginTop: '20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #222', paddingBottom: '10px' }}>
           <h2 style={{ fontSize: '20px', margin: 0, color: '#fff', fontWeight: 'bold' }}>
-            🎬 المكتبة الشاملة ({totalCount || 683})
+            🎬 المكتبة الشاملة ({totalCount})
           </h2>
           <span style={{ fontSize: '13px', color: '#888' }}>
             الصفحة {currentPage} من {totalPages}
