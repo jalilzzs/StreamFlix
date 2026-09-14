@@ -27,6 +27,7 @@ export default function Friends() {
   const [input, setInput] = useState('');
   const [addValue, setAddValue] = useState('');
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
 
   const [showWatchParty, setShowWatchParty] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
@@ -47,8 +48,6 @@ export default function Friends() {
     if (!userId) return;
 
     try {
-      setError(null);
-
       const [friendsData, pendingData] = await Promise.all([
         fetchFriends(userId),
         fetchPendingRequests(userId),
@@ -129,7 +128,7 @@ export default function Friends() {
   }, [messages]);
 
   /* =========================
-     ADD FRIEND (تعديل الاستدعاء)
+     ADD FRIEND
   ========================= */
 
   const handleAddFriend = async (event) => {
@@ -141,10 +140,12 @@ export default function Friends() {
 
     try {
       setError(null);
+      setSuccess(null);
 
-      // التعديل: تمرير المعلمات بشكل منفصل وليس كـ Object
+      // تمرير ID المستخدم ورمز الصداقة/الـ UUID
       await sendFriendRequestByCode(userId, code);
 
+      setSuccess('Friend request sent successfully!');
       setAddValue('');
       await loadFriends();
     } catch (err) {
@@ -154,14 +155,15 @@ export default function Friends() {
   };
 
   /* =========================
-     RESPOND FRIEND REQUEST (تعديل الحالة)
+     RESPOND TO FRIEND REQUEST
   ========================= */
 
   const handleFriendRequest = async (requestId, accept) => {
     try {
       setError(null);
+      setSuccess(null);
 
-      // التعديل: تحويل boolean إلى 'accepted' أو 'rejected'
+      // تحويل الحالة النصية لتطابق api.js
       await respondToFriendRequest(requestId, accept ? 'accepted' : 'rejected');
 
       await loadFriends();
@@ -254,9 +256,7 @@ export default function Friends() {
   ========================= */
 
   const getSupportedAudioMime = () => {
-    if (typeof MediaRecorder === 'undefined') {
-      return '';
-    }
+    if (typeof MediaRecorder === 'undefined') return '';
 
     const types = [
       'audio/webm;codecs=opus',
@@ -278,12 +278,7 @@ export default function Friends() {
   const startVoiceRecording = async () => {
     if (!userId || !activeFriend?.id) return;
 
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setError('Voice recording is not supported by this browser.');
-      return;
-    }
-
-    if (typeof MediaRecorder === 'undefined') {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setError('Voice recording is not supported by this browser.');
       return;
     }
@@ -291,10 +286,7 @@ export default function Friends() {
     try {
       setError(null);
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-      });
-
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = getSupportedAudioMime();
 
       const recorder = mimeType
@@ -313,9 +305,7 @@ export default function Friends() {
       recorder.onerror = (event) => {
         console.error('MediaRecorder error:', event);
         setError('Voice recording failed.');
-
         stream.getTracks().forEach((track) => track.stop());
-
         setRecordingVoice(false);
         mediaRecorderRef.current = null;
       };
@@ -324,32 +314,20 @@ export default function Friends() {
         try {
           setUploadingMedia(true);
 
-          const actualType =
-            recorder.mimeType ||
-            mimeType ||
-            'audio/webm';
-
+          const actualType = recorder.mimeType || mimeType || 'audio/webm';
           const extension = actualType.includes('mp4')
             ? 'mp4'
             : actualType.includes('ogg')
               ? 'ogg'
               : 'webm';
 
-          const blob = new Blob(audioChunksRef.current, {
+          const blob = new Blob(audioChunksRef.current, { type: actualType });
+
+          if (!blob.size) throw new Error('Empty voice recording.');
+
+          const file = new File([blob], `voice-${Date.now()}.${extension}`, {
             type: actualType,
           });
-
-          if (!blob.size) {
-            throw new Error('Empty voice recording.');
-          }
-
-          const file = new File(
-            [blob],
-            `voice-${Date.now()}.${extension}`,
-            {
-              type: actualType,
-            }
-          );
 
           const uploaded = await uploadChatMedia({
             userId,
@@ -365,24 +343,15 @@ export default function Friends() {
           });
 
           setMessages((current) => {
-            const exists = current.some(
-              (item) => item.id === message.id
-            );
-
-            return exists
-              ? current
-              : [...current, message];
+            const exists = current.some((item) => item.id === message.id);
+            return exists ? current : [...current, message];
           });
         } catch (err) {
           console.error(err);
           setError(err?.message || 'Unable to send voice message.');
         } finally {
           setUploadingMedia(false);
-
-          stream.getTracks().forEach((track) => {
-            track.stop();
-          });
-
+          stream.getTracks().forEach((track) => track.stop());
           mediaRecorderRef.current = null;
           audioChunksRef.current = [];
         }
@@ -392,9 +361,7 @@ export default function Friends() {
       setRecordingVoice(true);
     } catch (err) {
       console.error(err);
-
       setRecordingVoice(false);
-
       if (err?.name === 'NotAllowedError') {
         setError('Microphone permission was denied.');
       } else {
@@ -405,13 +372,11 @@ export default function Friends() {
 
   const stopVoiceRecording = () => {
     const recorder = mediaRecorderRef.current;
-
     if (!recorder) return;
 
     if (recorder.state !== 'inactive') {
       recorder.stop();
     }
-
     setRecordingVoice(false);
   };
 
@@ -432,12 +397,10 @@ export default function Friends() {
 
     try {
       setError(null);
-
       await createWatchParty({
         hostId: userId,
         friendId: activeFriend.id,
       });
-
       setShowWatchParty(false);
     } catch (err) {
       console.error(err);
@@ -474,26 +437,15 @@ export default function Friends() {
 
   const getFriendId = (friend) => {
     const profile = getFriendProfile(friend);
-    return (
-      profile?.id ||
-      friend?.friend_id ||
-      friend?.user_id ||
-      friend?.id
-    );
+    return profile?.id || friend?.friend_id || friend?.user_id || friend?.id;
   };
 
-  const getMessageText = (message) => {
-    if (!message) return '';
-    return message.content || '';
-  };
+  const getMessageText = (message) => message?.content || '';
 
-  const isMine = (message) => {
-    return message?.sender_id === userId;
-  };
+  const isMine = (message) => message?.sender_id === userId;
 
   const formatTime = (dateValue) => {
     if (!dateValue) return '';
-
     try {
       return new Date(dateValue).toLocaleTimeString([], {
         hour: '2-digit',
@@ -511,31 +463,33 @@ export default function Friends() {
   return (
     <div className={`friends-app ${activeFriend ? 'has-active-chat' : ''}`}>
       <div className="app-grid">
-
         {/* SIDEBAR */}
         <aside className="friends-col">
           <div className="friends-head">
             <div className="friends-title-row">
               <div>
                 <h2>Friends</h2>
-                <span className="friends-subtitle">
-                  Your StreamFlix people
-                </span>
+                <span className="friends-subtitle">Your StreamFlix people</span>
               </div>
             </div>
 
-            <form
-              className="add-friend-row"
-              onSubmit={handleAddFriend}
-            >
+            <form className="add-friend-row" onSubmit={handleAddFriend}>
               <input
                 value={addValue}
                 onChange={(event) => setAddValue(event.target.value)}
-                placeholder="Friend code..."
+                placeholder="Friend code or ID..."
                 autoComplete="off"
               />
               <button type="submit">Add</button>
             </form>
+
+            {/* إظهار التنبيهات الخاصة بإضافة الأصدقاء */}
+            {error && !activeFriend && (
+              <div className="friend-alert error-text">{error}</div>
+            )}
+            {success && (
+              <div className="friend-alert success-text">{success}</div>
+            )}
 
             {userId && (
               <div className="my-uid">
@@ -604,6 +558,7 @@ export default function Friends() {
                     onClick={() => {
                       setActiveFriend(friend);
                       setError(null);
+                      setSuccess(null);
                     }}
                   >
                     <div
@@ -646,9 +601,9 @@ export default function Friends() {
           ) : (
             <>
               <header className="chat-head">
-                <button 
-                  type="button" 
-                  className="chat-back-btn" 
+                <button
+                  type="button"
+                  className="chat-back-btn"
                   onClick={() => setActiveFriend(null)}
                   aria-label="Back to friends list"
                 >
@@ -689,7 +644,9 @@ export default function Friends() {
               {error && (
                 <div className="chat-error">
                   <span>{error}</span>
-                  <button type="button" onClick={() => setError(null)}>×</button>
+                  <button type="button" onClick={() => setError(null)}>
+                    ×
+                  </button>
                 </div>
               )}
 
@@ -704,22 +661,42 @@ export default function Friends() {
                   messages.map((message) => {
                     const mine = isMine(message);
                     return (
-                      <div className={`msg-row ${mine ? 'mine' : 'theirs'}`} key={message.id}>
+                      <div
+                        className={`msg-row ${mine ? 'mine' : 'theirs'}`}
+                        key={message.id}
+                      >
                         <div className="message-content">
-                          <div className={`bubble ${message.kind === 'image' ? 'img-bubble' : ''}`}>
+                          <div
+                            className={`bubble ${
+                              message.kind === 'image' ? 'img-bubble' : ''
+                            }`}
+                          >
                             {message.kind === 'image' ? (
-                              <a href={getMessageText(message)} target="_blank" rel="noreferrer">
-                                <img src={getMessageText(message)} alt="Shared" />
+                              <a
+                                href={getMessageText(message)}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                <img
+                                  src={getMessageText(message)}
+                                  alt="Shared"
+                                />
                               </a>
                             ) : message.kind === 'voice' ? (
                               <div className="voice-note">
-                                <audio controls preload="metadata" src={getMessageText(message)} />
+                                <audio
+                                  controls
+                                  preload="metadata"
+                                  src={getMessageText(message)}
+                                />
                               </div>
                             ) : (
                               <span>{getMessageText(message)}</span>
                             )}
                           </div>
-                          <span className="msg-time">{formatTime(message.created_at)}</span>
+                          <span className="msg-time">
+                            {formatTime(message.created_at)}
+                          </span>
                         </div>
                       </div>
                     );
@@ -735,7 +712,7 @@ export default function Friends() {
                   className="action-icon-btn"
                   onClick={() => imageInputRef.current?.click()}
                   disabled={uploadingMedia || recordingVoice}
-                  title="إرسال صورة"
+                  title="Upload Image"
                   aria-label="Upload Image"
                 >
                   📷
@@ -751,10 +728,14 @@ export default function Friends() {
 
                 <button
                   type="button"
-                  className={`action-icon-btn ${recordingVoice ? 'recording' : ''}`}
+                  className={`action-icon-btn ${
+                    recordingVoice ? 'recording' : ''
+                  }`}
                   onClick={handleVoiceButton}
                   disabled={uploadingMedia}
-                  title={recordingVoice ? "إيقاف التسجيل والإرسال" : "تسجيل فويس"}
+                  title={
+                    recordingVoice ? 'Stop and send voice' : 'Record voice'
+                  }
                   aria-label="Record Voice"
                 >
                   {recordingVoice ? '⏹️' : '🎙️'}
@@ -764,11 +745,11 @@ export default function Friends() {
                   {recordingVoice ? (
                     <div className="recording-state">
                       <span className="recording-dot" />
-                      <span>جاري تسجيل الفويس...</span>
+                      <span>Recording voice note...</span>
                     </div>
                   ) : uploadingMedia ? (
                     <div className="uploading-state">
-                      <span>جاري الرفع...</span>
+                      <span>Uploading...</span>
                     </div>
                   ) : (
                     <input
@@ -796,16 +777,29 @@ export default function Friends() {
       </div>
 
       {showWatchParty && activeFriend && (
-        <div className="modal-backdrop" onClick={() => setShowWatchParty(false)}>
+        <div
+          className="modal-backdrop"
+          onClick={() => setShowWatchParty(false)}
+        >
           <div className="wp-modal" onClick={(e) => e.stopPropagation()}>
             <div className="wp-modal-icon">🎬</div>
             <h3>Start a Watch Party</h3>
-            <p>Invite {getFriendName(activeFriend)} to watch something together.</p>
+            <p>
+              Invite {getFriendName(activeFriend)} to watch something together.
+            </p>
             <div className="wp-sync-row">
-              <button type="button" className="modal-cancel" onClick={() => setShowWatchParty(false)}>
+              <button
+                type="button"
+                className="modal-cancel"
+                onClick={() => setShowWatchParty(false)}
+              >
                 Cancel
               </button>
-              <button type="button" className="modal-confirm" onClick={handleCreateWatchParty}>
+              <button
+                type="button"
+                className="modal-confirm"
+                onClick={handleCreateWatchParty}
+              >
                 Start Party
               </button>
             </div>
