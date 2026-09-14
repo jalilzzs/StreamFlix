@@ -23,12 +23,19 @@ app.get('/', (req, res) => {
 });
 
 // =====================================================
-// INSPECT VSEMBED + JAVASCRIPT
+// DEEP DIAGNOSTIC
 // =====================================================
 
-app.get('/api/inspect-js', async (req, res) => {
-  const targetUrl =
-    req.query.url || 'https://vsembed.ru/embed/movie/550/';
+app.get('/api/diagnose', async (req, res) => {
+  const targetUrl = req.query.url;
+
+  if (!targetUrl) {
+    return res.status(400).json({
+      success: false,
+      stage: 'input',
+      diagnosis: 'ضع الرابط هكذا: ?url=https://example.com'
+    });
+  }
 
   if (!SCRAPER_API_KEY) {
     return res.status(500).json({
@@ -41,11 +48,7 @@ app.get('/api/inspect-js', async (req, res) => {
   const startedAt = Date.now();
 
   try {
-    // -------------------------------------------------
-    // 1. Get VSEmbed page
-    // -------------------------------------------------
-
-    const pageResponse = await axios.get(
+    const response = await axios.get(
       'https://api.scraperapi.com',
       {
         params: {
@@ -53,171 +56,249 @@ app.get('/api/inspect-js', async (req, res) => {
           url: targetUrl
         },
         timeout: 60000,
-        validateStatus: () => true
+        validateStatus: () => true,
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36'
+        }
       }
     );
 
+    const elapsed = Date.now() - startedAt;
+
     const html =
-      typeof pageResponse.data === 'string'
-        ? pageResponse.data
-        : JSON.stringify(pageResponse.data);
+      typeof response.data === 'string'
+        ? response.data
+        : JSON.stringify(response.data);
 
     // -------------------------------------------------
-    // 2. Find script files
+    // Extract iframe URLs
     // -------------------------------------------------
 
-    const scriptUrls = [
-      ...html.matchAll(
-        /<script[^>]+src\s*=\s*["']([^"']+)["']/gi
-      )
-    ].map(match => match[1]);
+    const iframeUrls = [];
 
-    const absoluteScriptUrls = scriptUrls.map(src => {
-      try {
-        return new URL(src, targetUrl).href;
-      } catch {
-        return src;
-      }
-    });
+    const iframeRegex =
+      /<iframe[^>]+src=["']([^"']+)["']/gi;
 
-    const unique = array => [...new Set(array)];
+    let match;
 
-    const scripts = [];
+    while ((match = iframeRegex.exec(html)) !== null) {
+      iframeUrls.push(match[1]);
+    }
 
     // -------------------------------------------------
-    // 3. Download each JavaScript file through
-    //    ScraperAPI
+    // Extract script URLs
     // -------------------------------------------------
 
-    for (const scriptUrl of unique(absoluteScriptUrls)) {
-      try {
-        const scriptResponse = await axios.get(
-          'https://api.scraperapi.com',
-          {
-            params: {
-              api_key: SCRAPER_API_KEY,
-              url: scriptUrl
-            },
-            timeout: 60000,
-            validateStatus: () => true
-          }
-        );
+    const scriptUrls = [];
 
-        const scriptBody =
-          typeof scriptResponse.data === 'string'
-            ? scriptResponse.data
-            : JSON.stringify(scriptResponse.data);
+    const scriptRegex =
+      /<script[^>]+src=["']([^"']+)["']/gi;
 
-        // -------------------------------------------------
-        // Search URLs inside JS
-        // -------------------------------------------------
+    while ((match = scriptRegex.exec(html)) !== null) {
+      scriptUrls.push(match[1]);
+    }
 
-        const urls = [
-          ...scriptBody.matchAll(
-            /https?:\/\/[^\s"'`<>\\]+/gi
-          )
-        ].map(match => match[0]);
+    // -------------------------------------------------
+    // Search interesting references
+    // -------------------------------------------------
 
-        const apiPaths = [
-          ...scriptBody.matchAll(
-            /["'`](\/[^"'`]{2,300})["'`]/g
-          )
-        ].map(match => match[1]);
+    const lower = html.toLowerCase();
 
-        const videoReferences = [
-          ...scriptBody.matchAll(
-            /[^\s"'`<>\\]{0,200}\.(?:m3u8|mp4|mkv|mpd)[^\s"'`<>\\]*/gi
-          )
-        ].map(match => match[0]);
+    const interesting = [];
 
-        const interestingStrings = [
-          ...scriptBody.matchAll(
-            /["'`](.{0,200}(?:iframe|player|video|source|stream|embed|ajax|fetch|axios|m3u8|mp4|playlist).{0,300})["'`]/gi
-          )
-        ].map(match => match[1]);
+    const keywords = [
+      'iframe',
+      'player',
+      'video',
+      'source',
+      'sources',
+      'm3u8',
+      'mp4',
+      'hls',
+      'manifest',
+      'stream',
+      'embed',
+      'token',
+      'api',
+      'ajax',
+      'fetch(',
+      'axios',
+      'xmlhttprequest',
+      'cloudflare',
+      'challenge',
+      'gate'
+    ];
 
-        scripts.push({
-          url: scriptUrl,
-
-          status: scriptResponse.status,
-
-          content_type:
-            scriptResponse.headers['content-type'] || null,
-
-          size: scriptBody.length,
-
-          external_urls: unique(urls).slice(0, 100),
-
-          api_paths: unique(apiPaths).slice(0, 100),
-
-          video_references:
-            unique(videoReferences).slice(0, 100),
-
-          interesting_strings:
-            unique(interestingStrings).slice(0, 100),
-
-          preview: scriptBody.substring(0, 2000)
-        });
-
-      } catch (scriptError) {
-        scripts.push({
-          url: scriptUrl,
-
-          error_code:
-            scriptError.code || null,
-
-          error_message:
-            scriptError.message || null
-        });
+    for (const keyword of keywords) {
+      if (lower.includes(keyword.toLowerCase())) {
+        interesting.push(keyword);
       }
     }
 
     // -------------------------------------------------
-    // 4. Search the HTML itself for important
-    //    JavaScript keywords
+    // Possible URLs in HTML
     // -------------------------------------------------
 
-    const htmlMatches = [
-      ...html.matchAll(
-        /.{0,150}(?:iframe|player|video|source|stream|embed|fetch|axios|ajax|m3u8|mp4|playlist).{0,300}/gi
-      )
-    ].map(match => match[0]);
+    const allUrls = [];
+
+    const urlRegex =
+      /https?:\/\/[^\s"'<>\\]+/gi;
+
+    while ((match = urlRegex.exec(html)) !== null) {
+      let url = match[0]
+        .replace(/[),;]+$/g, '');
+
+      if (!allUrls.includes(url)) {
+        allUrls.push(url);
+      }
+    }
+
+    // Limit output
+    const limitedUrls = allUrls.slice(0, 100);
+
+    // -------------------------------------------------
+    // Diagnosis
+    // -------------------------------------------------
+
+    let diagnosis;
+
+    if (response.status === 401 || response.status === 403) {
+      diagnosis =
+        'المشكل في صلاحية ScraperAPI أو API Key.';
+    } else if (response.status === 429) {
+      diagnosis =
+        'ScraperAPI وصلت إلى Rate Limit.';
+    } else if (response.status === 522) {
+      diagnosis =
+        'الموقع الهدف أعطى 522.';
+    } else if (
+      response.status >= 500 &&
+      response.status <= 599
+    ) {
+      diagnosis =
+        `خطأ HTTP ${response.status} من ScraperAPI أو الموقع الهدف.`;
+    } else if (
+      response.status >= 200 &&
+      response.status < 300
+    ) {
+      if (iframeUrls.length > 0) {
+        diagnosis =
+          'ScraperAPI تعمل والصفحة تحتوي iframe. المرحلة التالية هي فحص iframe.';
+      } else if (
+        lower.includes('m3u8') ||
+        lower.includes('.mp4')
+      ) {
+        diagnosis =
+          'وجدنا مرجع فيديو داخل الصفحة.';
+      } else if (
+        lower.includes('fetch(') ||
+        lower.includes('xmlhttprequest') ||
+        lower.includes('axios')
+      ) {
+        diagnosis =
+          'الصفحة تعتمد على JavaScript/طلبات ديناميكية.';
+      } else {
+        diagnosis =
+          'الصفحة وصلت بنجاح ولكن لم يظهر رابط فيديو مباشر.';
+      }
+    } else {
+      diagnosis =
+        `الموقع رجع HTTP ${response.status}.`;
+    }
 
     return res.json({
-      success: pageResponse.status >= 200 &&
-        pageResponse.status < 300,
+      success: response.status >= 200 && response.status < 300,
 
-      stage: 'javascript_inspection',
+      stage: 'deep_diagnostic',
 
       target_url: targetUrl,
 
-      page_status: pageResponse.status,
+      scraper_status: response.status,
 
-      page_size: html.length,
+      diagnosis,
 
-      page_response_time_ms:
-        Date.now() - startedAt,
+      response_time_ms: elapsed,
 
-      script_count:
-        unique(absoluteScriptUrls).length,
+      content_type:
+        response.headers['content-type'] || null,
 
-      script_urls:
-        unique(absoluteScriptUrls),
+      response_size: html.length,
 
-      html_interesting_matches:
-        unique(htmlMatches).slice(0, 100),
+      is_html:
+        lower.includes('<html') ||
+        lower.includes('<!doctype'),
 
-      scripts
+      has_iframe: iframeUrls.length > 0,
+
+      iframe_count: iframeUrls.length,
+
+      iframe_urls: iframeUrls,
+
+      script_count: scriptUrls.length,
+
+      script_urls: scriptUrls,
+
+      found_m3u8:
+        lower.includes('.m3u8'),
+
+      found_mp4:
+        lower.includes('.mp4'),
+
+      found_fetch:
+        lower.includes('fetch('),
+
+      found_xhr:
+        lower.includes('xmlhttprequest'),
+
+      found_axios:
+        lower.includes('axios'),
+
+      found_cloudflare:
+        lower.includes('cloudflare') ||
+        lower.includes('cf-ray') ||
+        lower.includes('__cf'),
+
+      found_token:
+        lower.includes('token'),
+
+      found_gate:
+        lower.includes('gate'),
+
+      interesting_keywords: interesting,
+
+      discovered_urls: limitedUrls,
+
+      preview: html.substring(0, 3000)
     });
 
   } catch (error) {
+
+    const elapsed = Date.now() - startedAt;
+
+    let diagnosis =
+      'فشل الاتصال بـ ScraperAPI.';
+
+    if (error.code === 'ECONNABORTED') {
+      diagnosis =
+        'انتهت مهلة الانتظار 60 ثانية.';
+    } else if (error.code === 'ENOTFOUND') {
+      diagnosis =
+        'Render لم يتمكن من الوصول إلى ScraperAPI.';
+    } else if (error.code === 'ECONNREFUSED') {
+      diagnosis =
+        'تم رفض الاتصال بالشبكة.';
+    } else if (error.code === 'ETIMEDOUT') {
+      diagnosis =
+        'انتهت مهلة الاتصال بالشبكة.';
+    }
+
     return res.status(200).json({
       success: false,
 
-      stage: 'javascript_inspection_connection',
+      stage: 'scraperapi_connection',
 
-      diagnosis:
-        'فشل أثناء فحص JavaScript عبر ScraperAPI',
+      diagnosis,
 
       error_code:
         error.code || null,
@@ -225,8 +306,7 @@ app.get('/api/inspect-js', async (req, res) => {
       error_message:
         error.message || null,
 
-      response_time_ms:
-        Date.now() - startedAt
+      response_time_ms: elapsed
     });
   }
 });
