@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
+import Hls from 'hls.js';
 
 const API_BASE_URL = 'https://streamflix-api-x0ku.onrender.com';
 
@@ -6,18 +7,21 @@ export default function VideoPlayer({ tmdbId, type = 'movie', season = 1, episod
   const [timeLeft, setTimeLeft] = useState(15);
   const [streamUrl, setStreamUrl] = useState(null);
   const [showPlayer, setShowPlayer] = useState(false);
+  const [forceIframe, setForceIframe] = useState(false);
+  const videoRef = useRef(null);
 
-  // رابط السيرفر التلقائي
+  // سيرفر iframe احتياطي شغال وسريع جداً
   const fallbackUrl = type === 'tv' 
-    ? `https://vidsrc.to/embed/tv/${tmdbId}/${season}/${episode}`
-    : `https://vidsrc.to/embed/movie/${tmdbId}`;
+    ? `https://vidsrc.cc/v2/embed/tv/${tmdbId}/${season}/${episode}`
+    : `https://vidsrc.cc/v2/embed/movie/${tmdbId}`;
 
   useEffect(() => {
     setTimeLeft(15);
     setStreamUrl(null);
     setShowPlayer(false);
+    setForceIframe(false);
 
-    // 1. محاولة جلب رابط البث الصافي في الخلفية
+    // 1. طلب استخراج البث الصافي في الخلفية
     async function checkStream() {
       try {
         const query = type === 'tv' 
@@ -29,15 +33,17 @@ export default function VideoPlayer({ tmdbId, type = 'movie', season = 1, episod
 
         if (data && data.success && data.streamUrl) {
           setStreamUrl(data.streamUrl);
+        } else {
+          setForceIframe(true);
         }
       } catch (e) {
-        console.log("Extraction active fallback");
+        setForceIframe(true);
       }
     }
 
     if (tmdbId) checkStream();
 
-    // 2. العد التنازلي
+    // 2. عداد الـ 15 ثانية
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
@@ -52,26 +58,60 @@ export default function VideoPlayer({ tmdbId, type = 'movie', season = 1, episod
     return () => clearInterval(timer);
   }, [tmdbId, type, season, episode]);
 
-  // بعد انتهاء العداد أو الضغط على زر التخطي
+  // تشغيل HLS أو التحويل المباشر للـ iframe إذا فشل الرابط الصافي
+  useEffect(() => {
+    if (showPlayer && streamUrl && !forceIframe && videoRef.current) {
+      const video = videoRef.current;
+      let hls;
+
+      if (Hls.isSupported()) {
+        hls = new Hls();
+        hls.loadSource(streamUrl);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.ERROR, () => {
+          // في حال وجود حظر 403 على ملفات .m3u8 يحول فوراً للـ iframe
+          setForceIframe(true);
+        });
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = streamUrl;
+      } else {
+        setForceIframe(true);
+      }
+
+      return () => {
+        if (hls) hls.destroy();
+      };
+    }
+  }, [showPlayer, streamUrl, forceIframe]);
+
+  // بعد انتهاء العداد أو ضغط تخطي
   if (showPlayer) {
-    return (
-      <div className="w-full aspect-video bg-black rounded-lg overflow-hidden shadow-lg border border-gray-800">
-        {streamUrl ? (
+    // إذا كان هناك بث صافي شغال بدون أخطاء
+    if (streamUrl && !forceIframe) {
+      return (
+        <div className="w-full aspect-video bg-black rounded-lg overflow-hidden shadow-lg relative">
           <video 
-            src={streamUrl} 
+            ref={videoRef}
             controls 
             autoPlay 
+            playsInline
+            onError={() => setForceIframe(true)} 
             className="w-full h-full object-contain" 
           />
-        ) : (
-          <iframe 
-            src={fallbackUrl} 
-            title="Video Player"
-            className="w-full h-full border-0" 
-            allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-            allowFullScreen
-          />
-        )}
+        </div>
+      );
+    }
+
+    // المشغل الأساسي المباشر (Iframe)
+    return (
+      <div className="w-full aspect-video bg-black rounded-lg overflow-hidden shadow-lg relative">
+        <iframe 
+          src={fallbackUrl} 
+          title="Video Player"
+          className="w-full h-full border-0 absolute top-0 left-0" 
+          allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+          allowFullScreen
+        />
       </div>
     );
   }
