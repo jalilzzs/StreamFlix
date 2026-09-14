@@ -8,7 +8,6 @@ app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 const PORT = process.env.PORT || 5000;
-// مفتاح الخدمة المجانية تحطه في الـ Environment تاع Render باسم SCRAPER_API_KEY
 const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY;
 
 const flixhq = new MOVIES.FlixHQ();
@@ -24,18 +23,19 @@ app.get('/api/extract', async (req, res) => {
   }
 
   try {
+    if (!SCRAPER_API_KEY) {
+      return res.status(500).json({ success: false, error: 'مفتاح SCRAPER_API_KEY غير معرف في إعدادات البيئة' });
+    }
+
     const targetUrl = `https://flixhq.to/search/${tmdbId}`;
+    const scraperUrl = `http://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&render=true&url=${encodeURIComponent(targetUrl)}`;
     
-    // استخدام API خارجي مجاني لتجاوز الحماية بطلب HTTP عادي بدون متصفح ثقيل
-    const scraperUrl = `http://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(targetUrl)}`;
-    
-    const solverResponse = await axios.get(scraperUrl, { timeout: 30000 });
+    const solverResponse = await axios.get(scraperUrl, { timeout: 60000 });
 
     if (!solverResponse.data) {
       return res.status(500).json({ success: false, error: 'فشل جلب الصفحة عبر خدمة التجاوز' });
     }
 
-    // البحث عبر مكتبة Consumet
     const searchResults = await flixhq.search(String(tmdbId));
     if (!searchResults || !searchResults.results || searchResults.results.length === 0) {
       return res.status(404).json({ success: false, error: 'لم يتم العثور على المحتوى' });
