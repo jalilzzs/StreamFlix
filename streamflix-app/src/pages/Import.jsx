@@ -11,6 +11,7 @@ export default function Import() {
   const [message, setMessage] = useState('');
 
   const TMDB_API_KEY = 'bb04576f643a69128d4924c5aea7c339';
+
   const handleSearch = async (e) => {
     e.preventDefault();
     if (!query.trim()) return;
@@ -65,7 +66,10 @@ export default function Import() {
             type: 'movie',
             is_premium: false,
             poster_url: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : '',
-            url: generatedUrl
+            url: generatedUrl,
+            
+            // 👇 إضافة tmdb_id تلقائياً للباك أند لاستخراج البث الصافي
+            tmdb_id: movie.id
           }
         ]);
 
@@ -74,7 +78,7 @@ export default function Import() {
         setMessage(`خطأ قاعدة البيانات (${importStatus}): ${error.message}`);
       } else {
         setImportStatus(true);
-        setMessage(`تم استيراد فيلم "${movie.title || movie.name}" بنجاح!`);
+        setMessage(`تم استيراد فيلم "${movie.title || movie.name}" (ID: ${movie.id}) بنجاح!`);
       }
     } catch (err) {
       setImportStatus('G');
@@ -99,7 +103,10 @@ export default function Import() {
             type: 'movie',
             is_premium: false,
             poster_url: 'https://image.tmdb.org/t/p/w500/pB8BM7pdSp6B6Ih7QZ4DrQ3PmJK.jpg',
-            url: generatedUrl
+            url: generatedUrl,
+            
+            // 👇 إضافة tmdb_id في التجربة أيضاً
+            tmdb_id: testMovieId
           }
         ]);
 
@@ -108,7 +115,7 @@ export default function Import() {
         setMessage(`خطأ في الإضافة التجريبية (${testStatus}): ${error.message}`);
       } else {
         setTestStatus(true);
-        setMessage('تم إضافة الفيلم التجريبي بنجاح!');
+        setMessage('تم إضافة الفيلم التجريبي مع TMDB ID (550) بنجاح!');
       }
     } catch (err) {
       setTestStatus('J');
