@@ -54,7 +54,7 @@ export async function updateProfile(userId, patch) {
   return data;
 }
 
-// ---- Titles (تم التعديل لإرجاع العدد الإجمالي المضمون وإدارة الصفحات) ----
+// ---- Titles ---------------------------------------------------------------
 
 export async function fetchTitles({
   type,
@@ -69,18 +69,12 @@ export async function fetchTitles({
 } = {}) {
   let query = supabase.from('titles').select('*', { count: 'exact' });
 
-  // تصفية حسب النوع (أفلام / مسلسلات) مع إمكانية عرض الكل
   if (type && type !== 'all') query = query.eq('type', type);
-  
-  // تصفية حسب التصنيف
   if (genre && genre !== 'all') query = query.contains('genres', [genre]);
-  
-  // تصفية حسب السنة والتقييم والبحث
   if (year) query = query.eq('release_year', year);
   if (minRating) query = query.gte('rating_avg', minRating);
   if (search) query = query.ilike('name', `%${search}%`);
 
-  // الترتيب
   if (sortBy === 'rating') {
     query = query.order('rating_avg', { ascending: false });
   } else if (sortBy === 'year') {
@@ -89,7 +83,6 @@ export async function fetchTitles({
     query = query.order('created_at', { ascending: false });
   }
 
-  // حساب النطاق للـ Pagination
   if (page !== undefined && page !== null) {
     const from = (page - 1) * limit;
     const to = from + limit - 1;
@@ -134,11 +127,7 @@ export async function fetchEpisodes(titleId) {
   return data || [];
 }
 
-export async function fetchRecommendations(
-  genres,
-  excludeId,
-  limit = 12
-) {
+export async function fetchRecommendations(genres, excludeId, limit = 12) {
   let query = supabase
     .from('titles')
     .select('*')
@@ -297,63 +286,68 @@ export async function fetchContinueWatching(userId, limit = 10) {
 export async function fetchWatchedEpisodeIds(userId, titleId) {
   const { data, error } = await supabase
     .from('watch_history')
-    .select(
-      'episode_id, completed, episodes!inner(title_id)'
-    )
+    .select('episode_id, completed, episodes!inner(title_id)')
     .eq('user_id', userId)
     .eq('episodes.title_id', titleId)
     .eq('completed', true);
 
   if (error) throw error;
 
-  return new Set(
-    (data || []).map((r) => r.episode_id)
-  );
+  return new Set((data || []).map((r) => r.episode_id));
 }
 
-// ---- Friendships ----------------------------------------------------------
+// ---- Friendships (معدلة تدعم Object و Direct Params والبحث بالـ ID و Code) --
 
-export async function sendFriendRequestByCode(
-  requesterId,
-  targetUserCode
-) {
+export async function sendFriendRequestByCode(requesterId, targetUserCode) {
+  let reqId = requesterId;
+  let code = targetUserCode;
+
+  // إذا تم تمرير البيانات كـ Object مثل { userId, friendCode }
+  if (typeof requesterId === 'object' && requesterId !== null) {
+    reqId = requesterId.userId;
+    code = requesterId.friendCode;
+  }
+
+  if (!code || typeof code !== 'string') {
+    throw new Error('يرجى إدخال كود الصديق.');
+  }
+
+  const cleanCode = code.trim();
+
+  // البحث عن المستخدم سواء بالـ id (UUID) أو الـ user_code
   const { data: target, error: findErr } = await supabase
     .from('profiles')
     .select('id')
-    .eq('user_code', targetUserCode.trim())
+    .or(`id.eq.${cleanCode},user_code.eq.${cleanCode}`)
     .maybeSingle();
 
   if (findErr) throw findErr;
 
   if (!target) {
-    throw new Error('No user found with that ID.');
+    throw new Error('لم يتم العثور على مستخدم بهذا الكود.');
   }
 
-  if (target.id === requesterId) {
-    throw new Error("You can't add yourself.");
+  if (target.id === reqId) {
+    throw new Error('لا يمكنك إضافة نفسك.');
   }
 
-  const { error } = await supabase
-    .from('friendships')
-    .insert({
-      requester_id: requesterId,
-      addressee_id: target.id,
-      status: 'pending',
-    });
+  const { error } = await supabase.from('friendships').insert({
+    requester_id: reqId,
+    addressee_id: target.id,
+    status: 'pending',
+  });
 
   if (error) {
     if (error.code === '23505') {
-      throw new Error('Friend request already sent.');
+      throw new Error('تم إرسال طلب الصداقة من قبل أو أنتما أصدقاء بالفعل.');
     }
-
     throw error;
   }
+
+  return true;
 }
 
-export async function respondToFriendRequest(
-  friendshipId,
-  status
-) {
+export async function respondToFriendRequest(friendshipId, status) {
   const { error } = await supabase
     .from('friendships')
     .update({ status })
@@ -365,20 +359,14 @@ export async function respondToFriendRequest(
 export async function fetchFriends(userId) {
   const { data, error } = await supabase
     .from('friendships')
-    .select(
-      '*, requester:requester_id(*), addressee:addressee_id(*)'
-    )
-    .or(
-      `requester_id.eq.${userId},addressee_id.eq.${userId}`
-    )
+    .select('*, requester:requester_id(*), addressee:addressee_id(*)')
+    .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
     .eq('status', 'accepted');
 
   if (error) throw error;
 
   return (data || []).map((f) =>
-    f.requester_id === userId
-      ? f.addressee
-      : f.requester
+    f.requester_id === userId ? f.addressee : f.requester
   );
 }
 
@@ -395,11 +383,7 @@ export async function fetchPendingRequests(userId) {
 
 // ---- Messages / chat --------------------------------------------------
 
-export async function fetchMessages(
-  userId,
-  friendId,
-  limit = 100
-) {
+export async function fetchMessages(userId, friendId, limit = 100) {
   const { data, error } = await supabase
     .from('messages')
     .select('*')
@@ -444,9 +428,7 @@ function getFileExtension(file) {
     ? originalName.split('.').pop().toLowerCase()
     : '';
 
-  if (originalExtension) {
-    return originalExtension;
-  }
+  if (originalExtension) return originalExtension;
 
   const mime = file?.type || '';
 
@@ -463,18 +445,9 @@ function getFileExtension(file) {
   return 'bin';
 }
 
-export async function uploadChatMedia({
-  userId,
-  file,
-  kind = 'image',
-}) {
-  if (!userId) {
-    throw new Error('You must be signed in.');
-  }
-
-  if (!file) {
-    throw new Error('No file selected.');
-  }
+export async function uploadChatMedia({ userId, file, kind = 'image' }) {
+  if (!userId) throw new Error('You must be signed in.');
+  if (!file) throw new Error('No file selected.');
 
   const maxImageSize = 15 * 1024 * 1024;
   const maxAudioSize = 25 * 1024 * 1024;
@@ -488,7 +461,6 @@ export async function uploadChatMedia({
   }
 
   const extension = getFileExtension(file);
-
   const filePath = `${userId}/${kind}-${Date.now()}-${Math.random()
     .toString(36)
     .slice(2, 10)}.${extension}`;
@@ -501,15 +473,11 @@ export async function uploadChatMedia({
       contentType: file.type || undefined,
     });
 
-  if (uploadError) {
-    throw uploadError;
-  }
+  if (uploadError) throw uploadError;
 
   const {
     data: { publicUrl },
-  } = supabase.storage
-    .from('chat-media')
-    .getPublicUrl(filePath);
+  } = supabase.storage.from('chat-media').getPublicUrl(filePath);
 
   return {
     path: filePath,
@@ -523,24 +491,16 @@ export function getChatMediaUrl(path) {
 
   const {
     data: { publicUrl },
-  } = supabase.storage
-    .from('chat-media')
-    .getPublicUrl(path);
+  } = supabase.storage.from('chat-media').getPublicUrl(path);
 
   return publicUrl;
 }
 
 // ---- Messages Realtime ----------------------------------------------------
 
-export function subscribeToMessages(
-  userId,
-  friendId,
-  onMessage
-) {
+export function subscribeToMessages(userId, friendId, onMessage) {
   const channel = supabase
-    .channel(
-      `messages:${[userId, friendId].sort().join(':')}`
-    )
+    .channel(`messages:${[userId, friendId].sort().join(':')}`)
     .on(
       'postgres_changes',
       {
@@ -550,31 +510,21 @@ export function subscribeToMessages(
       },
       (payload) => {
         const m = payload.new;
-
         const matches =
-          (m.sender_id === userId &&
-            m.receiver_id === friendId) ||
-          (m.sender_id === friendId &&
-            m.receiver_id === userId);
+          (m.sender_id === userId && m.receiver_id === friendId) ||
+          (m.sender_id === friendId && m.receiver_id === userId);
 
-        if (matches) {
-          onMessage(m);
-        }
+        if (matches) onMessage(m);
       }
     )
     .subscribe();
 
-  return () =>
-    supabase.removeChannel(channel);
+  return () => supabase.removeChannel(channel);
 }
 
 // ---- Watch Party ------------------------------------------------------
 
-export async function createWatchParty({
-  hostId,
-  titleId,
-  episodeId,
-}) {
+export async function createWatchParty({ hostId, titleId, episodeId }) {
   const { data, error } = await supabase
     .from('watch_parties')
     .insert({
@@ -588,42 +538,29 @@ export async function createWatchParty({
 
   if (error) throw error;
 
-  await supabase
-    .from('watch_party_members')
-    .insert({
-      party_id: data.id,
-      user_id: hostId,
-    });
+  await supabase.from('watch_party_members').insert({
+    party_id: data.id,
+    user_id: hostId,
+  });
 
   return data;
 }
 
-export async function joinWatchParty(
-  partyId,
-  userId
-) {
-  const { error } = await supabase
-    .from('watch_party_members')
-    .insert({
-      party_id: partyId,
-      user_id: userId,
-    });
+export async function joinWatchParty(partyId, userId) {
+  const { error } = await supabase.from('watch_party_members').insert({
+    party_id: partyId,
+    user_id: userId,
+  });
 
   if (error && error.code !== '23505') throw error;
 }
 
-export async function updatePartyPlayback(
-  partyId,
-  playbackPosition,
-  status
-) {
+export async function updatePartyPlayback(partyId, playbackPosition, status) {
   const patch = {
     playback_position: Math.floor(playbackPosition),
   };
 
-  if (status) {
-    patch.status = status;
-  }
+  if (status) patch.status = status;
 
   const { error } = await supabase
     .from('watch_parties')
@@ -633,10 +570,7 @@ export async function updatePartyPlayback(
   if (error) throw error;
 }
 
-export function subscribeToParty(
-  partyId,
-  onUpdate
-) {
+export function subscribeToParty(partyId, onUpdate) {
   const channel = supabase
     .channel(`party:${partyId}`)
     .on(
@@ -651,6 +585,5 @@ export function subscribeToParty(
     )
     .subscribe();
 
-  return () =>
-    supabase.removeChannel(channel);
+  return () => supabase.removeChannel(channel);
 }
