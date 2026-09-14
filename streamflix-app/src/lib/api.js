@@ -54,7 +54,7 @@ export async function updateProfile(userId, patch) {
   return data;
 }
 
-// ---- Titles -----------------------------------------------------------
+// ---- Titles (تم التعديل لدعم 24 عنصر بالصفحة وتصفح جميع الأفلام والمسلسلات) ----
 
 export async function fetchTitles({
   type,
@@ -62,22 +62,44 @@ export async function fetchTitles({
   year,
   minRating,
   search,
-  limit = 30,
+  sortBy = 'created_at',
+  page = 1,
+  limit = 24,
 } = {}) {
-  let query = supabase.from('titles').select('*').limit(limit);
+  let query = supabase.from('titles').select('*', { count: 'exact' });
 
-  if (type) query = query.eq('type', type);
-  if (genre) query = query.contains('genres', [genre]);
+  // تصفية حسب النوع (أفلام / مسلسلات) مع إمكانية عرض الكل
+  if (type && type !== 'all') query = query.eq('type', type);
+  
+  // تصفية حسب التصنيف
+  if (genre && genre !== 'all') query = query.contains('genres', [genre]);
+  
+  // تصفية حسب السنة والتقييم والبحث
   if (year) query = query.eq('release_year', year);
   if (minRating) query = query.gte('rating_avg', minRating);
   if (search) query = query.ilike('name', `%${search}%`);
 
-  const { data, error } = await query.order('created_at', {
-    ascending: false,
-  });
+  // الترتيب
+  if (sortBy === 'rating') {
+    query = query.order('rating_avg', { ascending: false });
+  } else if (sortBy === 'year') {
+    query = query.order('release_year', { ascending: false });
+  } else {
+    query = query.order('created_at', { ascending: false });
+  }
+
+  // التقسيم على صفحات (Pagination - 24 عنصر لكل صفحة)
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+  query = query.range(from, to);
+
+  const { data, count, error } = await query;
 
   if (error) throw error;
-  return data || [];
+
+  const result = data || [];
+  result.count = count || 0;
+  return result;
 }
 
 export async function fetchTitleById(id) {
