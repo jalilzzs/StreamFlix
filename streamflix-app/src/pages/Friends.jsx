@@ -129,7 +129,7 @@ export default function Friends() {
   }, [messages]);
 
   /* =========================
-     ADD FRIEND
+     ADD FRIEND (تعديل الاستدعاء)
   ========================= */
 
   const handleAddFriend = async (event) => {
@@ -142,10 +142,8 @@ export default function Friends() {
     try {
       setError(null);
 
-      await sendFriendRequestByCode({
-        userId,
-        friendCode: code,
-      });
+      // التعديل: تمرير المعلمات بشكل منفصل وليس كـ Object
+      await sendFriendRequestByCode(userId, code);
 
       setAddValue('');
       await loadFriends();
@@ -156,17 +154,15 @@ export default function Friends() {
   };
 
   /* =========================
-     RESPOND FRIEND REQUEST
+     RESPOND FRIEND REQUEST (تعديل الحالة)
   ========================= */
 
   const handleFriendRequest = async (requestId, accept) => {
     try {
       setError(null);
 
-      await respondToFriendRequest({
-        requestId,
-        accept,
-      });
+      // التعديل: تحويل boolean إلى 'accepted' أو 'rejected'
+      await respondToFriendRequest(requestId, accept ? 'accepted' : 'rejected');
 
       await loadFriends();
     } catch (err) {
