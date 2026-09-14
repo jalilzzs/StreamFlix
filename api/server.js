@@ -10,96 +10,121 @@ app.use(express.json());
 const PORT = process.env.PORT || 5000;
 const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY;
 
-function makeError(stage, error) {
-  return {
-    stage,
-    success: false,
-    message: error?.message || 'Unknown error',
-    code: error?.code || null,
-    status: error?.response?.status || null,
-    statusText: error?.response?.statusText || null,
-    responseData:
-      typeof error?.response?.data === 'string'
-        ? error.response.data.slice(0, 1000)
-        : error?.response?.data || null,
-    url: error?.config?.url || null,
-    method: error?.config?.method || null
-  };
-}
+// =====================================================
+// BASIC TEST
+// =====================================================
 
-app.get('/api/diagnostic', async (req, res) => {
-  const url = req.query.url;
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    server: 'StreamFlix Backend',
+    status: 'online'
+  });
+});
 
-  const result = {
-    success: false,
-    time: new Date().toISOString(),
-    scraperApiConfigured: !!SCRAPER_API_KEY,
-    stages: []
-  };
+// =====================================================
+// SCRAPERAPI DIAGNOSTIC
+// =====================================================
 
-  if (!url) {
-    return res.status(400).json({
-      ...result,
-      error: 'استعمل /api/diagnostic?url=URL'
+app.get('/api/test-scraper', async (req, res) => {
+  const testUrl = req.query.url || 'https://example.com';
+
+  if (!SCRAPER_API_KEY) {
+    return res.status(500).json({
+      success: false,
+      stage: 'configuration',
+      diagnosis: 'SCRAPER_API_KEY غير موجود في Environment Variables على Render'
     });
   }
 
-  // المرحلة 1: الوصول إلى الرابط
-  try {
-    result.stages.push({
-      stage: 'request',
-      status: 'started',
-      url
-    });
+  const startedAt = Date.now();
 
-    const response = await axios.get(url, {
-      timeout: 30000,
-      maxRedirects: 5,
+  try {
+    const response = await axios.get('https://api.scraperapi.com', {
+      params: {
+        api_key: SCRAPER_API_KEY,
+        url: testUrl
+      },
+      timeout: 60000,
       validateStatus: () => true
     });
 
-    result.stages.push({
-      stage: 'request',
-      status: 'completed',
-      httpStatus: response.status,
-      statusText: response.statusText,
-      finalUrl: response.request?.res?.responseUrl || url,
-      contentType: response.headers?.['content-type'] || null,
-      server: response.headers?.server || null
-    });
+    const elapsed = Date.now() - startedAt;
 
-    if (response.status >= 400) {
-      return res.status(502).json({
-        ...result,
-        error: 'الرابط رجع HTTP error',
-        failedStage: 'request'
-      });
+    let diagnosis = 'غير معروف';
+
+    if (response.status >= 200 && response.status < 300) {
+      diagnosis = 'ScraperAPI تعمل بشكل صحيح';
+    } else if (response.status === 401 || response.status === 403) {
+      diagnosis = 'مشكلة في API Key أو صلاحيات ScraperAPI';
+    } else if (response.status === 429) {
+      diagnosis = 'ScraperAPI رفضت الطلب بسبب Rate Limit أو حدود الاستخدام';
+    } else if (response.status === 522) {
+      diagnosis = 'الموقع الهدف لم يستجب في الوقت المناسب';
+    } else if (response.status >= 500) {
+      diagnosis = 'خطأ من ScraperAPI أو من الموقع الهدف';
     }
 
-    result.success = true;
+    return res.status(200).json({
+      success: response.status >= 200 && response.status < 300,
 
-    return res.json(result);
+      stage: 'scraperapi',
+
+      scraper_status: response.status,
+
+      diagnosis,
+
+      target_url: testUrl,
+
+      response_time_ms: elapsed,
+
+      content_type: response.headers['content-type'] || null,
+
+      response_size:
+        typeof response.data === 'string'
+          ? response.data.length
+          : JSON.stringify(response.data).length,
+
+      preview:
+        typeof response.data === 'string'
+          ? response.data.substring(0, 500)
+          : response.data
+    });
 
   } catch (error) {
-    const diagnostic = makeError('request', error);
+    const elapsed = Date.now() - startedAt;
 
-    return res.status(502).json({
-      ...result,
-      error: 'فشل الاتصال بالرابط',
-      failedStage: 'request',
-      diagnostic
+    let diagnosis = 'فشل الاتصال بـ ScraperAPI';
+
+    if (error.code === 'ECONNABORTED') {
+      diagnosis = 'انتهت مهلة الانتظار أثناء الاتصال بـ ScraperAPI';
+    } else if (error.code === 'ENOTFOUND') {
+      diagnosis = 'Render لم يتمكن من الوصول إلى api.scraperapi.com';
+    } else if (error.code === 'ECONNREFUSED') {
+      diagnosis = 'تم رفض الاتصال بـ ScraperAPI';
+    } else if (error.code === 'ETIMEDOUT') {
+      diagnosis = 'انتهت مهلة الاتصال بالشبكة';
+    }
+
+    return res.status(200).json({
+      success: false,
+
+      stage: 'scraperapi_connection',
+
+      diagnosis,
+
+      error_code: error.code || null,
+
+      error_message: error.message || 'Unknown error',
+
+      response_time_ms: elapsed
     });
   }
 });
 
-app.get('/api/health', (req, res) => {
-  res.json({
-    success: true,
-    server: 'online',
-    scraperApiConfigured: !!SCRAPER_API_KEY,
-    time: new Date().toISOString()
-  });
-});
+// =====================================================
+// SERVER
+// =====================================================
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
