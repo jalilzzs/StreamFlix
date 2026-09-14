@@ -1,71 +1,60 @@
-const express = require('express');
-const cors = require('cors');
-const { MOVIES } = require('@consumet/extensions');
+import express from 'express';
+import cors from 'cors';
+import { MOVIES } from '@consumet/extensions';
 
 const app = express();
-
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 const PORT = process.env.PORT || 5000;
-
-// تهيئة محرك FlixHQ
 const flixhq = new MOVIES.FlixHQ();
 
-/**
- * 1. مسار البحث بـ TMDB أو اسم الفيلم/المسلسل
- * GET /api/search?q=avatar
- */
-app.get('/api/search', async (req, res) => {
-  try {
-    const { q } = req.query;
-    if (!q) {
-      return res.status(400).json({ success: false, error: 'كلمة البحث مطلوب' });
-    }
-
-    const results = await flixhq.search(q);
-    return res.json({ success: true, data: results });
-  } catch (error) {
-    return res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 2. مسار استخراج رابط البث المباشر (m3u8)
- * GET /api/extract?id=movie/watch-avatar-1234
- */
 app.get('/api/extract', async (req, res) => {
-  const { id, episodeId } = req.query;
-
-  if (!id) {
-    return res.status(400).json({ success: false, error: 'معرف المحتوى (id) مطلوب' });
-  }
-
   try {
-    let targetEpisodeId = episodeId;
+    // التقاط tmdb أو id من رابط الفرونتاند
+    const tmdbId = req.query.tmdb || req.query.id;
+    const type = req.query.type || 'movie';
+    const season = req.query.season || 1;
+    const episode = req.query.episode || 1;
 
-    // في حال عدم إرسال episodeId (أفلام)، نقتطع أول حلقة/مشغل متوفر تلقائياً
-    if (!targetEpisodeId) {
-      const mediaInfo = await flixhq.fetchMediaInfo(id);
-      if (!mediaInfo.episodes || mediaInfo.episodes.length === 0) {
-        return res.status(404).json({ success: false, error: 'لم يتم العثور على مصدر بث' });
-      }
-      targetEpisodeId = mediaInfo.episodes[0].id;
+    if (!tmdbId) {
+      return res.status(400).json({ success: false, error: 'رقم tmdb مطلوب' });
     }
 
-    // استخراج مصادر البث الصافية (.m3u8)
+    // البحث في Consumet باستعمال رقم الـ TMDB أو كلمة مفتاحية
+    const searchResults = await flixhq.search(String(tmdbId));
+    
+    if (!searchResults.results || searchResults.results.length === 0) {
+      // محاولة ثانية ببحث عام إذا لمჩيّد الرقم مباشرة
+      const fallbackSearch = await flixhq.search(`movie ${tmdbId}`);
+      if (!fallbackSearch.results || fallbackSearch.results.length === 0) {
+        return res.status(404).json({ success: false, error: 'لم يتم العثور على الفيلم في المصدر' });
+      }
+      var mediaId = fallbackSearch.results[0].id;
+    } else {
+      var mediaId = searchResults.results[0].id;
+    }
+
+    const mediaInfo = await flixhq.fetchMediaInfo(mediaId);
+    
+    let targetEpisodeId = mediaInfo.episodes[0].id;
+    if (type === 'tv' && mediaInfo.episodes) {
+      const targetEp = mediaInfo.episodes.find(ep => ep.season == season && ep.number == episode);
+      if (targetEp) targetEpisodeId = targetEp.id;
+    }
+
     const sourcesData = await flixhq.fetchEpisodeSources(targetEpisodeId);
 
     return res.json({
       success: true,
-      sources: sourcesData.sources,       // تحتوي على روابط m3u8 والجودات
-      subtitles: sourcesData.subtitles   // تحتوي على ملفات الترجمة vtt
+      sources: sourcesData.sources,
+      subtitles: sourcesData.subtitles || []
     });
 
   } catch (error) {
     return res.status(500).json({ 
       success: false, 
-      error: 'فشل استخراج رابط البث', 
+      error: 'فشل استخراج البث الصافي', 
       details: error.message 
     });
   }
