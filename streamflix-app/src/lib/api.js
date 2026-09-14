@@ -54,7 +54,7 @@ export async function updateProfile(userId, patch) {
   return data;
 }
 
-// ---- Titles -----------------------------------------------------------
+// ---- Titles (تعديل نظام الصفحات والـ Range) --------------------------------
 
 export async function fetchTitles({
   type,
@@ -62,9 +62,19 @@ export async function fetchTitles({
   year,
   minRating,
   search,
-  limit = 30,
+  page = 1,
+  limit = 24,
+  offset,
 } = {}) {
-  let query = supabase.from('titles').select('*').limit(limit);
+  // حساب بداية ونهاية المدى لكل صفحة
+  const start = offset !== undefined ? offset : (page - 1) * limit;
+  const end = start + limit - 1;
+
+  // إضافة { count: 'exact' } لجلب العدد الحقيقي الكلي من Supabase
+  let query = supabase
+    .from('titles')
+    .select('*', { count: 'exact' })
+    .range(start, end);
 
   if (type) query = query.eq('type', type);
   if (genre) query = query.contains('genres', [genre]);
@@ -72,12 +82,14 @@ export async function fetchTitles({
   if (minRating) query = query.gte('rating_avg', minRating);
   if (search) query = query.ilike('name', `%${search}%`);
 
-  const { data, error } = await query.order('created_at', {
+  const { data, count, error } = await query.order('created_at', {
     ascending: false,
   });
 
   if (error) throw error;
-  return data || [];
+  
+  // إرجاع مصفوفة البيانات والعدد الإجمالي الكلي (مثلاً 683)
+  return { data: data || [], count: count || 0 };
 }
 
 export async function fetchTitleById(id) {
