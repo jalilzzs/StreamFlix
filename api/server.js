@@ -10,10 +10,6 @@ app.use(express.json());
 const PORT = process.env.PORT || 5000;
 const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY;
 
-// =====================================================
-// BASIC TEST
-// =====================================================
-
 app.get('/', (req, res) => {
   res.json({
     success: true,
@@ -23,19 +19,13 @@ app.get('/', (req, res) => {
 });
 
 // =====================================================
-// DEEP DIAGNOSTIC
+// JAVASCRIPT FETCH DIAGNOSTIC
 // =====================================================
 
-app.get('/api/diagnose', async (req, res) => {
-  const targetUrl = req.query.url;
-
-  if (!targetUrl) {
-    return res.status(400).json({
-      success: false,
-      stage: 'input',
-      diagnosis: 'ضع الرابط هكذا: ?url=https://example.com'
-    });
-  }
+app.get('/api/inspect-js', async (req, res) => {
+  const targetUrl =
+    req.query.url ||
+    'https://vsembed.ru/embed/movie/550/';
 
   if (!SCRAPER_API_KEY) {
     return res.status(500).json({
@@ -48,7 +38,7 @@ app.get('/api/diagnose', async (req, res) => {
   const startedAt = Date.now();
 
   try {
-    const response = await axios.get(
+    const page = await axios.get(
       'https://api.scraperapi.com',
       {
         params: {
@@ -56,264 +46,238 @@ app.get('/api/diagnose', async (req, res) => {
           url: targetUrl
         },
         timeout: 60000,
-        validateStatus: () => true,
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36'
-        }
+        validateStatus: () => true
       }
     );
 
-    const elapsed = Date.now() - startedAt;
-
     const html =
-      typeof response.data === 'string'
-        ? response.data
-        : JSON.stringify(response.data);
+      typeof page.data === 'string'
+        ? page.data
+        : JSON.stringify(page.data);
 
-    // -------------------------------------------------
-    // Extract iframe URLs
-    // -------------------------------------------------
-
-    const iframeUrls = [];
-
-    const iframeRegex =
-      /<iframe[^>]+src=["']([^"']+)["']/gi;
-
-    let match;
-
-    while ((match = iframeRegex.exec(html)) !== null) {
-      iframeUrls.push(match[1]);
-    }
-
-    // -------------------------------------------------
-    // Extract script URLs
-    // -------------------------------------------------
-
-    const scriptUrls = [];
+    // استخراج ملفات JavaScript
+    const scripts = [];
 
     const scriptRegex =
       /<script[^>]+src=["']([^"']+)["']/gi;
 
+    let match;
+
     while ((match = scriptRegex.exec(html)) !== null) {
-      scriptUrls.push(match[1]);
+      scripts.push(match[1]);
     }
 
-    // -------------------------------------------------
-    // Search interesting references
-    // -------------------------------------------------
+    // البحث عن أجزاء fetch في الصفحة
+    const fetchMatches = [];
 
-    const lower = html.toLowerCase();
+    const fetchRegex =
+      /fetch\s*\([\s\S]{0,1000}?\)/gi;
 
-    const interesting = [];
+    while ((match = fetchRegex.exec(html)) !== null) {
+      fetchMatches.push(match[0]);
+    }
+
+    // البحث عن المسارات المحتملة للـAPI
+    const apiPaths = [];
+
+    const pathRegex =
+      /["'`](\/[^"'`\s]{1,200}(?:api|json|php|ajax|token|source|stream|player)[^"'`\s]{0,200})["'`]/gi;
+
+    while ((match = pathRegex.exec(html)) !== null) {
+      if (!apiPaths.includes(match[1])) {
+        apiPaths.push(match[1]);
+      }
+    }
+
+    // كلمات مهمة
+    const interestingStrings = [];
 
     const keywords = [
-      'iframe',
-      'player',
-      'video',
+      'fetch(',
+      'token',
+      'gate',
       'source',
       'sources',
+      'stream',
+      'player',
+      'api',
+      'json',
+      'ajax',
+      'manifest',
       'm3u8',
       'mp4',
-      'hls',
-      'manifest',
-      'stream',
-      'embed',
-      'token',
-      'api',
-      'ajax',
-      'fetch(',
-      'axios',
-      'xmlhttprequest',
-      'cloudflare',
-      'challenge',
-      'gate'
+      'iframe',
+      'postMessage'
     ];
 
-    for (const keyword of keywords) {
-      if (lower.includes(keyword.toLowerCase())) {
-        interesting.push(keyword);
+    for (const word of keywords) {
+      if (
+        html.toLowerCase().includes(word.toLowerCase())
+      ) {
+        interestingStrings.push(word);
       }
     }
 
-    // -------------------------------------------------
-    // Possible URLs in HTML
-    // -------------------------------------------------
+    // تحميل ملفات JS المرتبطة بالصفحة
+    const jsResults = [];
 
-    const allUrls = [];
+    for (const script of scripts.slice(0, 10)) {
+      let scriptUrl;
 
-    const urlRegex =
-      /https?:\/\/[^\s"'<>\\]+/gi;
-
-    while ((match = urlRegex.exec(html)) !== null) {
-      let url = match[0]
-        .replace(/[),;]+$/g, '');
-
-      if (!allUrls.includes(url)) {
-        allUrls.push(url);
+      try {
+        scriptUrl = new URL(
+          script,
+          targetUrl
+        ).href;
+      } catch {
+        continue;
       }
-    }
 
-    // Limit output
-    const limitedUrls = allUrls.slice(0, 100);
+      try {
+        const js = await axios.get(
+          'https://api.scraperapi.com',
+          {
+            params: {
+              api_key: SCRAPER_API_KEY,
+              url: scriptUrl
+            },
+            timeout: 60000,
+            validateStatus: () => true
+          }
+        );
 
-    // -------------------------------------------------
-    // Diagnosis
-    // -------------------------------------------------
+        const code =
+          typeof js.data === 'string'
+            ? js.data
+            : JSON.stringify(js.data);
 
-    let diagnosis;
+        const lower = code.toLowerCase();
 
-    if (response.status === 401 || response.status === 403) {
-      diagnosis =
-        'المشكل في صلاحية ScraperAPI أو API Key.';
-    } else if (response.status === 429) {
-      diagnosis =
-        'ScraperAPI وصلت إلى Rate Limit.';
-    } else if (response.status === 522) {
-      diagnosis =
-        'الموقع الهدف أعطى 522.';
-    } else if (
-      response.status >= 500 &&
-      response.status <= 599
-    ) {
-      diagnosis =
-        `خطأ HTTP ${response.status} من ScraperAPI أو الموقع الهدف.`;
-    } else if (
-      response.status >= 200 &&
-      response.status < 300
-    ) {
-      if (iframeUrls.length > 0) {
-        diagnosis =
-          'ScraperAPI تعمل والصفحة تحتوي iframe. المرحلة التالية هي فحص iframe.';
-      } else if (
-        lower.includes('m3u8') ||
-        lower.includes('.mp4')
-      ) {
-        diagnosis =
-          'وجدنا مرجع فيديو داخل الصفحة.';
-      } else if (
-        lower.includes('fetch(') ||
-        lower.includes('xmlhttprequest') ||
-        lower.includes('axios')
-      ) {
-        diagnosis =
-          'الصفحة تعتمد على JavaScript/طلبات ديناميكية.';
-      } else {
-        diagnosis =
-          'الصفحة وصلت بنجاح ولكن لم يظهر رابط فيديو مباشر.';
+        const jsFetches = [];
+
+        const jsFetchRegex =
+          /fetch\s*\([\s\S]{0,1000}?\)/gi;
+
+        let fm;
+
+        while (
+          (fm = jsFetchRegex.exec(code)) !== null
+        ) {
+          jsFetches.push(
+            fm[0].substring(0, 1500)
+          );
+        }
+
+        const jsUrls = [];
+
+        const urlRegex =
+          /https?:\/\/[^\s"'`<>\\]+/gi;
+
+        let um;
+
+        while (
+          (um = urlRegex.exec(code)) !== null
+        ) {
+          const u = um[0].replace(
+            /[),;]+$/g,
+            ''
+          );
+
+          if (!jsUrls.includes(u)) {
+            jsUrls.push(u);
+          }
+        }
+
+        jsResults.push({
+          script_url: scriptUrl,
+
+          status: js.status,
+
+          size: code.length,
+
+          contains_fetch:
+            lower.includes('fetch('),
+
+          contains_token:
+            lower.includes('token'),
+
+          contains_source:
+            lower.includes('source'),
+
+          contains_stream:
+            lower.includes('stream'),
+
+          contains_m3u8:
+            lower.includes('m3u8'),
+
+          contains_mp4:
+            lower.includes('.mp4'),
+
+          fetch_calls: jsFetches.slice(0, 20),
+
+          external_urls:
+            jsUrls.slice(0, 50),
+
+          preview:
+            code.substring(0, 2000)
+        });
+
+      } catch (error) {
+        jsResults.push({
+          script_url: scriptUrl,
+          error: error.message
+        });
       }
-    } else {
-      diagnosis =
-        `الموقع رجع HTTP ${response.status}.`;
     }
 
     return res.json({
-      success: response.status >= 200 && response.status < 300,
+      success: true,
 
-      stage: 'deep_diagnostic',
+      stage: 'javascript_inspection',
 
       target_url: targetUrl,
 
-      scraper_status: response.status,
+      page_status: page.status,
 
-      diagnosis,
+      page_size: html.length,
 
-      response_time_ms: elapsed,
+      page_response_time_ms:
+        Date.now() - startedAt,
 
-      content_type:
-        response.headers['content-type'] || null,
+      script_count: scripts.length,
 
-      response_size: html.length,
+      script_urls: scripts,
 
-      is_html:
-        lower.includes('<html') ||
-        lower.includes('<!doctype'),
+      fetch_calls:
+        fetchMatches.slice(0, 20),
 
-      has_iframe: iframeUrls.length > 0,
+      possible_api_paths:
+        apiPaths.slice(0, 50),
 
-      iframe_count: iframeUrls.length,
+      interesting_strings:
+        interestingStrings,
 
-      iframe_urls: iframeUrls,
+      javascript_files:
+        jsResults,
 
-      script_count: scriptUrls.length,
-
-      script_urls: scriptUrls,
-
-      found_m3u8:
-        lower.includes('.m3u8'),
-
-      found_mp4:
-        lower.includes('.mp4'),
-
-      found_fetch:
-        lower.includes('fetch('),
-
-      found_xhr:
-        lower.includes('xmlhttprequest'),
-
-      found_axios:
-        lower.includes('axios'),
-
-      found_cloudflare:
-        lower.includes('cloudflare') ||
-        lower.includes('cf-ray') ||
-        lower.includes('__cf'),
-
-      found_token:
-        lower.includes('token'),
-
-      found_gate:
-        lower.includes('gate'),
-
-      interesting_keywords: interesting,
-
-      discovered_urls: limitedUrls,
-
-      preview: html.substring(0, 3000)
+      next_step:
+        'نحتاج الآن فحص fetch_calls و possible_api_paths وملفات JavaScript لمعرفة واجهة الاتصال الرسمية التي يستخدمها المشغل.'
     });
 
   } catch (error) {
-
-    const elapsed = Date.now() - startedAt;
-
-    let diagnosis =
-      'فشل الاتصال بـ ScraperAPI.';
-
-    if (error.code === 'ECONNABORTED') {
-      diagnosis =
-        'انتهت مهلة الانتظار 60 ثانية.';
-    } else if (error.code === 'ENOTFOUND') {
-      diagnosis =
-        'Render لم يتمكن من الوصول إلى ScraperAPI.';
-    } else if (error.code === 'ECONNREFUSED') {
-      diagnosis =
-        'تم رفض الاتصال بالشبكة.';
-    } else if (error.code === 'ETIMEDOUT') {
-      diagnosis =
-        'انتهت مهلة الاتصال بالشبكة.';
-    }
-
     return res.status(200).json({
       success: false,
 
-      stage: 'scraperapi_connection',
-
-      diagnosis,
+      stage: 'javascript_inspection_error',
 
       error_code:
         error.code || null,
 
       error_message:
-        error.message || null,
-
-      response_time_ms: elapsed
+        error.message || null
     });
   }
 });
-
-// =====================================================
-// SERVER
-// =====================================================
 
 app.listen(PORT, () => {
   console.log(
