@@ -44,17 +44,26 @@ export default function TitleDetail() {
     );
   }
 
+  // استخراج معرّف TMDB والنوع بوضوح لتمريرهما للمشغل
+  const targetId = title?.tmdb_id || title?.id || id;
+  const targetType = title?.type === 'series' || title?.type === 'tv' ? 'tv' : 'movie';
+
   return (
     <div style={{ background: '#111', color: '#fff', minHeight: '100vh', padding: '20px', direction: 'rtl' }}>
       
       {/* عنوان العمل */}
       <h1 style={{ fontSize: '24px', marginBottom: '15px', textAlign: 'center' }}>
-        {title?.name || 'بدون عنوان'}
+        {title?.name || title?.title || 'بدون عنوان'}
       </h1>
       
       {/* --- مشغل الفيديو المحدث --- */}
       <div style={{ width: '100%', maxWidth: '900px', margin: '0 auto', background: '#000', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 4px 15px rgba(0,0,0,0.5)' }}>
-        <VideoPlayer title={title} />
+        <VideoPlayer 
+          tmdbId={targetId} 
+          id={targetId}
+          type={targetType}
+          title={title} 
+        />
       </div>
 
       {/* --- تفاصيل العمل ومعلوماته --- */}
