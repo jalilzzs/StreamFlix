@@ -1,457 +1,346 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
-const ADMIN_PIN = '2026';
-const TMDB_API_KEY = 'bb04576f643a69128d4924c5aea7c339';
+// مفتاح TMDB (استبدله بالمفتاح الخاص بك إذا كان مختلفاً)
+const TMDB_API_KEY = '826b5838634812328768a35607b22a01'; 
+const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
-export default function Admin() {
-  const navigate = useNavigate();
-  const [pinInput, setPinInput] = useState('');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeTab, setActiveTab] = useState('stats');
+export default function Import() {
+  // حالة البحث الفردي
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchType, setSearchType] = useState('movie'); // 'movie' or 'tv'
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
 
-  // الرسائل والحالات
-  const [message, setMessage] = useState({ text: '', type: '' });
-  const [loading, setLoading] = useState(false);
+  // حالة الاستيراد الجماعي و Trending
+  const [pageCount, setPageCount] = useState(5); // عدد الصفحات (كل صفحة 20 عنصر)
+  const [isBulkLoading, setIsBulkLoading] = useState(false);
+  const [logs, setLogs] = useState([]);
 
-  // الاستيراد الجماعي
-  const [bulkLoading, setBulkLoading] = useState(false);
-  const [bulkStats, setBulkStats] = useState({ total: 0, added: 0, existing: 0, failed: 0 });
-  const [currentPage, setCurrentPage] = useState(1); // يتزايد تلقائياً مع كل ضغطة
-
-  // البيانات من Supabase
-  const [stats, setStats] = useState({ totalTitles: 0, totalUsers: 0, bannedUsers: 0, hiddenTitles: 0 });
-  const [settings, setSettings] = useState({
-    maintenance_mode: false,
-    diagnostics_enabled: false,
-    announcement_bar: '',
-  });
-  const [users, setUsers] = useState([]);
-  const [userSearch, setUserSearch] = useState('');
-  const [titles, setTitles] = useState([]);
-  const [titleSearch, setTitleSearch] = useState('');
-  const [systemLogs, setSystemLogs] = useState([]);
-
-  // رابط التشغيل الاستعراضي
-  const getStelarUrl = (tmdbId, mediaType) => {
-    return mediaType === 'tv'
-      ? `https://vidsrc.me/embed/tv?tmdb=${tmdbId}`
-      : `https://vidsrc.me/embed/movie?tmdb=${tmdbId}`;
+  // إضافة نص للسجل
+  const addLog = (msg) => {
+    const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+    setLogs((prev) => [`[${time}] ${msg}`, ...prev]);
   };
 
-  const handlePinSubmit = (e) => {
+  // -------------------------------------------------------------
+  // 1. البحث الفردي (Single Search)
+  // -------------------------------------------------------------
+  const handleSingleSearch = async (e) => {
     e.preventDefault();
-    if (pinInput === ADMIN_PIN) {
-      setIsAuthenticated(true);
-      setMessage({ text: '', type: '' });
-      fetchData();
-    } else {
-      setMessage({ text: '❌ رمز الـ PIN غير صحيح!', type: 'error' });
-    }
-  };
+    if (!searchQuery.trim()) return;
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const { data: settingsData } = await supabase.from('site_settings').select('*');
-      if (settingsData) {
-        const config = {};
-        settingsData.forEach(item => { config[item.key] = item.value; });
-        setSettings({
-          maintenance_mode: config.maintenance_mode === 'true',
-          diagnostics_enabled: config.diagnostics_enabled === 'true',
-          announcement_bar: config.announcement_bar || '',
-        });
-      }
-
-      const { data: usersData } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-      if (usersData) setUsers(usersData);
-
-      const { data: titlesData } = await supabase.from('titles').select('*').order('id', { ascending: false }).limit(100);
-      if (titlesData) setTitles(titlesData);
-
-      setStats({
-        totalTitles: titlesData ? titlesData.length : 0,
-        totalUsers: usersData ? usersData.length : 0,
-        bannedUsers: usersData ? usersData.filter(u => u.is_banned).length : 0,
-        hiddenTitles: titlesData ? titlesData.filter(t => t.is_hidden).length : 0,
-      });
-
-      addLog('تم تحديث البيانات بنجاح');
-    } catch (err) {
-      console.error('فشل جلب البيانات:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const addLog = (text) => {
-    const time = new Date().toLocaleTimeString('ar-DZ');
-    setSystemLogs(prev => [`[${time}] ${text}`, ...prev.slice(0, 19)]);
-  };
-
-  // 🚀 زر الاستيراد الجماعي الذكي (ينتقل تلقائياً للدفعة التالية)
-  const handleBulkImport = async () => {
-    if (bulkLoading) return;
-    setBulkLoading(true);
-    setMessage({ text: '', type: '' });
-    setBulkStats({ total: 0, added: 0, existing: 0, failed: 0 });
+    setIsSearching(true);
+    setSearchResults([]);
+    addLog(`🔍 جاري البحث الفردي عن: "${searchQuery}" (${searchType === 'movie' ? 'فيلم' : 'مسلسل'})...`);
 
     try {
-      addLog(`جاري جلب الصفحة رقم ${currentPage} من TMDB...`);
-
-      // 1. جلب البيانات من الصفحة الحالية
-      const [mRes, tRes] = await Promise.all([
-        fetch(`https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_API_KEY}&language=ar-AR&page=${currentPage}`).then(r => r.json()),
-        fetch(`https://api.themoviedb.org/3/tv/popular?api_key=${TMDB_API_KEY}&language=ar-AR&page=${currentPage}`).then(r => r.json())
-      ]);
-
-      const items = [
-        ...(mRes.results || []).map(i => ({ ...i, media_type: 'movie' })),
-        ...(tRes.results || []).map(i => ({ ...i, media_type: 'tv' }))
-      ];
-
-      // 2. التحقق من الأفلام المخزنة مسبقاً
-      const { data: existingRows } = await supabase.from('titles').select('tmdb_id');
-      const existingSet = new Set((existingRows || []).map(r => r.tmdb_id?.toString()));
-
-      let added = 0, existingCount = 0, failed = 0;
-
-      for (const item of items) {
-        if (existingSet.has(item.id.toString())) {
-          existingCount++;
+      // إذا كان البحث عبارة عن رقم TMDB ID مباشر
+      if (!isNaN(searchQuery)) {
+        const res = await fetch(`${TMDB_BASE_URL}/${searchType}/${searchQuery}?api_key=${TMDB_API_KEY}&language=ar-SA`);
+        if (res.ok) {
+          const item = await res.json();
+          setSearchResults([item]);
+          addLog(`✅ تم العثور على العمل بواسطة المعرف ID: ${item.title || item.name}`);
         } else {
-          const isTv = item.media_type === 'tv';
-          const year = (item.release_date || item.first_air_date || '').split('-')[0];
+          addLog(`❌ لم يتم العثور على عمل بهذا الـ ID`);
+        }
+      } else {
+        // البحث بالاسم
+        const res = await fetch(`${TMDB_BASE_URL}/search/${searchType}?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(searchQuery)}&language=ar-SA`);
+        const data = await res.json();
+        if (data.results && data.results.length > 0) {
+          setSearchResults(data.results);
+          addLog(`✅ تم العثور على ${data.results.length} نتيجة`);
+        } else {
+          addLog(`⚠️ لم يتم العثور على نتائج لهذا البحث`);
+        }
+      }
+    } catch (err) {
+      addLog(`❌ خطأ أثناء البحث: ${err.message}`);
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
-          const payload = {
-            name: item.title || item.name || 'بدون اسم',
-            synopsis: item.overview || 'لا يوجد وصف.',
-            release_year: year ? parseInt(year) : 2026,
-            rating_avg: Number(item.vote_average) || 0,
-            type: isTv ? 'series' : 'movie',
-            poster_url: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : '',
-            url: getStelarUrl(item.id, item.media_type),
-            tmdb_id: item.id.toString()
-          };
+  // استيراد عمل فردي واحد
+  const importSingleItem = async (item) => {
+    try {
+      addLog(`⏳ جاري استيراد: ${item.title || item.name}...`);
+      
+      const formattedItem = {
+        tmdb_id: item.id,
+        title: item.title || item.name || 'بدون عنوان',
+        type: searchType,
+        synopsis: item.overview || 'لا يوجد وصف متاح.',
+        poster_path: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null,
+        backdrop_path: item.backdrop_path ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}` : null,
+        release_year: item.release_date ? parseInt(item.release_date.split('-')[0]) : item.first_air_date ? parseInt(item.first_air_date.split('-')[0]) : new Date().getFullYear(),
+        rating_avg: item.vote_average ? parseFloat(item.vote_average.toFixed(1)) : 0,
+        is_premium: false
+      };
 
-          const { error } = await supabase.from('titles').insert([payload]);
-          if (!error) {
-            added++;
-            existingSet.add(item.id.toString());
+      const { error } = await supabase
+        .from('titles')
+        .upsert([formattedItem], { onConflict: 'tmdb_id' });
+
+      if (error) {
+        addLog(`❌ خطأ في حفظ ${formattedItem.title}: ${error.message}`);
+      } else {
+        addLog(`🎉 تم استيراد/تحديث "${formattedItem.title}" بنجاح!`);
+      }
+    } catch (err) {
+      addLog(`❌ خطأ غير متوقع: ${err.message}`);
+    }
+  };
+
+  // -------------------------------------------------------------
+  // 2. دالة مساعدة لتشغيل استيراد الصفحات الجماعية
+  // -------------------------------------------------------------
+  const fetchAndImportPages = async (endpointBuilder, categoryName) => {
+    setIsBulkLoading(true);
+    addLog(`🚀 بدء استيراد ${categoryName} عبر ${pageCount} صفحة/صفحات...`);
+    let totalImported = 0;
+
+    try {
+      for (let p = 1; p <= pageCount; p++) {
+        addLog(`📥 جاري جلب الصفحة ${p} من ${pageCount}...`);
+        
+        // جلب الأفلام
+        const movieRes = await fetch(endpointBuilder('movie', p));
+        const movieData = await movieRes.json();
+        
+        // جلب المسلسلات
+        const tvRes = await fetch(endpointBuilder('tv', p));
+        const tvData = await tvRes.json();
+
+        const moviesList = movieData.results || [];
+        const tvList = tvData.results || [];
+
+        // تنسيق العناصر
+        const itemsToInsert = [
+          ...moviesList.map(m => ({
+            tmdb_id: m.id,
+            title: m.title || 'بدون عنوان',
+            type: 'movie',
+            synopsis: m.overview || 'لا يوجد وصف.',
+            poster_path: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : null,
+            backdrop_path: m.backdrop_path ? `https://image.tmdb.org/t/p/w1280${m.backdrop_path}` : null,
+            release_year: m.release_date ? parseInt(m.release_date.split('-')[0]) : new Date().getFullYear(),
+            rating_avg: m.vote_average ? parseFloat(m.vote_average.toFixed(1)) : 0,
+            is_premium: false
+          })),
+          ...tvList.map(t => ({
+            tmdb_id: t.id,
+            title: t.name || 'بدون عنوان',
+            type: 'series',
+            synopsis: t.overview || 'لا يوجد وصف.',
+            poster_path: t.poster_path ? `https://image.tmdb.org/t/p/w500${t.poster_path}` : null,
+            backdrop_path: t.backdrop_path ? `https://image.tmdb.org/t/p/w1280${t.backdrop_path}` : null,
+            release_year: t.first_air_date ? parseInt(t.first_air_date.split('-')[0]) : new Date().getFullYear(),
+            rating_avg: t.vote_average ? parseFloat(t.vote_average.toFixed(1)) : 0,
+            is_premium: false
+          }))
+        ];
+
+        if (itemsToInsert.length > 0) {
+          // إدخال أو تحديث البيانات في Supabase
+          const { error } = await supabase
+            .from('titles')
+            .upsert(itemsToInsert, { onConflict: 'tmdb_id' });
+
+          if (error) {
+            addLog(`❌ خطأ أثناء حفظ الصفحة ${p}: ${error.message}`);
           } else {
-            failed++;
+            totalImported += itemsToInsert.length;
+            addLog(`✅ تم حفظ الصفحة ${p} بنجاح (${itemsToInsert.length} عنصر). المجموع الحالي: ${totalImported}`);
           }
         }
-        setBulkStats({ total: items.length, added, existing: existingCount, failed });
       }
 
-      setMessage({
-        text: `🎉 اكتمل استيراد الصفحة ${currentPage}! تم إضافة: ${added} جديد | مكرر: ${existingCount}`,
-        type: 'success'
-      });
-
-      // 3. زيادة رقم الصفحة تلقائياً للضغطة القادمة
-      setCurrentPage(prev => prev + 1);
-      fetchData();
+      addLog(`✨ اكتملت العملية! تم استيراد/تحديث إجمالي ${totalImported} من الأفلام والمسلسلات بنجاح.`);
     } catch (err) {
-      setMessage({ text: `فشل الاستيراد الجماعي: ${err.message}`, type: 'error' });
+      addLog(`❌ حدث خطأ أثناء الاستيراد الجماعي: ${err.message}`);
     } finally {
-      setBulkLoading(false);
+      setIsBulkLoading(false);
     }
   };
 
-  // باقي الوظائف
-  const toggleSetting = async (key, currentValue) => {
-    const newValue = (!currentValue).toString();
-    try {
-      await supabase.from('site_settings').upsert({ key, value: newValue });
-      setSettings(prev => ({ ...prev, [key]: !currentValue }));
-      setMessage({ text: 'تم تحديث الإعدادات بنجاح ✅', type: 'success' });
-    } catch (err) {
-      setMessage({ text: `خطأ: ${err.message}`, type: 'error' });
-    }
-  };
-
-  const saveAnnouncement = async () => {
-    try {
-      await supabase.from('site_settings').upsert({ key: 'announcement_bar', value: settings.announcement_bar });
-      setMessage({ text: 'تم حفظ الشريط الإعلاني بنجاح ✅', type: 'success' });
-    } catch (err) {
-      setMessage({ text: `خطأ: ${err.message}`, type: 'error' });
-    }
-  };
-
-  const toggleUserBan = async (userId, isBanned) => {
-    try {
-      await supabase.from('profiles').update({ is_banned: !isBanned }).eq('id', userId);
-      setUsers(users.map(u => u.id === userId ? { ...u, is_banned: !isBanned } : u));
-      setMessage({ text: `تم ${!isBanned ? 'حظر' : 'فك حظر'} المستخدم 🔒`, type: 'success' });
-    } catch (err) {
-      setMessage({ text: `خطأ: ${err.message}`, type: 'error' });
-    }
-  };
-
-  const toggleUserVIP = async (userId, isVip) => {
-    try {
-      await supabase.from('profiles').update({ is_vip: !isVip }).eq('id', userId);
-      setUsers(users.map(u => u.id === userId ? { ...u, is_vip: !isVip } : u));
-      setMessage({ text: `تم تغيير حالة VIP ⭐`, type: 'success' });
-    } catch (err) {
-      setMessage({ text: `خطأ: ${err.message}`, type: 'error' });
-    }
-  };
-
-  const toggleTitleVisibility = async (titleId, isHidden) => {
-    try {
-      await supabase.from('titles').update({ is_hidden: !isHidden }).eq('id', titleId);
-      setTitles(titles.map(t => t.id === titleId ? { ...t, is_hidden: !isHidden } : t));
-      setMessage({ text: 'تم تغيير رؤية العنصر 👁️', type: 'success' });
-    } catch (err) {
-      setMessage({ text: `خطأ: ${err.message}`, type: 'error' });
-    }
-  };
-
-  const deleteTitle = async (titleId, titleName) => {
-    if (!window.confirm(`حذف "${titleName}"؟`)) return;
-    try {
-      await supabase.from('titles').delete().eq('id', titleId);
-      setTitles(titles.filter(t => t.id !== titleId));
-      setMessage({ text: 'تم الحذف بنجاح 🗑️', type: 'success' });
-    } catch (err) {
-      setMessage({ text: `خطأ: ${err.message}`, type: 'error' });
-    }
-  };
-
-  const filteredUsers = users.filter(u =>
-    (u.email || '').toLowerCase().includes(userSearch.toLowerCase()) ||
-    (u.username || '').toLowerCase().includes(userSearch.toLowerCase())
-  );
-
-  const filteredTitles = titles.filter(t =>
-    (t.name || '').toLowerCase().includes(titleSearch.toLowerCase())
-  );
-
-  if (!isAuthenticated) {
-    return (
-      <div style={{ background: '#0a0a0a', color: '#fff', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui, sans-serif', direction: 'rtl' }}>
-        <form onSubmit={handlePinSubmit} style={{ background: '#141414', padding: '35px', borderRadius: '16px', border: '1px solid #282828', textAlign: 'center', width: '100%', maxWidth: '380px' }}>
-          <div style={{ fontSize: '40px', marginBottom: '10px' }}>🔐</div>
-          <h2 style={{ fontSize: '22px', marginBottom: '8px', color: '#e50914' }}>لوحة التحكم</h2>
-          <input
-            type="password"
-            maxLength={6}
-            placeholder="****"
-            value={pinInput}
-            onChange={(e) => setPinInput(e.target.value)}
-            style={{ width: '100%', padding: '14px', borderRadius: '10px', border: '1px solid #333', background: '#222', color: '#fff', textAlign: 'center', fontSize: '24px', letterSpacing: '6px', marginBottom: '20px' }}
-          />
-          <button type="submit" style={{ width: '100%', padding: '14px', background: '#e50914', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}>دخول</button>
-          {message.text && <p style={{ color: '#ff4d4d', marginTop: '15px' }}>{message.text}</p>}
-        </form>
-      </div>
+  // 3. الاستيراد الجماعي الشامل (Popular)
+  const handleBulkPopularImport = () => {
+    fetchAndImportPages(
+      (type, page) => `${TMDB_BASE_URL}/${type === 'movie' ? 'movie' : 'tv'}/popular?api_key=${TMDB_API_KEY}&language=ar-SA&page=${page}`,
+      'الأعمال الشائعة (Popular Movies & Series)'
     );
-  }
+  };
+
+  // 4. استيراد الأعمال الأكثر تداولاً (Trending)
+  const handleTrendingImport = () => {
+    fetchAndImportPages(
+      (type, page) => `${TMDB_BASE_URL}/trending/${type === 'movie' ? 'movie' : 'tv'}/week?api_key=${TMDB_API_KEY}&language=ar-SA&page=${page}`,
+      'الأعمال الأكثر تداولاً (Trending Movies & Series)'
+    );
+  };
+
+  // -------------------------------------------------------------
+  // 5. زر إصلاح روابط الـ URL
+  // -------------------------------------------------------------
+  const handleFixUrls = async () => {
+    setIsBulkLoading(true);
+    addLog('🛠️ جاري فحص وإصلاح روابط الـ URL والعناوين في قاعدة البيانات...');
+    try {
+      const { data, error } = await supabase.from('titles').select('*');
+      if (error) throw error;
+
+      addLog(`📊 تم العثور على ${data.length} سجل في قاعدة البيانات.`);
+      let fixedCount = 0;
+
+      for (const item of data) {
+        // التأكد من ضبط أنواع الميديا بشكل سليم
+        let correctType = item.type;
+        if (item.type === 'tv') correctType = 'series';
+
+        if (correctType !== item.type) {
+          await supabase.from('titles').update({ type: correctType }).eq('id', item.id);
+          fixedCount++;
+        }
+      }
+
+      addLog(`✅ تم إصلاح وتدقيق ${fixedCount} سجل بنجاح.`);
+    } catch (err) {
+      addLog(`❌ خطأ أثناء الإصلاح: ${err.message}`);
+    } finally {
+      setIsBulkLoading(false);
+    }
+  };
 
   return (
-    <div style={{ background: '#0a0a0a', color: '#fff', minHeight: '100vh', padding: '25px', direction: 'rtl', fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+    <div style={{ padding: '20px', maxWidth: '1000px', margin: '0 auto', color: '#fff', direction: 'rtl', fontFamily: 'sans-serif' }}>
+      <h1 style={{ textAlign: 'center', marginBottom: '25px', color: '#e50914' }}>🎬 لوحة استيراد الأفلام والمسلسلات (TMDB)</h1>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', borderBottom: '1px solid #222', paddingBottom: '15px' }}>
-          <h1 style={{ color: '#e50914', fontSize: '26px', margin: 0 }}>⚡ لوحة تحكم StreamFlix</h1>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button onClick={() => navigate('/import')} style={{ background: '#0066cc', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>📥 الاستيراد الفردي</button>
-            <button onClick={() => setIsAuthenticated(false)} style={{ background: '#222', color: '#fff', border: '1px solid #333', padding: '9px 16px', borderRadius: '8px', cursor: 'pointer' }}>🔒 قفل</button>
+      {/* --- قسم البحث والاستيراد الفردي --- */}
+      <div style={{ background: '#1a1a1a', padding: '20px', borderRadius: '8px', marginBottom: '25px', border: '1px solid #333' }}>
+        <h3 style={{ marginTop: 0, color: '#46d369' }}>🔍 البحث والاستيراد الفردي</h3>
+        <form onSubmit={handleSingleSearch} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <input
+            type="text"
+            placeholder="أدخل اسم الفيلم/المسلسل أو رقم TMDB ID..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ flex: 1, minWidth: '220px', padding: '10px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }}
+          />
+          <select
+            value={searchType}
+            onChange={(e) => setSearchType(e.target.value)}
+            style={{ padding: '10px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }}
+          >
+            <option value="movie">فيلم (Movie)</option>
+            <option value="tv">مسلسل (TV Series)</option>
+          </select>
+          <button
+            type="submit"
+            disabled={isSearching}
+            style={{ padding: '10px 20px', background: '#e50914', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+          >
+            {isSearching ? 'جاري البحث...' : 'بحث'}
+          </button>
+        </form>
+
+        {/* نتائج البحث الفردي */}
+        {searchResults.length > 0 && (
+          <div style={{ marginTop: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '15px' }}>
+            {searchResults.map((item) => (
+              <div key={item.id} style={{ background: '#252525', padding: '10px', borderRadius: '6px', textAlign: 'center' }}>
+                <img
+                  src={item.poster_path ? `https://image.tmdb.org/t/p/w200${item.poster_path}` : 'https://via.placeholder.com/200x300?text=No+Poster'}
+                  alt={item.title || item.name}
+                  style={{ width: '100%', height: '240px', objectFit: 'cover', borderRadius: '4px', marginBottom: '8px' }}
+                />
+                <div style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '8px', height: '36px', overflow: 'hidden' }}>
+                  {item.title || item.name}
+                </div>
+                <button
+                  onClick={() => importSingleItem(item)}
+                  style={{ width: '100%', padding: '6px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                >
+                  ➕ استيراد هذا العمل
+                </button>
+              </div>
+            ))}
           </div>
+        )}
+      </div>
+
+      {/* --- قسم الاستيراد الجماعي والأدوات --- */}
+      <div style={{ background: '#1a1a1a', padding: '20px', borderRadius: '8px', marginBottom: '25px', border: '1px solid #333' }}>
+        <h3 style={{ marginTop: 0, color: '#007bff' }}>⚡ أدوات الاستيراد الجماعي والإصلاح</h3>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '15px', flexWrap: 'wrap' }}>
+          <label style={{ fontSize: '14px', color: '#ccc' }}>
+            عدد الصفحات للاستيراد (كل صفحة تحتوي 20 فيلم + 20 مسلسل):
+          </label>
+          <input
+            type="number"
+            min="1"
+            max="30"
+            value={pageCount}
+            onChange={(e) => setPageCount(Math.max(1, parseInt(e.target.value) || 1))}
+            style={{ width: '80px', padding: '6px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff', textAlign: 'center' }}
+          />
+          <span style={{ fontSize: '12px', color: '#888' }}>
+            (الإجمالي: {pageCount * 40} عمل تقريباً)
+          </span>
         </div>
 
-        {/* 📦 قسم الاستيراد الجماعي السريع */}
-        <div style={{ background: '#141414', padding: '20px', borderRadius: '12px', border: '1px solid #282828', textAlign: 'center', marginBottom: '25px' }}>
-          <h3 style={{ margin: '0 0 10px 0', color: '#28a745' }}>🚀 الاستيراد الجماعي الأوتوماتيكي</h3>
-          <p style={{ color: '#888', fontSize: '13px', marginBottom: '15px' }}>
-            اضغط على الزر لجلب 40 فيلم ومسلسل. كل ضغطة ستجلب تلقائياً <b>الصفحة التالية ({currentPage})</b> بدون تكرار!
-          </p>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <button
-            onClick={handleBulkImport}
-            disabled={bulkLoading}
-            style={{
-              padding: '12px 30px',
-              background: bulkLoading ? '#555' : '#e50914',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: bulkLoading ? 'not-allowed' : 'pointer',
-              fontWeight: 'bold',
-              fontSize: '15px'
-            }}
+            onClick={handleBulkPopularImport}
+            disabled={isBulkLoading}
+            style={{ padding: '12px 20px', background: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
           >
-            {bulkLoading ? `⏳ جاري جلب الصفحة ${currentPage}...` : `📥 استيراد الدفعة التالية (صفحة ${currentPage})`}
+            📦 استيراد جماعي (الأكثر شعبية)
           </button>
 
-          {bulkStats.total > 0 && (
-            <div style={{ marginTop: '15px', display: 'flex', justifyContent: 'center', gap: '20px', fontSize: '13px', background: '#0a0a0a', padding: '10px', borderRadius: '8px' }}>
-              <span>إجمالي الدفعة: {bulkStats.total}</span>
-              <span style={{ color: '#4caf50', fontWeight: 'bold' }}>✅ مضاف: {bulkStats.added}</span>
-              <span style={{ color: '#ffc107' }}>♻️ مكرر: {bulkStats.existing}</span>
-            </div>
+          <button
+            onClick={handleTrendingImport}
+            disabled={isBulkLoading}
+            style={{ padding: '12px 20px', background: '#ff9900', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+          >
+            🔥 استيراد Trending (الأكثر تداولاً)
+          </button>
+
+          <button
+            onClick={handleFixUrls}
+            disabled={isBulkLoading}
+            style={{ padding: '12px 20px', background: '#17a2b8', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+          >
+            🛠️ إصلاح عناوين URL والبيانات
+          </button>
+        </div>
+      </div>
+
+      {/* --- قسم سجل العمليات (Logs) --- */}
+      <div style={{ background: '#0a0a0a', padding: '15px', borderRadius: '8px', border: '1px solid #222' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+          <h4 style={{ margin: 0, color: '#aaa', fontFamily: 'monospace' }}>📋 سجل العمليات (Logs):</h4>
+          <button
+            onClick={() => setLogs([])}
+            style={{ background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', fontSize: '12px', textDecoration: 'underline' }}
+          >
+            مسح السجل
+          </button>
+        </div>
+        <div style={{ maxHeight: '250px', overflowY: 'auto', background: '#111', padding: '10px', borderRadius: '4px', border: '1px solid #222', fontFamily: 'monospace', fontSize: '12px' }}>
+          {logs.length === 0 ? (
+            <span style={{ color: '#555' }}>لا توجد عمليات قائمة حالياً...</span>
+          ) : (
+            logs.map((log, idx) => (
+              <div key={idx} style={{ marginBottom: '4px', color: log.includes('❌') ? '#ff4d4d' : log.includes('✅') || log.includes('🎉') ? '#46d369' : '#ccc' }}>
+                {log}
+              </div>
+            ))
           )}
         </div>
-
-        {/* التبويبات الرئيسية */}
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '25px' }}>
-          {[
-            { id: 'stats', label: '📊 الإحصائيات' },
-            { id: 'settings', label: '📢 الصيانة والإعلانات' },
-            { id: 'users', label: '👥 حظر الأعضاء' },
-            { id: 'content', label: '🎬 المحتوى' },
-            { id: 'logs', label: '📋 السجلات' },
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              style={{
-                padding: '10px 18px',
-                background: activeTab === tab.id ? '#e50914' : '#141414',
-                color: '#fff',
-                border: '1px solid #282828',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontWeight: 'bold'
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {message.text && (
-          <div style={{ background: message.type === 'error' ? '#2a1212' : '#122a18', color: message.type === 'error' ? '#ff6b6b' : '#6bff8d', padding: '12px', borderRadius: '8px', marginBottom: '20px', textAlign: 'center', fontWeight: 'bold' }}>
-            {message.text}
-          </div>
-        )}
-
-        {/* 1. الإحصائيات */}
-        {activeTab === 'stats' && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
-            <div style={{ background: '#141414', padding: '20px', borderRadius: '12px', border: '1px solid #282828', textAlign: 'center' }}>
-              <div style={{ fontSize: '30px', fontWeight: 'bold', color: '#e50914' }}>{stats.totalTitles}</div>
-              <div style={{ color: '#888', fontSize: '13px' }}>إجمالي العناوين</div>
-            </div>
-            <div style={{ background: '#141414', padding: '20px', borderRadius: '12px', border: '1px solid #282828', textAlign: 'center' }}>
-              <div style={{ fontSize: '30px', fontWeight: 'bold', color: '#0066cc' }}>{stats.totalUsers}</div>
-              <div style={{ color: '#888', fontSize: '13px' }}>المستخدمين</div>
-            </div>
-            <div style={{ background: '#141414', padding: '20px', borderRadius: '12px', border: '1px solid #282828', textAlign: 'center' }}>
-              <div style={{ fontSize: '30px', fontWeight: 'bold', color: '#d9534f' }}>{stats.bannedUsers}</div>
-              <div style={{ color: '#888', fontSize: '13px' }}>المحظورين</div>
-            </div>
-          </div>
-        )}
-
-        {/* 2. الإعدادات */}
-        {activeTab === 'settings' && (
-          <div style={{ display: 'grid', gap: '15px' }}>
-            <div style={{ background: '#141414', padding: '20px', borderRadius: '12px', border: '1px solid #282828', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h3 style={{ margin: '0 0 5px 0', color: '#ff4d4d' }}>🚧 وضع الصيانة</h3>
-                <p style={{ color: '#888', fontSize: '13px', margin: 0 }}>توجيه كافة الزوار لشاشة الصيانة المغلقة.</p>
-              </div>
-              <button onClick={() => toggleSetting('maintenance_mode', settings.maintenance_mode)} style={{ padding: '10px 20px', background: settings.maintenance_mode ? '#d9534f' : '#222', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
-                {settings.maintenance_mode ? '🚨 مفعل' : '⚪ معطل'}
-              </button>
-            </div>
-
-            <div style={{ background: '#141414', padding: '20px', borderRadius: '12px', border: '1px solid #282828', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h3 style={{ margin: '0 0 5px 0', color: '#28a745' }}>💻 لوحة التشخيص (Diagnostics)</h3>
-                <p style={{ color: '#888', fontSize: '13px', margin: 0 }}>إظهار مؤشر التشخيص السفلي للمطورين.</p>
-              </div>
-              <button onClick={() => toggleSetting('diagnostics_enabled', settings.diagnostics_enabled)} style={{ padding: '10px 20px', background: settings.diagnostics_enabled ? '#28a745' : '#222', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
-                {settings.diagnostics_enabled ? '🟢 مفعلة' : '⚪ معطلة'}
-              </button>
-            </div>
-
-            <div style={{ background: '#141414', padding: '20px', borderRadius: '12px', border: '1px solid #282828' }}>
-              <h3 style={{ margin: '0 0 10px 0', color: '#0066cc' }}>📢 الشريط الإعلاني</h3>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <input
-                  type="text"
-                  placeholder="أدخل نص الإعلان..."
-                  value={settings.announcement_bar}
-                  onChange={(e) => setSettings({ ...settings, announcement_bar: e.target.value })}
-                  style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #333', background: '#222', color: '#fff' }}
-                />
-                <button onClick={saveAnnouncement} style={{ padding: '10px 20px', background: '#0066cc', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>حفظ</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 3. حظر المستخدمين */}
-        {activeTab === 'users' && (
-          <div style={{ background: '#141414', padding: '20px', borderRadius: '12px', border: '1px solid #282828' }}>
-            <input
-              type="text"
-              placeholder="🔎 بحث عن مستخدم..."
-              value={userSearch}
-              onChange={(e) => setUserSearch(e.target.value)}
-              style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #333', background: '#222', color: '#fff', marginBottom: '15px' }}
-            />
-            <div style={{ display: 'grid', gap: '10px' }}>
-              {filteredUsers.map(u => (
-                <div key={u.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1c1c1c', padding: '12px 15px', borderRadius: '8px' }}>
-                  <div>
-                    <span style={{ fontWeight: 'bold' }}>{u.email || u.username}</span>
-                    {u.is_banned && <span style={{ color: '#ff4d4d', marginRight: '10px', fontSize: '12px' }}>(محظور)</span>}
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => toggleUserVIP(u.id, u.is_vip)} style={{ padding: '6px 12px', background: '#ffc107', color: '#000', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>⭐ VIP</button>
-                    <button onClick={() => toggleUserBan(u.id, u.is_banned)} style={{ padding: '6px 12px', background: u.is_banned ? '#28a745' : '#d9534f', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
-                      {u.is_banned ? 'فك الحظر' : 'حظر 🚫'}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 4. المحتوى */}
-        {activeTab === 'content' && (
-          <div style={{ background: '#141414', padding: '20px', borderRadius: '12px', border: '1px solid #282828' }}>
-            <input
-              type="text"
-              placeholder="🔎 بحث عن اسم فيلم..."
-              value={titleSearch}
-              onChange={(e) => setTitleSearch(e.target.value)}
-              style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #333', background: '#222', color: '#fff', marginBottom: '15px' }}
-            />
-            <div style={{ display: 'grid', gap: '10px' }}>
-              {filteredTitles.map(t => (
-                <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1c1c1c', padding: '10px 15px', borderRadius: '8px' }}>
-                  <span>{t.name}</span>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => toggleTitleVisibility(t.id, t.is_hidden)} style={{ padding: '6px 12px', background: '#444', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>
-                      {t.is_hidden ? 'إظهار 👁️' : 'إخفاء 🙈'}
-                    </button>
-                    <button onClick={() => deleteTitle(t.id, t.name)} style={{ padding: '6px 12px', background: '#d9534f', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>حذف 🗑️</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 5. السجلات */}
-        {activeTab === 'logs' && (
-          <div style={{ background: '#141414', padding: '20px', borderRadius: '12px', border: '1px solid #282828' }}>
-            <div style={{ background: '#000', padding: '15px', borderRadius: '8px', fontFamily: 'monospace', color: '#00ff00', fontSize: '13px' }}>
-              {systemLogs.map((log, index) => <div key={index}>{log}</div>)}
-            </div>
-          </div>
-        )}
-
       </div>
     </div>
   );
