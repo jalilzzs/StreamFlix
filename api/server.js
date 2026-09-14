@@ -13,20 +13,17 @@ const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY;
 
 const flixhq = new MOVIES.FlixHQ();
 
-// إعداد بروكسي حقيقي عبر https-proxy-agent لضمان إجبار مكتبة Consumet وكل طلبات الـ Axios على المرور عبر ScraperAPI وتجاوز Cloudflare نهائياً
+// التصحيح الجذري لصيغة بروكسي ScraperAPI: اسم المستخدم 'api' وكلمة المرور هي مفتاح الـ API
 if (SCRAPER_API_KEY) {
-  const proxyUrl = `http://api_${SCRAPER_API_KEY}:@proxy.scraperapi.com:8001`;
+  const proxyUrl = `http://api:${SCRAPER_API_KEY}@proxy.scraperapi.com:8001`;
   const agent = new HttpsProxyAgent(proxyUrl);
   
-  // فرض البروكسي على جميع طلبات Axios الافتراضية والمنشأة حديثاً
   axios.defaults.httpAgent = agent;
   axios.defaults.httpsAgent = agent;
-  axios.defaults.proxy = false; // تعطيل نظام البروكسي التقليدي وتفعيل الـ Agent المباشر
+  axios.defaults.proxy = false;
   
-  // تفعيل خاصية الـ JavaScript Rendering إجبارياً لتجاوز حماية صفحات الفيديو
+  // تفعيل محرك المتصفح لتجاوز حماية Cloudflare لكل طلبات مكتبة Consumet
   axios.defaults.headers.common['X-ScraperAPI-Render'] = 'true';
-  
-  // رفع وقت الانتظار العام إلى 90 ثانية ليتناسب مع بطء استجابة الاستضافات المجانية
   axios.defaults.timeout = 90000;
 }
 
@@ -45,7 +42,6 @@ app.get('/api/extract', async (req, res) => {
   }
 
   try {
-    // 1. البحث عن العمل عبر مكتبة Consumet مع تمرير الطلب بالكامل عبر بروكسي التجاوز
     const searchResults = await flixhq.search(String(tmdbId));
     
     if (!searchResults || !searchResults.results || searchResults.results.length === 0) {
@@ -53,8 +49,6 @@ app.get('/api/extract', async (req, res) => {
     }
 
     const mediaId = searchResults.results[0].id;
-    
-    // 2. جلب معلومات الوسائط (الحلقات أو تفاصيل الفيلم)
     const mediaInfo = await flixhq.fetchMediaInfo(mediaId);
     
     if (!mediaInfo || !mediaInfo.episodes || mediaInfo.episodes.length === 0) {
@@ -70,7 +64,6 @@ app.get('/api/extract', async (req, res) => {
       }
     }
 
-    // 3. استخراج روابط البث الصافي النهائية
     const sourcesData = await flixhq.fetchEpisodeSources(targetEpisodeId);
 
     if (!sourcesData || !sourcesData.sources || sourcesData.sources.length === 0) {
