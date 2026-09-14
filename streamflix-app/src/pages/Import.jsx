@@ -7,6 +7,7 @@ export default function Import() {
 
   const [loading, setLoading] = useState(false);
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [fillLoading, setFillLoading] = useState(false);
 
   const [searchStatus, setSearchStatus] = useState(true);
   const [testStatus, setTestStatus] = useState(true);
@@ -14,26 +15,20 @@ export default function Import() {
 
   const [message, setMessage] = useState('');
   const [bulkStats, setBulkStats] = useState(null);
+  const [fillStats, setFillStats] = useState(null);
   const [errors, setErrors] = useState([]);
-
-  const TMDB_API_KEY = 'bb04576f643a69128d4924c5aea7c339';
 
   /*
    * ============================================================
-   * مصدر الفيديو
+   * رابط الفيديو
    * ============================================================
    *
-   * ضع هنا فقط رابط/Endpoint لمصدر بث لديك الحق في استخدامه.
-   *
-   * حالياً نستعمل الرابط الموجود في مشروعك.
-   * إذا كان عندك مزود مرخّص آخر، غير هذه الدالة فقط.
+   * لا يتم وضع أي رابط تلقائياً عند الاستيراد.
+   * يتم ملء url يدوياً أو باستعمال زر "ملء الروابط الفارغة"
+   * من خلال القالب الذي يدخله المستخدم.
    */
-  const getVideoUrl = (type, tmdbId) => {
-    if (type === 'tv') {
-      return `https://vidsrc.to/embed/tv/${tmdbId}`;
-    }
-
-    return `https://vidsrc.to/embed/movie/${tmdbId}`;
+  const getVideoUrl = () => {
+    return '';
   };
 
   /*
@@ -76,9 +71,12 @@ export default function Import() {
     return await res.json();
   };
 
+  const TMDB_API_KEY =
+    'bb04576f643a69128d4924c5aea7c339';
+
   /*
    * ============================================================
-   * تحويل بيانات الفيلم إلى شكل قاعدة البيانات
+   * تحويل الفيلم
    * ============================================================
    */
   const movieToTitle = (movie) => {
@@ -87,7 +85,10 @@ export default function Import() {
       : null;
 
     return {
-      name: movie.title || movie.name || 'بدون اسم',
+      name:
+        movie.title ||
+        movie.name ||
+        'بدون اسم',
 
       synopsis:
         movie.overview ||
@@ -109,7 +110,10 @@ export default function Import() {
           ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
           : '',
 
-      url: getVideoUrl('movie', movie.id),
+      /*
+       * يبقى فارغاً.
+       */
+      url: getVideoUrl(),
 
       tmdb_id: movie.id
     };
@@ -117,7 +121,7 @@ export default function Import() {
 
   /*
    * ============================================================
-   * تحويل بيانات المسلسل إلى شكل قاعدة البيانات
+   * تحويل المسلسل
    * ============================================================
    */
   const tvToTitle = (show) => {
@@ -126,7 +130,9 @@ export default function Import() {
       : null;
 
     return {
-      name: show.name || 'بدون اسم',
+      name:
+        show.name ||
+        'بدون اسم',
 
       synopsis:
         show.overview ||
@@ -148,7 +154,10 @@ export default function Import() {
           ? `https://image.tmdb.org/t/p/w500${show.poster_path}`
           : '',
 
-      url: getVideoUrl('tv', show.id),
+      /*
+       * يبقى فارغاً.
+       */
+      url: getVideoUrl(),
 
       tmdb_id: show.id
     };
@@ -156,7 +165,7 @@ export default function Import() {
 
   /*
    * ============================================================
-   * البحث الفردي
+   * البحث
    * ============================================================
    */
   const handleSearch = async (e) => {
@@ -171,14 +180,16 @@ export default function Import() {
     setErrors([]);
 
     try {
-      if (!TMDB_API_KEY || TMDB_API_KEY.includes('ضع_مفتاح')) {
+      if (
+        !TMDB_API_KEY ||
+        TMDB_API_KEY.includes('ضع_مفتاح')
+      ) {
         setSearchStatus('B');
-        throw new Error('مفتاح TMDB API غير معرّف.');
+        throw new Error(
+          'مفتاح TMDB API غير معرّف.'
+        );
       }
 
-      /*
-       * نبحث في الأفلام والمسلسلات معاً
-       */
       const movieUrl =
         `https://api.themoviedb.org/3/search/movie` +
         `?api_key=${TMDB_API_KEY}` +
@@ -191,58 +202,77 @@ export default function Import() {
         `&query=${encodeURIComponent(query)}` +
         `&language=ar-AR`;
 
-      const [movieRes, tvRes] = await Promise.all([
-        fetch(movieUrl),
-        fetch(tvUrl)
-      ]);
+      const [movieRes, tvRes] =
+        await Promise.all([
+          fetch(movieUrl),
+          fetch(tvUrl)
+        ]);
 
       if (!movieRes.ok || !tvRes.ok) {
         setSearchStatus('C');
+
         throw new Error(
-          `خطأ في الاتصال بـ TMDB`
+          'خطأ في الاتصال بـ TMDB'
         );
       }
 
-      const movieData = await movieRes.json();
-      const tvData = await tvRes.json();
+      const movieData =
+        await movieRes.json();
 
-      const movieResults = (movieData.results || []).map(item => ({
-        ...item,
-        media_type: 'movie'
-      }));
+      const tvData =
+        await tvRes.json();
 
-      const tvResults = (tvData.results || []).map(item => ({
-        ...item,
-        media_type: 'tv'
-      }));
+      const movieResults =
+        (movieData.results || []).map(
+          item => ({
+            ...item,
+            media_type: 'movie'
+          })
+        );
+
+      const tvResults =
+        (tvData.results || []).map(
+          item => ({
+            ...item,
+            media_type: 'tv'
+          })
+        );
 
       const combined = [
         ...movieResults,
         ...tvResults
       ];
 
-      /*
-       * ترتيب حسب التقييم
-       */
       combined.sort(
         (a, b) =>
           (b.vote_average || 0) -
           (a.vote_average || 0)
       );
 
-      setMovies(combined.slice(0, 40));
+      setMovies(
+        combined.slice(0, 40)
+      );
+
       setSearchStatus(true);
 
       if (combined.length === 0) {
         setSearchStatus('D');
-        setMessage('لم يتم العثور على أي نتائج.');
+
+        setMessage(
+          'لم يتم العثور على أي نتائج.'
+        );
       }
+
     } catch (err) {
-      console.error('خطأ في البحث:', err);
+      console.error(
+        'خطأ في البحث:',
+        err
+      );
 
       setMessage(
         `خطأ في البحث (${err.message})`
       );
+
     } finally {
       setLoading(false);
     }
@@ -261,9 +291,11 @@ export default function Import() {
       let details;
 
       if (item.media_type === 'tv') {
-        details = await getTvDetails(item.id);
+        details =
+          await getTvDetails(item.id);
       } else {
-        details = await getMovieDetails(item.id);
+        details =
+          await getMovieDetails(item.id);
       }
 
       const titleData =
@@ -272,41 +304,68 @@ export default function Import() {
           : movieToTitle(details);
 
       /*
-       * أهم جزء:
-       * نتحقق من الاسم قبل INSERT
+       * أولاً نتحقق بواسطة TMDB ID
        */
-      const { data: existing, error: checkError } =
-        await supabase
-          .from('titles')
-          .select('id,name')
-          .eq('name', titleData.name)
-          .maybeSingle();
+      const {
+        data: existingByTmdb,
+        error: tmdbCheckError
+      } = await supabase
+        .from('titles')
+        .select('id,name,tmdb_id')
+        .eq('tmdb_id', titleData.tmdb_id)
+        .maybeSingle();
 
-      if (checkError) {
-        throw checkError;
+      if (tmdbCheckError) {
+        throw tmdbCheckError;
       }
 
-      if (existing) {
+      if (existingByTmdb) {
         setImportStatus(true);
 
         setMessage(
-          `الفيلم/المسلسل "${titleData.name}" موجود مسبقاً، لم تتم إضافته مرة أخرى.`
+          `"${titleData.name}" موجود مسبقاً، تم تخطيه.`
         );
 
         return;
       }
 
-      const { error } = await supabase
+      /*
+       * تحقق إضافي بالاسم
+       */
+      const {
+        data: existingByName,
+        error: nameCheckError
+      } = await supabase
         .from('titles')
-        .insert([titleData]);
+        .select('id,name')
+        .eq('name', titleData.name)
+        .maybeSingle();
+
+      if (nameCheckError) {
+        throw nameCheckError;
+      }
+
+      if (existingByName) {
+        setImportStatus(true);
+
+        setMessage(
+          `"${titleData.name}" موجود مسبقاً، تم تخطيه.`
+        );
+
+        return;
+      }
+
+      const { error } =
+        await supabase
+          .from('titles')
+          .insert([titleData]);
 
       if (error) {
-        /*
-         * إذا صار Race condition أو كان موجوداً أصلاً
-         */
         if (
           error.code === '23505' ||
-          error.message?.includes('titles_name_key')
+          error.message?.includes(
+            'titles_name_key'
+          )
         ) {
           setImportStatus(true);
 
@@ -325,8 +384,12 @@ export default function Import() {
       setMessage(
         `تم استيراد "${titleData.name}" بنجاح ✅`
       );
+
     } catch (err) {
-      console.error('Import error:', err);
+      console.error(
+        'Import error:',
+        err
+      );
 
       setImportStatus('G');
 
@@ -338,7 +401,7 @@ export default function Import() {
 
   /*
    * ============================================================
-   * إضافة فيلم تجريبي
+   * اختبار الإضافة
    * ============================================================
    */
   const handleTestInsert = async () => {
@@ -349,23 +412,50 @@ export default function Import() {
       const testMovieId = 550;
 
       const details =
-        await getMovieDetails(testMovieId);
+        await getMovieDetails(
+          testMovieId
+        );
 
       const titleData =
         movieToTitle(details);
 
-      const { data: existing, error: checkError } =
-        await supabase
-          .from('titles')
-          .select('id,name')
-          .eq('name', titleData.name)
-          .maybeSingle();
+      const {
+        data: existingByTmdb,
+        error: tmdbCheckError
+      } = await supabase
+        .from('titles')
+        .select('id,name,tmdb_id')
+        .eq('tmdb_id', titleData.tmdb_id)
+        .maybeSingle();
 
-      if (checkError) {
-        throw checkError;
+      if (tmdbCheckError) {
+        throw tmdbCheckError;
       }
 
-      if (existing) {
+      if (existingByTmdb) {
+        setTestStatus(true);
+
+        setMessage(
+          'الفيلم التجريبي موجود مسبقاً، لذلك لم تتم إضافته مرة ثانية.'
+        );
+
+        return;
+      }
+
+      const {
+        data: existingByName,
+        error: nameCheckError
+      } = await supabase
+        .from('titles')
+        .select('id,name')
+        .eq('name', titleData.name)
+        .maybeSingle();
+
+      if (nameCheckError) {
+        throw nameCheckError;
+      }
+
+      if (existingByName) {
         setTestStatus(true);
 
         setMessage(
@@ -389,6 +479,7 @@ export default function Import() {
       setMessage(
         'تم إضافة الفيلم التجريبي بنجاح ✅'
       );
+
     } catch (err) {
       console.error(err);
 
@@ -402,7 +493,7 @@ export default function Import() {
 
   /*
    * ============================================================
-   * جلب الأفلام الشعبية
+   * الأفلام الشعبية
    * ============================================================
    */
   const getPopularMovies = async () => {
@@ -415,7 +506,8 @@ export default function Import() {
         `&language=ar-AR` +
         `&page=${page}`;
 
-      const res = await fetch(url);
+      const res =
+        await fetch(url);
 
       if (!res.ok) {
         throw new Error(
@@ -423,14 +515,16 @@ export default function Import() {
         );
       }
 
-      const data = await res.json();
+      const data =
+        await res.json();
 
       all.push(
-        ...(data.results || [])
-          .map(item => ({
+        ...(data.results || []).map(
+          item => ({
             ...item,
             media_type: 'movie'
-          }))
+          })
+        )
       );
     }
 
@@ -439,7 +533,7 @@ export default function Import() {
 
   /*
    * ============================================================
-   * جلب المسلسلات الشعبية
+   * المسلسلات الشعبية
    * ============================================================
    */
   const getPopularSeries = async () => {
@@ -452,7 +546,8 @@ export default function Import() {
         `&language=ar-AR` +
         `&page=${page}`;
 
-      const res = await fetch(url);
+      const res =
+        await fetch(url);
 
       if (!res.ok) {
         throw new Error(
@@ -460,14 +555,16 @@ export default function Import() {
         );
       }
 
-      const data = await res.json();
+      const data =
+        await res.json();
 
       all.push(
-        ...(data.results || [])
-          .map(item => ({
+        ...(data.results || []).map(
+          item => ({
             ...item,
             media_type: 'tv'
-          }))
+          })
+        )
       );
     }
 
@@ -494,14 +591,13 @@ export default function Import() {
     });
 
     try {
-      /*
-       * نجيب أفلام + مسلسلات
-       */
-      const [moviesList, seriesList] =
-        await Promise.all([
-          getPopularMovies(),
-          getPopularSeries()
-        ]);
+      const [
+        moviesList,
+        seriesList
+      ] = await Promise.all([
+        getPopularMovies(),
+        getPopularSeries()
+      ]);
 
       const allItems = [
         ...moviesList,
@@ -509,7 +605,7 @@ export default function Import() {
       ];
 
       /*
-       * نمنع التكرار داخل نفس عملية الاستيراد
+       * إزالة التكرار داخل نفس الدفعة
        */
       const uniqueItems = [];
       const seenIds = new Set();
@@ -518,15 +614,14 @@ export default function Import() {
         const key =
           `${item.media_type}-${item.id}`;
 
-        if (seenIds.has(key)) continue;
+        if (seenIds.has(key)) {
+          continue;
+        }
 
         seenIds.add(key);
         uniqueItems.push(item);
       }
 
-      /*
-       * نحدد عدد العناصر المراد معالجتها
-       */
       const itemsToImport =
         uniqueItems.slice(0, 40);
 
@@ -544,19 +639,87 @@ export default function Import() {
       });
 
       /*
-       * نعالجهم واحداً واحداً
-       * حتى لا نضغط TMDB/Supabase دفعة واحدة
+       * نستعمل مجموعة لتسجيل الموجودين
+       * حتى لا نعيد الاستعلام عن نفس العنصر.
+       */
+      const existingTmdbIds =
+        new Set();
+
+      /*
+       * جلب TMDB IDs الموجودة مسبقاً
+       */
+      const tmdbIds =
+        itemsToImport
+          .map(item => item.id)
+          .filter(Boolean);
+
+      /*
+       * Supabase .in قد لا يقبل مصفوفة فارغة
+       */
+      if (tmdbIds.length > 0) {
+        const {
+          data: existingRows,
+          error: existingError
+        } = await supabase
+          .from('titles')
+          .select('id,tmdb_id')
+          .in('tmdb_id', tmdbIds);
+
+        if (existingError) {
+          throw existingError;
+        }
+
+        (existingRows || []).forEach(
+          row => {
+            if (row.tmdb_id !== null) {
+              existingTmdbIds.add(
+                Number(row.tmdb_id)
+              );
+            }
+          }
+        );
+      }
+
+      /*
+       * الآن نعالج العناصر الجديدة فقط.
        */
       for (const item of itemsToImport) {
         try {
+          /*
+           * موجود بواسطة TMDB ID؟
+           * نتخطاه مباشرة.
+           */
+          if (
+            existingTmdbIds.has(
+              Number(item.id)
+            )
+          ) {
+            existingCount++;
+
+            setBulkStats({
+              total:
+                itemsToImport.length,
+              added,
+              existing:
+                existingCount,
+              failed
+            });
+
+            continue;
+          }
+
           let details;
 
           if (item.media_type === 'tv') {
             details =
-              await getTvDetails(item.id);
+              await getTvDetails(
+                item.id
+              );
           } else {
             details =
-              await getMovieDetails(item.id);
+              await getMovieDetails(
+                item.id
+              );
           }
 
           const titleData =
@@ -565,29 +728,30 @@ export default function Import() {
               : movieToTitle(details);
 
           /*
-           * التحقق من الاسم الموجود
+           * تحقق أخير بالاسم.
            */
-          const { data: existing, error: checkError } =
-            await supabase
-              .from('titles')
-              .select('id,name')
-              .eq('name', titleData.name)
-              .maybeSingle();
+          const {
+            data: existingByName,
+            error: nameCheckError
+          } = await supabase
+            .from('titles')
+            .select('id,name')
+            .eq('name', titleData.name)
+            .maybeSingle();
 
-          if (checkError) {
-            throw checkError;
+          if (nameCheckError) {
+            throw nameCheckError;
           }
 
-          /*
-           * موجود → نتخطاه
-           */
-          if (existing) {
+          if (existingByName) {
             existingCount++;
 
             setBulkStats({
-              total: itemsToImport.length,
+              total:
+                itemsToImport.length,
               added,
-              existing: existingCount,
+              existing:
+                existingCount,
               failed
             });
 
@@ -595,17 +759,17 @@ export default function Import() {
           }
 
           /*
-           * جديد → نضيفه
+           * إضافة الجديد فقط.
+           * url فارغ.
            */
           const { error } =
             await supabase
               .from('titles')
-              .insert([titleData]);
+              .insert([
+                titleData
+              ]);
 
           if (error) {
-            /*
-             * duplicate key = موجود
-             */
             if (
               error.code === '23505' ||
               error.message?.includes(
@@ -618,12 +782,22 @@ export default function Import() {
             }
           } else {
             added++;
+
+            /*
+             * نسجل الـID حتى لو تكرر
+             * لاحقاً داخل نفس الدفعة.
+             */
+            existingTmdbIds.add(
+              Number(titleData.tmdb_id)
+            );
           }
 
           setBulkStats({
-            total: itemsToImport.length,
+            total:
+              itemsToImport.length,
             added,
-            existing: existingCount,
+            existing:
+              existingCount,
             failed
           });
 
@@ -642,9 +816,11 @@ export default function Import() {
           });
 
           setBulkStats({
-            total: itemsToImport.length,
+            total:
+              itemsToImport.length,
             added,
-            existing: existingCount,
+            existing:
+              existingCount,
             failed
           });
         }
@@ -653,7 +829,7 @@ export default function Import() {
       setErrors(errorList);
 
       setMessage(
-        `اكتمل الاستيراد 🚀 | تمت الإضافة: ${added} | موجود مسبقاً: ${existingCount} | أخطاء: ${failed}`
+        `اكتمل الاستيراد 🚀 | تمت الإضافة: ${added} | تم تخطي الموجود: ${existingCount} | أخطاء: ${failed}`
       );
 
     } catch (err) {
@@ -668,6 +844,222 @@ export default function Import() {
 
     } finally {
       setBulkLoading(false);
+    }
+  };
+
+  /*
+   * ============================================================
+   * ملء الروابط الفارغة
+   * ============================================================
+   *
+   * المستخدم يدخل قالب الرابط بنفسه.
+   *
+   * مثال:
+   * https://example.com/movie/{tmdb_id}
+   *
+   * سيتم تحويل:
+   * {tmdb_id}
+   *
+   * إلى ID الخاص بكل فيلم/مسلسل.
+   *
+   * يتم تعديل السجلات التي url تاعها فارغ فقط.
+   */
+  const handleFillEmptyUrls = async () => {
+    if (fillLoading) return;
+
+    const template =
+      window.prompt(
+        'أدخل قالب رابط الفيديو، واستعمل {tmdb_id} مكان رقم TMDB:\n\nمثال:\nhttps://example.com/movie/{tmdb_id}'
+      );
+
+    if (template === null) {
+      return;
+    }
+
+    const cleanTemplate =
+      template.trim();
+
+    if (!cleanTemplate) {
+      setMessage(
+        'لم يتم إدخال قالب للرابط.'
+      );
+
+      return;
+    }
+
+    if (
+      !cleanTemplate.includes(
+        '{tmdb_id}'
+      )
+    ) {
+      setMessage(
+        'القالب لازم يحتوي على {tmdb_id}.'
+      );
+
+      return;
+    }
+
+    setFillLoading(true);
+    setFillStats(null);
+    setMessage('');
+    setErrors([]);
+
+    try {
+      /*
+       * نجيب فقط السجلات التي url تاعها
+       * NULL أو فارغ.
+       */
+      const {
+        data: emptyTitles,
+        error: fetchError
+      } = await supabase
+        .from('titles')
+        .select(
+          'id,name,tmdb_id,type,url'
+        )
+        .or(
+          'url.is.null,url.eq.'
+        );
+
+      if (fetchError) {
+        throw fetchError;
+      }
+
+      const rows =
+        emptyTitles || [];
+
+      let filled = 0;
+      let skipped = 0;
+      let failed = 0;
+
+      const fillErrors = [];
+
+      setFillStats({
+        total: rows.length,
+        filled: 0,
+        skipped: 0,
+        failed: 0
+      });
+
+      for (const row of rows) {
+        try {
+          /*
+           * حماية إضافية:
+           * إذا وجد URL رغم الاستعلام، لا نلمسه.
+           */
+          if (
+            row.url &&
+            String(row.url).trim()
+          ) {
+            skipped++;
+
+            setFillStats({
+              total: rows.length,
+              filled,
+              skipped,
+              failed
+            });
+
+            continue;
+          }
+
+          if (
+            row.tmdb_id === null ||
+            row.tmdb_id === undefined ||
+            String(row.tmdb_id).trim() === ''
+          ) {
+            skipped++;
+
+            setFillStats({
+              total: rows.length,
+              filled,
+              skipped,
+              failed
+            });
+
+            continue;
+          }
+
+          const generatedUrl =
+            cleanTemplate.replace(
+              /\{tmdb_id\}/g,
+              String(row.tmdb_id)
+            );
+
+          if (!generatedUrl.trim()) {
+            skipped++;
+
+            continue;
+          }
+
+          /*
+           * تحديث هذا السجل فقط.
+           */
+          const {
+            error: updateError
+          } = await supabase
+            .from('titles')
+            .update({
+              url: generatedUrl
+            })
+            .eq('id', row.id)
+            .or(
+              'url.is.null,url.eq.'
+            );
+
+          if (updateError) {
+            throw updateError;
+          }
+
+          filled++;
+
+          setFillStats({
+            total: rows.length,
+            filled,
+            skipped,
+            failed
+          });
+
+        } catch (err) {
+          failed++;
+
+          fillErrors.push({
+            name:
+              row.name ||
+              'بدون اسم',
+
+            error:
+              err.message ||
+              'خطأ غير معروف'
+          });
+
+          setFillStats({
+            total: rows.length,
+            filled,
+            skipped,
+            failed
+          });
+        }
+      }
+
+      setErrors(fillErrors);
+
+      setMessage(
+        `اكتمل ملء الروابط 🔗 | تم ملء: ${filled} | تم تخطي: ${skipped} | أخطاء: ${failed}`
+      );
+
+    } catch (err) {
+      console.error(
+        'Fill URLs error:',
+        err
+      );
+
+      setMessage(
+        `فشل ملء الروابط: ${err.message}`
+      );
+
+    } finally {
+      setFillLoading(false);
     }
   };
 
@@ -721,6 +1113,8 @@ export default function Import() {
           <br />
           العناصر الموجودة مسبقاً يتم تخطيها
           تلقائياً بدون أخطاء.
+          <br />
+          رابط الفيديو يبقى فارغاً عند الاستيراد.
         </p>
 
         <button
@@ -728,15 +1122,17 @@ export default function Import() {
           disabled={bulkLoading}
           style={{
             padding: '14px 30px',
-            background: bulkLoading
-              ? '#555'
-              : '#4caf50',
+            background:
+              bulkLoading
+                ? '#555'
+                : '#4caf50',
             color: '#fff',
             border: 'none',
             borderRadius: '6px',
-            cursor: bulkLoading
-              ? 'not-allowed'
-              : 'pointer',
+            cursor:
+              bulkLoading
+                ? 'not-allowed'
+                : 'pointer',
             fontWeight: 'bold',
             fontSize: '18px'
           }}
@@ -756,18 +1152,113 @@ export default function Import() {
               flexWrap: 'wrap'
             }}
           >
-            <span>📦 الكل: {bulkStats.total}</span>
+            <span>
+              📦 الكل: {bulkStats.total}
+            </span>
 
             <span>
               ✅ تمت الإضافة: {bulkStats.added}
             </span>
 
             <span>
-              ♻️ موجود: {bulkStats.existing}
+              ♻️ تم تخطي الموجود: {
+                bulkStats.existing
+              }
             </span>
 
             <span>
               ❌ أخطاء: {bulkStats.failed}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* =====================================================
+          ملء الروابط الفارغة
+      ====================================================== */}
+      <div
+        style={{
+          background: '#1a1a1a',
+          padding: '25px',
+          borderRadius: '10px',
+          maxWidth: '700px',
+          margin: '0 auto 25px auto',
+          textAlign: 'center',
+          border: '1px solid #333'
+        }}
+      >
+        <h2>
+          🔗 ملء الروابط الفارغة
+        </h2>
+
+        <p
+          style={{
+            color: '#aaa',
+            lineHeight: '1.8'
+          }}
+        >
+          يبحث عن جميع الأفلام والمسلسلات التي
+          خانة <b>url</b> تاعها فارغة،
+          ثم يطلب منك قالب الرابط.
+          <br />
+          استعمل <b>{'{tmdb_id}'}</b> مكان رقم
+          TMDB، وسيتم استبداله تلقائياً لكل
+          فيلم.
+          <br />
+          الروابط الموجودة مسبقاً لا يتم لمسها.
+        </p>
+
+        <button
+          onClick={
+            handleFillEmptyUrls
+          }
+          disabled={fillLoading}
+          style={{
+            padding: '14px 30px',
+            background:
+              fillLoading
+                ? '#555'
+                : '#9c27b0',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '6px',
+            cursor:
+              fillLoading
+                ? 'not-allowed'
+                : 'pointer',
+            fontWeight: 'bold',
+            fontSize: '18px'
+          }}
+        >
+          {fillLoading
+            ? '⏳ جاري ملء الروابط...'
+            : '🔗 ملء الروابط الفارغة'}
+        </button>
+
+        {fillStats && (
+          <div
+            style={{
+              marginTop: '20px',
+              display: 'flex',
+              justifyContent: 'center',
+              gap: '10px',
+              flexWrap: 'wrap'
+            }}
+          >
+            <span>
+              📦 الفارغة: {fillStats.total}
+            </span>
+
+            <span>
+              ✅ تم ملؤها: {fillStats.filled}
+            </span>
+
+            <span>
+              ⏭️ تم تخطيها: {fillStats.skipped}
+            </span>
+
+            <span>
+              ❌ أخطاء: {fillStats.failed}
             </span>
           </div>
         )}
@@ -915,31 +1406,34 @@ export default function Import() {
             🔎 تفاصيل الأخطاء
           </h3>
 
-          {errors.slice(0, 20).map(
-            (item, index) => (
-              <div
-                key={index}
-                style={{
-                  padding: '10px 0',
-                  borderBottom:
-                    '1px solid #422'
-                }}
-              >
-                <strong>
-                  {index + 1}. {item.name}
-                </strong>
-
+          {errors
+            .slice(0, 20)
+            .map(
+              (item, index) => (
                 <div
+                  key={index}
                   style={{
-                    color: '#ffaaaa',
-                    marginTop: '5px'
+                    padding: '10px 0',
+                    borderBottom:
+                      '1px solid #422'
                   }}
                 >
-                  {item.error}
+                  <strong>
+                    {index + 1}.{' '}
+                    {item.name}
+                  </strong>
+
+                  <div
+                    style={{
+                      color: '#ffaaaa',
+                      marginTop: '5px'
+                    }}
+                  >
+                    {item.error}
+                  </div>
                 </div>
-              </div>
-            )
-          )}
+              )
+            )}
         </div>
       )}
 
@@ -970,7 +1464,6 @@ export default function Import() {
               border: '1px solid #333'
             }}
           >
-
             <div>
               {item.poster_path ? (
                 <img
