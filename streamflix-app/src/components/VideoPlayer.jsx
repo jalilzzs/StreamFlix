@@ -3,13 +3,15 @@ import Hls from 'hls.js';
 
 const API_BASE_URL = 'https://streamflix-api-x0ku.onrender.com';
 
-export default function VideoPlayer({ tmdbId, type = 'movie', season = 1, episode = 1 }) {
+export default function VideoPlayer({ tmdbId, id, movieId, type = 'movie', season = 1, episode = 1 }) {
+  // دمج كافة احتمالات اسم الـ ID
+  const activeId = tmdbId || id || movieId;
+
   const [timeLeft, setTimeLeft] = useState(15);
   const [streamUrl, setStreamUrl] = useState(null);
   const [showPlayer, setShowPlayer] = useState(false);
   const [forceIframe, setForceIframe] = useState(false);
 
-  // حقول تتبع وتحديد الأخطاء
   const [logs, setLogs] = useState([]);
   const [errorCode, setErrorCode] = useState('NONE');
   const [showLogModal, setShowLogModal] = useState(false);
@@ -17,16 +19,21 @@ export default function VideoPlayer({ tmdbId, type = 'movie', season = 1, episod
   const videoRef = useRef(null);
 
   const fallbackUrl = type === 'tv' 
-    ? `https://vidsrc.cc/v2/embed/tv/${tmdbId}/${season}/${episode}`
-    : `https://vidsrc.cc/v2/embed/movie/${tmdbId}`;
+    ? `https://vidsrc.cc/v2/embed/tv/${activeId}/${season}/${episode}`
+    : `https://vidsrc.cc/v2/embed/movie/${activeId}`;
 
-  // دالة تسجيل الأحداث
   const addLog = (msg) => {
     const time = new Date().toLocaleTimeString();
     setLogs((prev) => [...prev, `[${time}] ${msg}`]);
   };
 
   useEffect(() => {
+    if (!activeId) {
+      setErrorCode('ERR_NO_ID');
+      addLog('خطأ: لم يتم العثور على معرّف الفيلم (ID is undefined)');
+      return;
+    }
+
     setTimeLeft(15);
     setStreamUrl(null);
     setShowPlayer(false);
@@ -34,48 +41,43 @@ export default function VideoPlayer({ tmdbId, type = 'movie', season = 1, episod
     setLogs([]);
     setErrorCode('NONE');
 
-    addLog(`بدء العملية - الفيلم ID: ${tmdbId} | النوع: ${type}`);
+    addLog(`بدء العملية - الفيلم ID: ${activeId} | النوع: ${type}`);
 
     async function checkStream() {
-      addLog(`إرسال طلب لـ API: ${API_BASE_URL}`);
+      addLog(`إرسال طلب لـ API مع ID: ${activeId}`);
       try {
         const query = type === 'tv' 
-          ? `tmdb=${tmdbId}&type=tv&season=${season}&episode=${episode}`
-          : `tmdb=${tmdbId}&type=movie`;
+          ? `tmdb=${activeId}&type=tv&season=${season}&episode=${episode}`
+          : `tmdb=${activeId}&type=movie`;
 
         const res = await fetch(`${API_BASE_URL}/api/extract?${query}`);
-        addLog(`استجابة السيرفر (Status): ${res.status}`);
-
-        if (!res.ok) {
-          throw new Error(`Server returned status ${res.status}`);
-        }
+        if (!res.ok) throw new Error(`Status ${res.status}`);
 
         const data = await res.json();
-        addLog(`بيانات السيرفر: ${JSON.stringify(data)}`);
+        addLog(`استجابة السيرفر: ${JSON.stringify(data)}`);
 
         if (data && data.success && data.streamUrl) {
-          addLog(`تم العثور على رابط m3u8 بنجاح!`);
+          addLog(`تم العثور على رابط البث بنجاح`);
           setStreamUrl(data.streamUrl);
         } else {
-          addLog(`لم يتم العثور على m3u8 (مُشفر أو غير متوفر).`);
-          setErrorCode('ERR_CODE_A: NO_DIRECT_STREAM');
+          addLog(`لم يتم العثور على رابط مباشر، تحويل للـ iframe`);
+          setErrorCode('ERR_NO_STREAM');
           setForceIframe(true);
         }
       } catch (e) {
         addLog(`خطأ اتصال بالـ API: ${e.message}`);
-        setErrorCode(`ERR_CODE_B: API_FETCH_FAILED (${e.message})`);
+        setErrorCode(`ERR_API_FETCH`);
         setForceIframe(true);
       }
     }
 
-    if (tmdbId) checkStream();
+    checkStream();
 
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
           setShowPlayer(true);
-          addLog(`انتهى العداد - فتح المشغل.`);
           return 0;
         }
         return prev - 1;
@@ -83,12 +85,10 @@ export default function VideoPlayer({ tmdbId, type = 'movie', season = 1, episod
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [tmdbId, type, season, episode]);
+  }, [activeId, type, season, episode]);
 
-  // إعداد وتشغيل Hls.js مع التقاط الأخطاء التفصيلية
   useEffect(() => {
     if (showPlayer && streamUrl && !forceIframe && videoRef.current) {
-      addLog(`محاولة تشغيل البث المباشر عبر HLS...`);
       const video = videoRef.current;
       let hls;
 
@@ -96,22 +96,15 @@ export default function VideoPlayer({ tmdbId, type = 'movie', season = 1, episod
         hls = new Hls();
         hls.loadSource(streamUrl);
         hls.attachMedia(video);
-
         hls.on(Hls.Events.ERROR, (event, data) => {
           if (data.fatal) {
-            addLog(`خطأ fatal في HLS: ${data.type} - ${data.details}`);
-            setErrorCode(`ERR_CODE_C: HLS_FATAL_${data.type}`);
+            setErrorCode(`ERR_HLS_FATAL`);
             setForceIframe(true);
-          } else {
-            addLog(`تحذير HLS: ${data.details}`);
           }
         });
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        addLog(`التشغيل عبر مشغل Safari/iOS الناnative...`);
         video.src = streamUrl;
       } else {
-        addLog(`المتصفح لا يدعم تشغيل HLS.`);
-        setErrorCode('ERR_CODE_D: HLS_NOT_SUPPORTED');
         setForceIframe(true);
       }
 
@@ -121,12 +114,20 @@ export default function VideoPlayer({ tmdbId, type = 'movie', season = 1, episod
     }
   }, [showPlayer, streamUrl, forceIframe]);
 
+  // في حالة عدم وجود ID إطلاقاً
+  if (!activeId) {
+    return (
+      <div className="w-full aspect-video bg-red-950/40 border border-red-800/50 rounded-lg flex flex-col items-center justify-center text-red-300 p-4 gap-2">
+        <p className="font-bold text-base">⚠️ لم يتم العثور على معرّف الفيلم (TMDB ID)</p>
+        <p className="text-xs text-gray-400">يرجى التأكد من تمرير id داخل مكون VideoPlayer في الصفحة الرئيسية.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full flex flex-col gap-2">
-      {/* شاشة العرض الرئيسية */}
       <div className="w-full aspect-video bg-black rounded-lg overflow-hidden shadow-lg relative border border-gray-800">
         {!showPlayer ? (
-          /* واجهة العد التنازلي */
           <div className="w-full h-full flex flex-col items-center justify-center text-white p-4 gap-4">
             <div className="relative flex items-center justify-center">
               <div className="w-16 h-16 border-4 border-red-600 border-t-transparent rounded-full animate-spin"></div>
@@ -134,7 +135,7 @@ export default function VideoPlayer({ tmdbId, type = 'movie', season = 1, episod
             </div>
             <div className="text-center">
               <p className="font-semibold text-base">جاري تحضير السيرفر...</p>
-              <p className="text-xs text-gray-400 mt-1">رمز الحالة الحالية: {errorCode}</p>
+              <p className="text-xs text-gray-400 mt-1">معرّف الفيلم: {activeId}</p>
             </div>
             <button 
               onClick={() => setShowPlayer(true)}
@@ -144,21 +145,18 @@ export default function VideoPlayer({ tmdbId, type = 'movie', season = 1, episod
             </button>
           </div>
         ) : streamUrl && !forceIframe ? (
-          /* مشغل الفيديو المباشر */
           <video 
             ref={videoRef}
             controls 
             autoPlay 
             playsInline
-            onError={(e) => {
-              addLog(`خطأ وسم الفيديو Native: ${e.target.error?.message || 'Unknown'}`);
-              setErrorCode(`ERR_CODE_E: NATIVE_VIDEO_FAILED`);
+            onError={() => {
+              setErrorCode(`ERR_NATIVE_VIDEO`);
               setForceIframe(true);
             }} 
             className="w-full h-full object-contain" 
           />
         ) : (
-          /* Iframe الاحتياطي */
           <iframe 
             src={fallbackUrl} 
             title="Video Player"
@@ -169,35 +167,26 @@ export default function VideoPlayer({ tmdbId, type = 'movie', season = 1, episod
         )}
       </div>
 
-      {/* زر وشريط كشف الأخطاء السفلي */}
       <div className="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-lg p-2 text-xs text-gray-300">
         <div className="flex items-center gap-2">
-          <span className="font-bold text-red-400">حالة المشغل:</span>
+          <span className="font-bold text-red-400">الحالة:</span>
           <span className="bg-black px-2 py-1 rounded border border-gray-700 font-mono text-yellow-400">
             {errorCode}
           </span>
         </div>
         <button 
           onClick={() => setShowLogModal(!showLogModal)}
-          className="px-3 py-1 bg-gray-800 hover:bg-gray-700 text-white rounded border border-gray-700 flex items-center gap-1"
+          className="px-3 py-1 bg-gray-800 hover:bg-gray-700 text-white rounded border border-gray-700"
         >
-          🐞 {showLogModal ? 'إخفاء السجل' : 'عرض سجل الأخطاء'}
+          🐞 {showLogModal ? 'إخفاء السجل' : 'عرض السجل'}
         </button>
       </div>
 
-      {/* نافذة سجل الأحداث (Terminal View) */}
       {showLogModal && (
         <div className="w-full bg-black border border-green-800 rounded-lg p-3 font-mono text-[11px] text-green-400 max-h-48 overflow-y-auto dir-ltr">
-          <div className="font-bold border-b border-green-900 pb-1 mb-2 text-white">=== DEBUG LOGS TRACE ===</div>
-          {logs.length === 0 ? (
-            <div>لا توجد سجلات بعد...</div>
-          ) : (
-            logs.map((log, index) => (
-              <div key={index} className="whitespace-pre-wrap leading-relaxed">
-                {log}
-              </div>
-            ))
-          )}
+          {logs.map((log, index) => (
+            <div key={index}>{log}</div>
+          ))}
         </div>
       )}
     </div>
