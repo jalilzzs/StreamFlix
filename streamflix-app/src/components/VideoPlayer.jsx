@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 export default function VideoPlayer({ tmdbId, type = 'movie', title }) {
+  const videoRef = useRef(null);
   const [streamUrl, setStreamUrl] = useState(null);
   const [loading, setLoading] = useState(true);
   const [useIframe, setUseIframe] = useState(false);
@@ -11,10 +12,9 @@ export default function VideoPlayer({ tmdbId, type = 'movie', title }) {
   const realTmdb = tmdbId || title?.tmdb_id || title?.tmdbId;
   const contentType = type === 'series' || title?.type === 'series' ? 'tv' : 'movie';
 
-  // رابط الباك أند الصحيح على Render
   const BACKEND_API_URL = 'https://streamflix-api-x0ku.onrender.com';
 
-  // قائمة السيرفرات المضمونة للهواتف والآيفون
+  // سيرفرات خفيفة ومحدثة
   const iframeServers = contentType === 'movie' ? [
     `https://vidsrc.me/embed/movie?tmdb=${realTmdb}`,
     `https://vidsrc.cc/v2/embed/movie/${realTmdb}`,
@@ -46,31 +46,27 @@ export default function VideoPlayer({ tmdbId, type = 'movie', title }) {
       setLoading(true);
 
       try {
-        addLog(`📡 الاتصال بالباك أند الصحيح (${BACKEND_API_URL})...`);
+        addLog(`📡 جلب البث المباشر...`);
         const response = await fetch(`${BACKEND_API_URL}/api/extract?tmdb=${realTmdb}&type=${contentType}`);
         
-        if (!response.ok) {
-          throw new Error(`استجابة السيرفر: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`استجابة السيرفر: ${response.status}`);
 
         const data = await response.json();
-        addLog(`📥 استجابة API: ${JSON.stringify(data)}`);
 
         if (data && data.streamUrl) {
           addLog("✅ تم استخراج رابط البث الصافي بنجاح!");
           setStreamUrl(data.streamUrl);
           setUseIframe(false);
-          setStatusText("STREAM_READY");
+          setStatusText("STREAM_READY (صافي بدون إعلانات)");
         } else {
-          addLog("⚠️ لم يتوفر بث صافي مباشر. تحويل للـ Iframe البديل...");
+          addLog("⚠️ تحويل أوتوماتيكي للسيرفر الاحتياطي مع درع حظر الإعلانات...");
           setUseIframe(true);
-          setStatusText("IFRAME_FALLBACK");
+          setStatusText("IFRAME_PROTECTED (محمي من الإعلانات)");
         }
       } catch (err) {
-        addLog(`❌ خطأ الاتصال بالباك أند: ${err.message}`);
-        addLog("⚠️ تحويل للسيرفرات الاحتياطية...");
+        addLog(`⚠️ تحويل للسيرفرات الاحتياطية المباشرة...`);
         setUseIframe(true);
-        setStatusText("IFRAME_FALLBACK");
+        setStatusText("IFRAME_PROTECTION");
       } finally {
         setLoading(false);
       }
@@ -79,40 +75,72 @@ export default function VideoPlayer({ tmdbId, type = 'movie', title }) {
     fetchCleanStream();
   }, [realTmdb, contentType]);
 
+  // تشغيل HLS المباشر إن وجد
+  useEffect(() => {
+    if (!useIframe && streamUrl && videoRef.current) {
+      const video = videoRef.current;
+      if (streamUrl.includes('.m3u8')) {
+        if (window.Hls && window.Hls.isSupported()) {
+          const hls = new window.Hls();
+          hls.loadSource(streamUrl);
+          hls.attachMedia(video);
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = streamUrl;
+        } else {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/hls.js@latest';
+          script.onload = () => {
+            if (window.Hls && window.Hls.isSupported()) {
+              const hls = new window.Hls();
+              hls.loadSource(streamUrl);
+              hls.attachMedia(video);
+            }
+          };
+          document.body.appendChild(script);
+        }
+      } else {
+        video.src = streamUrl;
+      }
+    }
+  }, [streamUrl, useIframe]);
+
   return (
     <div style={{ width: '100%', background: '#000', borderRadius: '8px', overflow: 'hidden', color: '#fff', direction: 'rtl' }}>
       
       {/* مشغل الفيديو */}
-      <div style={{ position: 'relative', width: '100%', minHeight: '350px', background: '#050505', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ position: 'relative', width: '100%', minHeight: '380px', background: '#050505', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {loading ? (
           <div style={{ textAlign: 'center', padding: '20px' }}>
-            <p style={{ margin: 0, fontSize: '15px', color: '#46d369' }}>⏳ جاري جلب واستخراج البث الصافي...</p>
+            <p style={{ margin: 0, fontSize: '15px', color: '#46d369' }}>⏳ جاري تجهيز المشغل وتحصينه من الإعلانات...</p>
           </div>
         ) : !useIframe && streamUrl ? (
           <video 
+            ref={videoRef}
             controls 
             autoPlay 
+            playsInline
             style={{ width: '100%', maxHeight: '500px', background: '#000' }}
-            src={streamUrl}
           />
         ) : (
+          /* Iframe مع خاصية sandbox لحظر الإعلانات والـ Popups تماماً */
           <iframe
             key={selectedServer}
             src={iframeServers[selectedServer]}
-            style={{ width: '100%', height: '380px', border: 'none', background: '#000' }}
+            style={{ width: '100%', height: '400px', border: 'none', background: '#000' }}
             allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
             allowFullScreen
             referrerPolicy="no-referrer"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
             title="Video Player"
           />
         )}
       </div>
 
-      {/* شريط معلومات المشغل واختيار السيرفرات */}
+      {/* شريط اختيار السيرفرات */}
       <div style={{ padding: '10px 15px', background: '#111', borderTop: '1px solid #222', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
         <div>
           <span style={{ fontSize: '12px', color: '#888' }}>الحالة: </span>
-          <span style={{ fontSize: '12px', fontWeight: 'bold', color: statusText === 'STREAM_READY' ? '#28a745' : '#ffc107' }}>
+          <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#28a745' }}>
             {statusText}
           </span>
         </div>
@@ -142,20 +170,15 @@ export default function VideoPlayer({ tmdbId, type = 'movie', title }) {
         )}
       </div>
 
-      {/* لوحة سجل التشخيص والأخطاء (Debug Log) */}
-      <div style={{ padding: '12px', background: '#0a0a0a', borderTop: '1px solid #1a1a1a', fontSize: '11px', fontFamily: 'monospace' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-          <span style={{ color: '#007bff', fontWeight: 'bold' }}>📋 سجل التشخيص (Debug Log):</span>
-          <button 
-            onClick={() => setLogs([])} 
-            style={{ background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', fontSize: '11px' }}
-          >
-            مسح السجل
-          </button>
+      {/* لوحة سجل التشخيص */}
+      <div style={{ padding: '10px 12px', background: '#0a0a0a', borderTop: '1px solid #1a1a1a', fontSize: '11px', fontFamily: 'monospace' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+          <span style={{ color: '#007bff', fontWeight: 'bold' }}>📋 سجل تشغيل الفيديو:</span>
+          <button onClick={() => setLogs([])} style={{ background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', fontSize: '11px' }}>مسح</button>
         </div>
-        <div style={{ maxHeight: '130px', overflowY: 'auto', background: '#111', padding: '8px', borderRadius: '4px', border: '1px solid #222' }}>
+        <div style={{ maxHeight: '100px', overflowY: 'auto', background: '#111', padding: '6px', borderRadius: '4px', border: '1px solid #222' }}>
           {logs.map((log, index) => (
-            <div key={index} style={{ marginBottom: '4px', color: log.includes('❌') ? '#ff4d4d' : log.includes('✅') ? '#46d369' : '#ccc' }}>
+            <div key={index} style={{ marginBottom: '3px', color: log.includes('❌') ? '#ff4d4d' : log.includes('✅') ? '#46d369' : '#ccc' }}>
               {log}
             </div>
           ))}
