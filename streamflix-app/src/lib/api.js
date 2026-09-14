@@ -54,7 +54,7 @@ export async function updateProfile(userId, patch) {
   return data;
 }
 
-// ---- Titles (تم التعديل لدعم 24 عنصر بالصفحة وتصفح جميع الأفلام والمسلسلات) ----
+// ---- Titles (تم التعديل لإرجاع العدد الإجمالي المضمون وإدارة الصفحات) ----
 
 export async function fetchTitles({
   type,
@@ -63,8 +63,9 @@ export async function fetchTitles({
   minRating,
   search,
   sortBy = 'created_at',
-  page = 1,
+  page,
   limit = 24,
+  offset,
 } = {}) {
   let query = supabase.from('titles').select('*', { count: 'exact' });
 
@@ -88,17 +89,25 @@ export async function fetchTitles({
     query = query.order('created_at', { ascending: false });
   }
 
-  // التقسيم على صفحات (Pagination - 24 عنصر لكل صفحة)
-  const from = (page - 1) * limit;
-  const to = from + limit - 1;
-  query = query.range(from, to);
+  // حساب النطاق للـ Pagination
+  if (page !== undefined && page !== null) {
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    query = query.range(from, to);
+  } else if (offset !== undefined && offset !== null) {
+    const from = offset;
+    const to = offset + limit - 1;
+    query = query.range(from, to);
+  } else if (limit) {
+    query = query.limit(limit);
+  }
 
   const { data, count, error } = await query;
 
   if (error) throw error;
 
   const result = data || [];
-  result.count = count || 0;
+  result.count = count ?? result.length;
   return result;
 }
 
