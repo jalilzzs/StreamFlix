@@ -8,7 +8,8 @@ app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 const PORT = process.env.PORT || 5000;
-const FLARESOLVERR_URL = process.env.FLARESOLVERR_URL;
+// مفتاح الخدمة المجانية تحطه في الـ Environment تاع Render باسم SCRAPER_API_KEY
+const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY;
 
 const flixhq = new MOVIES.FlixHQ();
 
@@ -23,22 +24,18 @@ app.get('/api/extract', async (req, res) => {
   }
 
   try {
-    if (!FLARESOLVERR_URL) {
-      return res.status(500).json({ success: false, error: 'رابط FLARESOLVERR_URL غير معرف في متغيرات البيئة' });
+    const targetUrl = `https://flixhq.to/search/${tmdbId}`;
+    
+    // استخدام API خارجي مجاني لتجاوز الحماية بطلب HTTP عادي بدون متصفح ثقيل
+    const scraperUrl = `http://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(targetUrl)}`;
+    
+    const solverResponse = await axios.get(scraperUrl, { timeout: 30000 });
+
+    if (!solverResponse.data) {
+      return res.status(500).json({ success: false, error: 'فشل جلب الصفحة عبر خدمة التجاوز' });
     }
 
-    // إرسال الطلب لـ FlareSolverr مع وقت انتظار ممدد (90 ثانية) لتجاوز ثقل السبّات والـ Cold Start
-    const solverResponse = await axios.post(FLARESOLVERR_URL, {
-      cmd: 'request.get',
-      url: `https://flixhq.to/search/${tmdbId}`,
-      maxTimeout: 80000
-    }, { timeout: 90000 });
-
-    if (!solverResponse.data || solverResponse.data.status !== 'ok') {
-      return res.status(500).json({ success: false, error: 'فشل تجاوز حماية Cloudflare عبر FlareSolverr' });
-    }
-
-    // البحث عبر مكتبة Consumet بعد تخطي الحظر بنجاح
+    // البحث عبر مكتبة Consumet
     const searchResults = await flixhq.search(String(tmdbId));
     if (!searchResults || !searchResults.results || searchResults.results.length === 0) {
       return res.status(404).json({ success: false, error: 'لم يتم العثور على المحتوى' });
@@ -59,7 +56,6 @@ app.get('/api/extract', async (req, res) => {
       return res.status(404).json({ success: false, error: 'تعذر العثور على روابط البث الصافي' });
     }
 
-    // إرجاع الروابط الصافية مباشرة
     return res.json({
       success: true,
       sources: sourcesData.sources,
