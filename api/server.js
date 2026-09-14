@@ -7,8 +7,6 @@ const PORT = process.env.PORT || 3000;
 const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY;
 
 const PAGE_URL = "https://vsembed.ru/embed/movie/920/";
-const JS_URL =
-  "https://vsembed.ru/assets/sbx.js?v=1786671805";
 
 function scraperUrl(target) {
   const params = new URLSearchParams({
@@ -19,67 +17,44 @@ function scraperUrl(target) {
   return `https://api.scraperapi.com/?${params.toString()}`;
 }
 
-function unique(values) {
-  return [...new Set(values.filter(Boolean))];
-}
-
-function extractCandidates(text) {
+function getContexts(text, keyword, radius = 2500) {
   const results = [];
+  const lower = text.toLowerCase();
+  const key = keyword.toLowerCase();
 
-  const patterns = [
-    /https?:\/\/[^"'`\s<>]+/gi,
+  let position = 0;
 
-    /["'`](\/[^"'`\s<>]{2,})["'`]/g,
+  while (true) {
+    const index = lower.indexOf(key, position);
 
-    /["'`]([^"'`\s<>]*(?:\/api\/|\/ajax\/|\/source\/|\/player\/|\/embed\/|\/stream\/|\/media\/|\/rcp\/|\/generate)[^"'`\s<>]*)["'`]/gi,
+    if (index === -1) break;
 
-    /(?:fetch|axios\.(?:get|post)|XMLHttpRequest)[^;\n]{0,500}/gi
-  ];
+    const start = Math.max(0, index - radius);
+    const end = Math.min(text.length, index + key.length + radius);
 
-  for (const regex of patterns) {
-    let match;
+    results.push({
+      keyword,
+      position: index,
+      context: text.slice(start, end)
+    });
 
-    while ((match = regex.exec(text)) !== null) {
-      let value = match[1] || match[0];
+    position = index + key.length;
 
-      if (!value) continue;
-
-      value = value
-        .replace(/\\u002F/g, "/")
-        .replace(/\\\//g, "/")
-        .replace(/&amp;/g, "&");
-
-      results.push(value);
-    }
+    if (results.length >= 5) break;
   }
 
-  return unique(results).slice(0, 300);
+  return results;
 }
 
-function extractImportantWords(text) {
-  const words = [
-    "fetch",
-    "axios",
-    "XMLHttpRequest",
-    "WebSocket",
-    "vs_src",
-    "source",
-    "player",
-    "embed",
-    "stream",
-    "media",
-    "api",
-    "ajax",
-    "rcp",
-    "generate"
-  ];
+function extractUrls(text) {
+  const matches = text.match(
+    /https?:\/\/[^"'`\s<>\\]+|\/[A-Za-z0-9._~:/?#$begin:math:display$$end:math:display$@!$&'()*+,;=%-]+/g
+  ) || [];
 
-  return words.filter(word =>
-    text.toLowerCase().includes(word.toLowerCase())
-  );
+  return [...new Set(matches)].slice(0, 300);
 }
 
-function preview(text, length = 6000) {
+function preview(text, length = 3000) {
   return String(text || "")
     .replace(/\s+/g, " ")
     .slice(0, length);
@@ -88,14 +63,13 @@ function preview(text, length = 6000) {
 app.get("/", (req, res) => {
   res.json({
     online: true,
-    service: "StreamFlix endpoint diagnostic",
-    page: PAGE_URL,
-    javascript: JS_URL,
-    test_endpoint: "/api/analyze-player"
+    service: "StreamFlix diagnostic API",
+    target: PAGE_URL,
+    test_endpoint: "/api/find-player-code"
   });
 });
 
-app.get("/api/analyze-player", async (req, res) => {
+app.get("/api/find-player-code", async (req, res) => {
   const started = Date.now();
 
   if (!SCRAPER_API_KEY) {
@@ -106,7 +80,7 @@ app.get("/api/analyze-player", async (req, res) => {
   }
 
   try {
-    const pageResponse = await axios.get(
+    const response = await axios.get(
       scraperUrl(PAGE_URL),
       {
         timeout: 15000,
@@ -118,67 +92,57 @@ app.get("/api/analyze-player", async (req, res) => {
       }
     );
 
-    const pageHtml =
-      typeof pageResponse.data === "string"
-        ? pageResponse.data
-        : JSON.stringify(pageResponse.data);
+    const html =
+      typeof response.data === "string"
+        ? response.data
+        : JSON.stringify(response.data);
 
-    const jsResponse = await axios.get(
-      scraperUrl(JS_URL),
-      {
-        timeout: 15000,
-        validateStatus: () => true,
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 16_7 like Mac OS X) AppleWebKit/605.1.15 Version/16.0 Mobile/15E148 Safari/604.1"
-        }
-      }
-    );
+    const keywords = [
+      "vs_src",
+      "fetch(",
+      "fetch (",
+      "axios",
+      "XMLHttpRequest",
+      "source",
+      "video",
+      "player",
+      "iframe",
+      "m3u8",
+      "mp4",
+      "media",
+      "api"
+    ];
 
-    const jsText =
-      typeof jsResponse.data === "string"
-        ? jsResponse.data
-        : JSON.stringify(jsResponse.data);
+    const contexts = {};
 
-    const combined = pageHtml + "\n" + jsText;
+    for (const keyword of keywords) {
+      contexts[keyword] = getContexts(html, keyword);
+    }
 
     return res.json({
-      success: true,
+      success: response.status >= 200 && response.status < 400,
 
-      stage: "player_endpoint_analysis",
+      stage: "player_code_context",
+
+      target_url: PAGE_URL,
+
+      scraper_status: response.status,
+
+      response_size: html.length,
 
       total_time_ms: Date.now() - started,
 
-      page: {
-        url: PAGE_URL,
-        status: pageResponse.status,
-        size: pageHtml.length
-      },
+      url_candidates: extractUrls(html),
 
-      javascript: {
-        url: JS_URL,
-        status: jsResponse.status,
-        content_type:
-          jsResponse.headers["content-type"] || null,
-        size: jsText.length
-      },
+      contexts,
 
-      important_terms: extractImportantWords(combined),
-
-      endpoint_candidates:
-        extractCandidates(combined),
-
-      page_preview:
-        preview(pageHtml, 3000),
-
-      javascript_preview:
-        preview(jsText, 8000)
+      html_preview: preview(html, 4000)
     });
 
   } catch (error) {
     return res.status(500).json({
       success: false,
-      stage: "player_endpoint_analysis",
+      stage: "player_code_context",
       error: error.message,
       total_time_ms: Date.now() - started
     });
@@ -187,6 +151,6 @@ app.get("/api/analyze-player", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(
-    `StreamFlix endpoint diagnostic running on port ${PORT}`
+    `StreamFlix player-code diagnostic running on port ${PORT}`
   );
 });
