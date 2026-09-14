@@ -23,7 +23,7 @@ app.get('/', (req, res) => {
 });
 
 // =====================================================
-// TEST VSEmbed SOURCE API
+// TEST VSEmbed SOURCE ENDPOINT
 // =====================================================
 
 app.get('/api/test-vsembed', async (req, res) => {
@@ -53,8 +53,6 @@ app.get('/api/test-vsembed', async (req, res) => {
       }
     );
 
-    const elapsed = Date.now() - startedAt;
-
     const body =
       typeof response.data === 'string'
         ? response.data
@@ -71,34 +69,19 @@ app.get('/api/test-vsembed', async (req, res) => {
 
       scraper_status: response.status,
 
-      response_time_ms: elapsed,
+      response_time_ms:
+        Date.now() - startedAt,
 
       content_type:
         response.headers['content-type'] || null,
 
-      response_size: body.length,
+      response_size:
+        body.length,
 
       looks_json:
-        response.headers['content-type']?.includes('json') ||
-        false,
-
-      has_m3u8:
-        body.toLowerCase().includes('.m3u8'),
-
-      has_mp4:
-        body.toLowerCase().includes('.mp4'),
-
-      has_source:
-        body.toLowerCase().includes('source'),
-
-      has_file:
-        body.toLowerCase().includes('file'),
-
-      has_url:
-        body.toLowerCase().includes('url'),
-
-      has_token:
-        body.toLowerCase().includes('token'),
+        response.headers['content-type']
+          ?.toLowerCase()
+          .includes('json') || false,
 
       preview:
         body.substring(0, 5000)
@@ -110,13 +93,14 @@ app.get('/api/test-vsembed', async (req, res) => {
       stage: 'request_error',
       error_code: error.code || null,
       error_message: error.message || null,
-      response_time_ms: Date.now() - startedAt
+      response_time_ms:
+        Date.now() - startedAt
     });
   }
 });
 
 // =====================================================
-// TEST CLOUDORCHESTRANOVA
+// CLOUDORCHESTRANOVA DIAGNOSTIC
 // =====================================================
 
 app.get('/api/test-cloud', async (req, res) => {
@@ -141,22 +125,23 @@ app.get('/api/test-cloud', async (req, res) => {
       {
         params: {
           api_key: SCRAPER_API_KEY,
-          url: targetUrl,
-          render: 'true'
+          url: targetUrl
         },
 
         timeout: 90000,
 
         validateStatus: () => true,
 
+        maxRedirects: 10,
+
         headers: {
           'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36'
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36',
+          'Accept':
+            'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8'
         }
       }
     );
-
-    const elapsed = Date.now() - startedAt;
 
     const body =
       typeof response.data === 'string'
@@ -165,79 +150,81 @@ app.get('/api/test-cloud', async (req, res) => {
 
     const lower = body.toLowerCase();
 
+    const headers = {};
+
+    for (const [key, value] of Object.entries(response.headers)) {
+      if (
+        [
+          'content-type',
+          'location',
+          'server',
+          'cf-ray',
+          'x-powered-by',
+          'cache-control'
+        ].includes(key.toLowerCase())
+      ) {
+        headers[key] = value;
+      }
+    }
+
     return res.json({
 
       success:
         response.status >= 200 &&
         response.status < 300,
 
-      stage: 'cloudorchestranova_test',
+      stage:
+        'cloudorchestranova_diagnostic',
 
-      target_url: targetUrl,
+      target_url:
+        targetUrl,
 
-      scraper_status: response.status,
+      scraper_status:
+        response.status,
 
-      response_time_ms: elapsed,
+      status_text:
+        response.statusText || null,
+
+      response_time_ms:
+        Date.now() - startedAt,
 
       content_type:
         response.headers['content-type'] || null,
 
-      response_size: body.length,
+      response_size:
+        body.length,
+
+      important_headers:
+        headers,
 
       is_html:
         lower.includes('<html') ||
         lower.includes('<!doctype'),
 
       looks_json:
-        response.headers['content-type']?.includes('json') ||
-        false,
+        response.headers['content-type']
+          ?.toLowerCase()
+          .includes('json') || false,
 
-      has_iframe:
-        lower.includes('<iframe'),
+      is_not_found:
+        response.status === 404 ||
+        lower.includes('not found'),
 
-      has_script:
-        lower.includes('<script'),
+      is_forbidden:
+        response.status === 403,
 
-      has_video:
-        lower.includes('<video'),
+      is_redirect:
+        response.status >= 300 &&
+        response.status < 400,
 
-      has_source:
-        lower.includes('<source'),
+      has_location_header:
+        !!response.headers.location,
 
-      has_m3u8:
-        lower.includes('.m3u8'),
-
-      has_mp4:
-        lower.includes('.mp4'),
-
-      has_mpd:
-        lower.includes('.mpd'),
-
-      has_blob:
-        lower.includes('blob:'),
-
-      has_fetch:
-        lower.includes('fetch('),
-
-      has_xhr:
-        lower.includes('xmlhttprequest') ||
-        lower.includes('xhr'),
-
-      has_axios:
-        lower.includes('axios'),
-
-      has_cloudflare:
-        lower.includes('cloudflare') ||
-        lower.includes('cf-ray'),
-
-      has_token:
-        lower.includes('token'),
-
-      has_source_keyword:
-        lower.includes('source'),
+      location:
+        response.headers.location || null,
 
       preview:
-        body.substring(0, 8000)
+        body.substring(0, 4000)
 
     });
 
@@ -247,7 +234,8 @@ app.get('/api/test-cloud', async (req, res) => {
 
       success: false,
 
-      stage: 'cloudorchestranova_connection',
+      stage:
+        'cloudorchestranova_connection',
 
       error_code:
         error.code || null,
