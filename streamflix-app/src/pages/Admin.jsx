@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabaseClient'; // غير المسار حسب �
 import { useRouter, useSearchParams } from 'next/navigation';
 
 // كلمة المرور أو السيريال الخفي للدخول من الرابط (يمكنك تغييره)
-const SECRET_ACCESS_KEY = 'StreamAdmin2026';
+const SECRET_ACCESS_KEY = 'StreamFlix2008';
 
 export default function SecretAdminDashboard() {
   const searchParams = useSearchParams();
