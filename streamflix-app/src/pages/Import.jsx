@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
-// رابط سيرفر الباك أند الخاص بـ StreamFlix
-const BACKEND_URL = 'https://streamflix-atzd.onrender.com';
 const TMDB_API_KEY = 'bb04576f643a69128d4924c5aea7c339';
 
 export default function Import() {
@@ -13,23 +11,18 @@ export default function Import() {
   const [bulkLoading, setBulkLoading] = useState(false);
   const [fillLoading, setFillLoading] = useState(false);
 
-  const [searchStatus, setSearchStatus] = useState(true);
-  const [testStatus, setTestStatus] = useState(true);
-  const [importStatus, setImportStatus] = useState(true);
-
   const [message, setMessage] = useState('');
   const [bulkStats, setBulkStats] = useState(null);
   const [fillStats, setFillStats] = useState(null);
   const [errors, setErrors] = useState([]);
 
-  /*
-   * ============================================================
-   * رابط الفيديو (مربوط تلقائياً بـ API الباك أند)
-   * ============================================================
-   */
-  const getVideoUrl = (tmdbId, type = 'movie') => {
+  // دالة توليد رابط Stelar المضمّن تلقائياً بناءً على tmdb_id والنوع
+  const getStelarUrl = (tmdbId, type = 'movie') => {
     if (!tmdbId) return '';
-    return `${BACKEND_URL}/api/extract?tmdb=${tmdbId}&type=${type}`;
+    const isTv = type === 'series' || type === 'tv';
+    return isTv
+      ? `https://stelar.rip/embed/tv/${tmdbId}/1/1`
+      : `https://stelar.rip/embed/movie/${tmdbId}`;
   };
 
   const getMovieDetails = async (id) => {
@@ -47,10 +40,7 @@ export default function Import() {
   };
 
   const movieToTitle = (movie) => {
-    const year = movie.release_date
-      ? parseInt(movie.release_date.split('-')[0])
-      : null;
-
+    const year = movie.release_date ? parseInt(movie.release_date.split('-')[0]) : null;
     return {
       name: movie.title || movie.name || 'بدون اسم',
       synopsis: movie.overview || 'لا يوجد وصف متاح.',
@@ -58,19 +48,14 @@ export default function Import() {
       rating_avg: Number(movie.vote_average) || 0,
       type: 'movie',
       is_premium: false,
-      poster_url: movie.poster_path
-        ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
-        : '',
-      url: getVideoUrl(movie.id, 'movie'),
+      poster_url: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : '',
+      url: getStelarUrl(movie.id, 'movie'),
       tmdb_id: movie.id
     };
   };
 
   const tvToTitle = (show) => {
-    const year = show.first_air_date
-      ? parseInt(show.first_air_date.split('-')[0])
-      : null;
-
+    const year = show.first_air_date ? parseInt(show.first_air_date.split('-')[0]) : null;
     return {
       name: show.name || 'بدون اسم',
       synopsis: show.overview || 'لا يوجد وصف متاح.',
@@ -78,20 +63,18 @@ export default function Import() {
       rating_avg: Number(show.vote_average) || 0,
       type: 'series',
       is_premium: false,
-      poster_url: show.poster_path
-        ? `https://image.tmdb.org/t/p/w500${show.poster_path}`
-        : '',
-      url: getVideoUrl(show.id, 'tv'),
+      poster_url: show.poster_path ? `https://image.tmdb.org/t/p/w500${show.poster_path}` : '',
+      url: getStelarUrl(show.id, 'tv'),
       tmdb_id: show.id
     };
   };
 
+  // البحث عن فيلم أو مسلسل
   const handleSearch = async (e) => {
     e.preventDefault();
     if (!query.trim()) return;
 
     setLoading(true);
-    setSearchStatus('A');
     setMessage('');
     setMovies([]);
     setErrors([]);
@@ -113,24 +96,21 @@ export default function Import() {
       combined.sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
 
       setMovies(combined.slice(0, 40));
-      setSearchStatus(true);
 
       if (combined.length === 0) {
-        setSearchStatus('D');
         setMessage('لم يتم العثور على أي نتائج.');
       }
     } catch (err) {
-      console.error('خطأ في البحث:', err);
+      console.error('Search error:', err);
       setMessage(`خطأ في البحث (${err.message})`);
     } finally {
       setLoading(false);
     }
   };
 
+  // استيراد عنصر فردي وربطه برابط Stelar
   const handleImportMovie = async (item) => {
-    setImportStatus('E');
     setMessage('');
-
     try {
       let details;
       if (item.media_type === 'tv') {
@@ -141,107 +121,28 @@ export default function Import() {
 
       const titleData = item.media_type === 'tv' ? tvToTitle(details) : movieToTitle(details);
 
-      const { data: existingByTmdb, error: tmdbCheckError } = await supabase
-        .from('titles')
-        .select('id,name,tmdb_id')
-        .eq('tmdb_id', titleData.tmdb_id)
-        .maybeSingle();
-
-      if (tmdbCheckError) throw tmdbCheckError;
-      if (existingByTmdb) {
-        setImportStatus(true);
-        setMessage(`"${titleData.name}" موجود مسبقاً، تم تخطيه.`);
-        return;
-      }
-
-      const { data: existingByName, error: nameCheckError } = await supabase
-        .from('titles')
-        .select('id,name')
-        .eq('name', titleData.name)
-        .maybeSingle();
-
-      if (nameCheckError) throw nameCheckError;
-      if (existingByName) {
-        setImportStatus(true);
-        setMessage(`"${titleData.name}" موجود مسبقاً، تم تخطيه.`);
-        return;
-      }
-
-      const { error } = await supabase.from('titles').insert([titleData]);
-
-      if (error) {
-        if (error.code === '23505' || error.message?.includes('titles_name_key')) {
-          setImportStatus(true);
-          setMessage(`"${titleData.name}" موجود مسبقاً، تم تخطيه.`);
-          return;
-        }
-        throw error;
-      }
-
-      setImportStatus(true);
-      setMessage(`تم استيراد "${titleData.name}" بنجاح 🔗 (مربوط بالباك أند) ✅`);
-    } catch (err) {
-      console.error('Import error:', err);
-      setImportStatus('G');
-      setMessage(`خطأ في الاستيراد: ${err.message}`);
-    }
-  };
-
-  const handleTestInsert = async () => {
-    setTestStatus('H');
-    setMessage('');
-
-    try {
-      const testMovieId = 550;
-      const details = await getMovieDetails(testMovieId);
-      const titleData = movieToTitle(details);
-
       const { data: existingByTmdb } = await supabase
         .from('titles')
-        .select('id,name,tmdb_id')
+        .select('id,name')
         .eq('tmdb_id', titleData.tmdb_id)
         .maybeSingle();
 
       if (existingByTmdb) {
-        setTestStatus(true);
-        setMessage('الفيلم التجريبي موجود مسبقاً.');
+        setMessage(`"${titleData.name}" موجود مسبقاً، تم تخطيه.`);
         return;
       }
 
       const { error } = await supabase.from('titles').insert([titleData]);
       if (error) throw error;
 
-      setTestStatus(true);
-      setMessage('تم إضافة الفيلم التجريبي بنجاح ومربوط بالباك أند ✅');
+      setMessage(`تم استيراد "${titleData.name}" بنجاح وربطه بـ Stelar ✅`);
     } catch (err) {
-      console.error(err);
-      setTestStatus('J');
-      setMessage(`خطأ في الاختبار: ${err.message}`);
+      console.error('Import error:', err);
+      setMessage(`خطأ في الاستيراد: ${err.message}`);
     }
   };
 
-  const getPopularMovies = async () => {
-    const all = [];
-    for (let page = 1; page <= 2; page++) {
-      const res = await fetch(`https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_API_KEY}&language=ar-AR&page=${page}`);
-      if (!res.ok) throw new Error(`فشل جلب الأفلام: ${res.status}`);
-      const data = await res.json();
-      all.push(...(data.results || []).map((item) => ({ ...item, media_type: 'movie' })));
-    }
-    return all;
-  };
-
-  const getPopularSeries = async () => {
-    const all = [];
-    for (let page = 1; page <= 2; page++) {
-      const res = await fetch(`https://api.themoviedb.org/3/tv/popular?api_key=${TMDB_API_KEY}&language=ar-AR&page=${page}`);
-      if (!res.ok) throw new Error(`فشل جلب المسلسلات: ${res.status}`);
-      const data = await res.json();
-      all.push(...(data.results || []).map((item) => ({ ...item, media_type: 'tv' })));
-    }
-    return all;
-  };
-
+  // الاستيراد الجماعي وتخزين روابط Stelar
   const handleBulkImport = async () => {
     if (bulkLoading) return;
 
@@ -251,31 +152,23 @@ export default function Import() {
     setBulkStats({ total: 0, added: 0, existing: 0, failed: 0 });
 
     try {
-      const [moviesList, seriesList] = await Promise.all([getPopularMovies(), getPopularSeries()]);
-      const allItems = [...moviesList, ...seriesList];
+      const getPopular = async (endpoint, type) => {
+        const res = await fetch(`https://api.themoviedb.org/3/${endpoint}?api_key=${TMDB_API_KEY}&language=ar-AR&page=1`);
+        const data = await res.json();
+        return (data.results || []).map(i => ({ ...i, media_type: type }));
+      };
 
-      const uniqueItems = [];
-      const seenIds = new Set();
-      for (const item of allItems) {
-        const key = `${item.media_type}-${item.id}`;
-        if (seenIds.has(key)) continue;
-        seenIds.add(key);
-        uniqueItems.push(item);
-      }
+      const [moviesList, seriesList] = await Promise.all([
+        getPopular('movie/popular', 'movie'),
+        getPopular('tv/popular', 'tv')
+      ]);
 
-      const itemsToImport = uniqueItems.slice(0, 40);
+      const itemsToImport = [...moviesList, ...seriesList].slice(0, 40);
       let added = 0, existingCount = 0, failed = 0;
       const errorList = [];
 
-      const existingTmdbIds = new Set();
-      const tmdbIds = itemsToImport.map((item) => item.id).filter(Boolean);
-
-      if (tmdbIds.length > 0) {
-        const { data: existingRows } = await supabase.from('titles').select('id,tmdb_id').in('tmdb_id', tmdbIds);
-        (existingRows || []).forEach((row) => {
-          if (row.tmdb_id !== null) existingTmdbIds.add(Number(row.tmdb_id));
-        });
-      }
+      const { data: existingRows } = await supabase.from('titles').select('tmdb_id');
+      const existingTmdbIds = new Set((existingRows || []).map((row) => Number(row.tmdb_id)).filter(Boolean));
 
       for (const item of itemsToImport) {
         try {
@@ -288,16 +181,10 @@ export default function Import() {
           let details = item.media_type === 'tv' ? await getTvDetails(item.id) : await getMovieDetails(item.id);
           const titleData = item.media_type === 'tv' ? tvToTitle(details) : movieToTitle(details);
 
-          const { data: existingByName } = await supabase.from('titles').select('id,name').eq('name', titleData.name).maybeSingle();
-          if (existingByName) {
-            existingCount++;
-            setBulkStats({ total: itemsToImport.length, added, existing: existingCount, failed });
-            continue;
-          }
-
           const { error } = await supabase.from('titles').insert([titleData]);
+
           if (error) {
-            if (error.code === '23505' || error.message?.includes('titles_name_key')) {
+            if (error.code === '23505') {
               existingCount++;
             } else {
               throw error;
@@ -306,40 +193,25 @@ export default function Import() {
             added++;
             existingTmdbIds.add(Number(titleData.tmdb_id));
           }
-
-          setBulkStats({ total: itemsToImport.length, added, existing: existingCount, failed });
         } catch (err) {
           failed++;
-          errorList.push({ name: item.title || item.name || 'بدون اسم', error: err.message || 'خطأ غير معروف' });
-          setBulkStats({ total: itemsToImport.length, added, existing: existingCount, failed });
+          errorList.push({ name: item.title || item.name || 'عنصر', error: err.message });
         }
+        setBulkStats({ total: itemsToImport.length, added, existing: existingCount, failed });
       }
 
       setErrors(errorList);
-      setMessage(`اكتمل الاستيراد 🚀 | تمت الإضافة: ${added} | تم تخطي الموجود: ${existingCount} | أخطاء: ${failed}`);
+      setMessage(`اكتمل الاستيراد الجماعي! تمت الإضافة: ${added} | تم تخطي: ${existingCount} | أخطاء: ${failed}`);
     } catch (err) {
-      console.error('Bulk import error:', err);
       setMessage(`فشل الاستيراد الجماعي: ${err.message}`);
     } finally {
       setBulkLoading(false);
     }
   };
 
+  // ملء جميع الروابط الفارغة بروابط Stelar المباشرة
   const handleFillEmptyUrls = async () => {
     if (fillLoading) return;
-
-    const defaultTemplate = `${BACKEND_URL}/api/extract?tmdb={tmdb_id}&type=movie`;
-    const template = window.prompt(
-      'أدخل قالب رابط الباك أند، واستعمل {tmdb_id} مكان رقم TMDB:',
-      defaultTemplate
-    );
-
-    if (template === null) return;
-    const cleanTemplate = template.trim();
-    if (!cleanTemplate || !cleanTemplate.includes('{tmdb_id}')) {
-      setMessage('القالب غير صالح، يجب أن يحتوي على {tmdb_id}.');
-      return;
-    }
 
     setFillLoading(true);
     setFillStats(null);
@@ -349,10 +221,11 @@ export default function Import() {
     try {
       const { data: emptyTitles, error: fetchError } = await supabase
         .from('titles')
-        .select('id,name,tmdb_id,type,url')
+        .select('id, name, tmdb_id, type, url')
         .or('url.is.null,url.eq.');
 
       if (fetchError) throw fetchError;
+
       const rows = emptyTitles || [];
       let filled = 0, skipped = 0, failed = 0;
       const fillErrors = [];
@@ -361,14 +234,13 @@ export default function Import() {
 
       for (const row of rows) {
         try {
-          if ((row.url && String(row.url).trim()) || !row.tmdb_id) {
+          if (!row.tmdb_id) {
             skipped++;
             setFillStats({ total: rows.length, filled, skipped, failed });
             continue;
           }
 
-          const mediaType = row.type === 'series' ? 'tv' : 'movie';
-          const generatedUrl = cleanTemplate.replace(/\{tmdb_id\}/g, String(row.tmdb_id)).replace(/type=[^&]+/, `type=${mediaType}`);
+          const generatedUrl = getStelarUrl(row.tmdb_id, row.type);
 
           const { error: updateError } = await supabase
             .from('titles')
@@ -376,114 +248,132 @@ export default function Import() {
             .eq('id', row.id);
 
           if (updateError) throw updateError;
+
           filled++;
-          setFillStats({ total: rows.length, filled, skipped, failed });
         } catch (err) {
           failed++;
-          fillErrors.push({ name: row.name || 'بدون اسم', error: err.message || 'خطأ غير معروف' });
-          setFillStats({ total: rows.length, filled, skipped, failed });
+          fillErrors.push({ name: row.name || 'بدون اسم', error: err.message });
         }
+        setFillStats({ total: rows.length, filled, skipped, failed });
       }
 
       setErrors(fillErrors);
-      setMessage(`اكتمل ملء الروابط 🔗 | تم ملء: ${filled} | تم تخطي: ${skipped} | أخطاء: ${failed}`);
+      setMessage(`تم ملء الروابط بـ Stelar بنجاح! تم التعديل: ${filled} | تم تخطي: ${skipped} | أخطاء: ${failed}`);
     } catch (err) {
-      console.error('Fill URLs error:', err);
-      setMessage(`فشل ملء الروابط: ${err.message}`);
+      setMessage(`فشل عملية ملء الروابط: ${err.message}`);
     } finally {
       setFillLoading(false);
     }
   };
 
   return (
-    <div style={{ background: '#111', color: '#fff', minHeight: '100vh', padding: '20px', direction: 'rtl' }}>
-      <h1 style={{ textAlign: 'center', marginBottom: '25px' }}>لوحة التحكم والاستيراد (StreamFlix)</h1>
+    <div style={{ background: '#0d0d0d', color: '#fff', minHeight: '100vh', padding: '25px', direction: 'rtl', fontFamily: 'system-ui, sans-serif' }}>
+      <h1 style={{ textAlign: 'center', marginBottom: '30px', color: '#e50914', fontSize: '28px', fontWeight: 'bold' }}>
+        🎬 لوحة إدارة واستيراد المحتوى (StreamFlix)
+      </h1>
 
-      <div style={{ background: '#1a1a1a', padding: '25px', borderRadius: '10px', maxWidth: '700px', margin: '0 auto 25px auto', textAlign: 'center', border: '1px solid #333' }}>
-        <h2>🚀 استيراد أفلام ومسلسلات</h2>
-        <p style={{ color: '#aaa', lineHeight: '1.8' }}>
-          يجلب العناصر من TMDB ويربطها تلقائياً بـ API الاستخراج الخاص بك:<br />
-          <code style={{ color: '#4caf50' }}>{BACKEND_URL}/api/extract?tmdb=ID&type=TYPE</code>
-        </p>
-        <button onClick={handleBulkImport} disabled={bulkLoading} style={{ padding: '14px 30px', background: bulkLoading ? '#555' : '#4caf50', color: '#fff', border: 'none', borderRadius: '6px', cursor: bulkLoading ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '18px' }}>
-          {bulkLoading ? '⏳ جاري الاستيراد...' : '🚀 استيراد دفعة جديدة'}
-        </button>
-        {bulkStats && (
-          <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <span>📦 الكل: {bulkStats.total}</span>
-            <span>✅ تمت الإضافة: {bulkStats.added}</span>
-            <span>♻️ تم تخطي الموجود: {bulkStats.existing}</span>
-            <span>❌ أخطاء: {bulkStats.failed}</span>
-          </div>
-        )}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', maxWidth: '1100px', margin: '0 auto 30px auto' }}>
+        
+        {/* بطاقة الاستيراد الجماعي */}
+        <div style={{ background: '#181818', padding: '20px', borderRadius: '12px', border: '1px solid #282828', textAlign: 'center' }}>
+          <h2 style={{ fontSize: '20px', marginBottom: '10px' }}>🚀 استيراد جماعي تلقائي</h2>
+          <p style={{ color: '#aaa', fontSize: '14px', marginBottom: '20px' }}>
+            جلب 40 عنصر من TMDB وحفظ روابط Stelar الخاصة بها تلقائياً.
+          </p>
+          <button 
+            onClick={handleBulkImport} 
+            disabled={bulkLoading} 
+            style={{ width: '100%', padding: '12px', background: bulkLoading ? '#444' : '#28a745', color: '#fff', border: 'none', borderRadius: '8px', cursor: bulkLoading ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '16px' }}>
+            {bulkLoading ? '⏳ جاري الاستيراد...' : '🚀 تنفيذ الاستيراد الجماعي'}
+          </button>
+          {bulkStats && (
+            <div style={{ marginTop: '15px', display: 'flex', justifyContent: 'space-around', background: '#222', padding: '10px', borderRadius: '8px', fontSize: '13px' }}>
+              <span>📦 الكل: {bulkStats.total}</span>
+              <span style={{ color: '#4caf50' }}>✅ تمت: {bulkStats.added}</span>
+              <span style={{ color: '#ffc107' }}>♻️ موجود: {bulkStats.existing}</span>
+              <span style={{ color: '#f44336' }}>❌ أخطاء: {bulkStats.failed}</span>
+            </div>
+          )}
+        </div>
+
+        {/* بطاقة ملء الروابط الفارغة */}
+        <div style={{ background: '#181818', padding: '20px', borderRadius: '12px', border: '1px solid #282828', textAlign: 'center' }}>
+          <h2 style={{ fontSize: '20px', marginBottom: '10px' }}>🔗 ملء الروابط الفارغة بـ Stelar</h2>
+          <p style={{ color: '#aaa', fontSize: '14px', marginBottom: '20px' }}>
+            فحص قاعدة البيانات وتوليد رابط Stelar لكل فيلم أو مسلسل لا يملك رابط مشاهدة.
+          </p>
+          <button 
+            onClick={handleFillEmptyUrls} 
+            disabled={fillLoading} 
+            style={{ width: '100%', padding: '12px', background: fillLoading ? '#444' : '#8e44ad', color: '#fff', border: 'none', borderRadius: '8px', cursor: fillLoading ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '16px' }}>
+            {fillLoading ? '⏳ جاري التحديث...' : '🔗 ملء جميع الروابط الفارغة بـ Stelar'}
+          </button>
+          {fillStats && (
+            <div style={{ marginTop: '15px', display: 'flex', justifyContent: 'space-around', background: '#222', padding: '10px', borderRadius: '8px', fontSize: '13px' }}>
+              <span>📦 الفارغة: {fillStats.total}</span>
+              <span style={{ color: '#4caf50' }}>✅ تم ملؤها: {fillStats.filled}</span>
+              <span style={{ color: '#ffc107' }}>⏭️ تم تخطي: {fillStats.skipped}</span>
+              <span style={{ color: '#f44336' }}>❌ أخطاء: {fillStats.failed}</span>
+            </div>
+          )}
+        </div>
+
       </div>
 
-      <div style={{ background: '#1a1a1a', padding: '25px', borderRadius: '10px', maxWidth: '700px', margin: '0 auto 25px auto', textAlign: 'center', border: '1px solid #333' }}>
-        <h2>🔗 ملء الروابط الفارغة تلقائياً</h2>
-        <p style={{ color: '#aaa', lineHeight: '1.8' }}>يملاء جميع خانات URL الفارغة برابط الاستخراج المباشر لسيرفر Render الخاص بك.</p>
-        <button onClick={handleFillEmptyUrls} disabled={fillLoading} style={{ padding: '14px 30px', background: fillLoading ? '#555' : '#9c27b0', color: '#fff', border: 'none', borderRadius: '6px', cursor: fillLoading ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '18px' }}>
-          {fillLoading ? '⏳ جاري ملء الروابط...' : '🔗 ملء الروابط الفارغة بالباك أند'}
-        </button>
-        {fillStats && (
-          <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <span>📦 الفارغة: {fillStats.total}</span>
-            <span>✅ تم ملؤها: {fillStats.filled}</span>
-            <span>⏭️ تم تخطيها: {fillStats.skipped}</span>
-            <span>❌ أخطاء: {fillStats.failed}</span>
-          </div>
-        )}
-      </div>
-
-      <div style={{ background: '#1a1a1a', padding: '20px', borderRadius: '10px', maxWidth: '600px', margin: '0 auto 20px auto', textAlign: 'center', border: '1px solid #333' }}>
-        <h3>خانة الإضافة الفورية التجريبية</h3>
-        <button onClick={handleTestInsert} style={{ padding: '10px 20px', background: '#007bff', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}>
-          ⚡ تنفيذ إضافة فيلم تجريبي
-        </button>
-      </div>
-
-      <div style={{ background: '#1a1a1a', padding: '20px', borderRadius: '10px', maxWidth: '600px', margin: '0 auto 20px auto', border: '1px solid #333' }}>
-        <h3 style={{ textAlign: 'center' }}>🔎 البحث عن فيلم أو مسلسل معين</h3>
-        <form onSubmit={handleSearch} style={{ display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          <input type="text" placeholder="اكتب اسم الفيلم أو المسلسل..." value={query} onChange={(e) => setQuery(e.target.value)} style={{ padding: '10px', width: '300px', borderRadius: '5px', border: '1px solid #333', background: '#222', color: '#fff' }} />
-          <button type="submit" style={{ padding: '10px 20px', background: '#e50914', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+      {/* قسم البحث الفردي */}
+      <div style={{ background: '#181818', padding: '20px', borderRadius: '12px', maxWidth: '1100px', margin: '0 auto 30px auto', border: '1px solid #282828' }}>
+        <h3 style={{ textAlign: 'center', marginBottom: '15px', fontSize: '18px' }}>🔎 البحث عن فيلم أو مسلسل معين لاستيراده</h3>
+        <form onSubmit={handleSearch} style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+          <input 
+            type="text" 
+            placeholder="اكتب اسم الفيلم أو المسلسل باللغة العربية أو الإنجليزية..." 
+            value={query} 
+            onChange={(e) => setQuery(e.target.value)} 
+            style={{ flex: '1', maxWidth: '500px', padding: '12px', borderRadius: '8px', border: '1px solid #333', background: '#222', color: '#fff', outline: 'none' }} 
+          />
+          <button type="submit" style={{ padding: '12px 24px', background: '#e50914', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
             {loading ? 'جاري البحث...' : 'بحث'}
           </button>
         </form>
       </div>
 
+      {/* تنبيهات الحالة */}
       {message && (
-        <p style={{ textAlign: 'center', color: message.includes('خطأ') || message.includes('فشل') ? '#ff4d4d' : '#46d369', marginBottom: '20px', fontWeight: 'bold', fontSize: '18px' }}>
+        <div style={{ textAlign: 'center', padding: '12px', background: message.includes('خطأ') || message.includes('فشل') ? '#3b1818' : '#18331e', color: message.includes('خطأ') || message.includes('فشل') ? '#ff7777' : '#77ff94', borderRadius: '8px', maxWidth: '1100px', margin: '0 auto 20px auto', border: '1px solid #444', fontWeight: 'bold' }}>
           {message}
-        </p>
+        </div>
       )}
 
+      {/* تفاصيل الأخطاء */}
       {errors.length > 0 && (
-        <div style={{ background: '#241515', border: '1px solid #6b2929', borderRadius: '10px', padding: '20px', maxWidth: '900px', margin: '0 auto 25px auto' }}>
-          <h3 style={{ color: '#ff7777' }}>🔎 تفاصيل الأخطاء</h3>
-          {errors.slice(0, 20).map((item, index) => (
-            <div key={index} style={{ padding: '10px 0', borderBottom: '1px solid #422' }}>
-              <strong>{index + 1}. {item.name}</strong>
-              <div style={{ color: '#ffaaaa', marginTop: '5px' }}>{item.error}</div>
+        <div style={{ background: '#221515', border: '1px solid #552222', borderRadius: '10px', padding: '15px', maxWidth: '1100px', margin: '0 auto 20px auto' }}>
+          <h4 style={{ color: '#ff6b6b', margin: '0 0 10px 0' }}>قائمة الأخطاء التفصيلية:</h4>
+          {errors.slice(0, 10).map((item, idx) => (
+            <div key={idx} style={{ fontSize: '13px', borderBottom: '1px solid #332222', padding: '5px 0', color: '#ddaaaa' }}>
+              <strong>{idx + 1}. {item.name}:</strong> {item.error}
             </div>
           ))}
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '20px', maxWidth: '1000px', margin: '0 auto' }}>
+      {/* نتائج البحث */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '20px', maxWidth: '1100px', margin: '0 auto' }}>
         {movies.map((item) => (
-          <div key={`${item.media_type}-${item.id}`} style={{ background: '#1a1a1a', borderRadius: '8px', overflow: 'hidden', padding: '10px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px solid #333' }}>
+          <div key={`${item.media_type}-${item.id}`} style={{ background: '#181818', borderRadius: '10px', overflow: 'hidden', padding: '12px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px solid #282828' }}>
             <div>
               {item.poster_path ? (
-                <img src={`https://image.tmdb.org/t/p/w300${item.poster_path}`} alt={item.title || item.name} style={{ width: '100%', height: '280px', objectFit: 'cover', borderRadius: '5px' }} />
+                <img src={`https://image.tmdb.org/t/p/w300${item.poster_path}`} alt={item.title || item.name} style={{ width: '100%', height: '260px', objectFit: 'cover', borderRadius: '6px' }} />
               ) : (
-                <div style={{ width: '100%', height: '280px', background: '#333', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '5px' }}>لا توجد صورة</div>
+                <div style={{ width: '100%', height: '260px', background: '#252525', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', color: '#777' }}>بدون صورة</div>
               )}
-              <h3 style={{ fontSize: '16px', margin: '10px 0 5px 0' }}>{item.title || item.name}</h3>
-              <p style={{ fontSize: '12px', color: '#aaa' }}>{item.media_type === 'tv' ? '📺 مسلسل' : '🎬 فيلم'}</p>
-              <p style={{ fontSize: '12px', color: '#aaa' }}>⭐ {item.vote_average ? Number(item.vote_average).toFixed(1) : '0.0'}</p>
+              <h4 style={{ fontSize: '15px', margin: '10px 0 5px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title || item.name}</h4>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#aaa', marginBottom: '10px' }}>
+                <span>{item.media_type === 'tv' ? '📺 مسلسل' : '🎬 فيلم'}</span>
+                <span>⭐ {item.vote_average ? Number(item.vote_average).toFixed(1) : '0.0'}</span>
+              </div>
             </div>
-            <button onClick={() => handleImportMovie(item)} style={{ marginTop: '10px', padding: '8px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
-              📥 استيراد وربط بالباك أند
+            <button onClick={() => handleImportMovie(item)} style={{ padding: '8px', background: '#0066cc', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>
+              📥 استيراد وربط بـ Stelar
             </button>
           </div>
         ))}
