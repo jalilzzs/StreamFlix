@@ -23,10 +23,10 @@ app.get('/', (req, res) => {
 });
 
 // =====================================================
-// DIAGNOSE VSEMBED INTERNAL LINKS
+// INSPECT VSEMBED + JAVASCRIPT
 // =====================================================
 
-app.get('/api/inspect', async (req, res) => {
+app.get('/api/inspect-js', async (req, res) => {
   const targetUrl =
     req.query.url || 'https://vsembed.ru/embed/movie/550/';
 
@@ -41,37 +41,30 @@ app.get('/api/inspect', async (req, res) => {
   const startedAt = Date.now();
 
   try {
-    const response = await axios.get('https://api.scraperapi.com', {
-      params: {
-        api_key: SCRAPER_API_KEY,
-        url: targetUrl
-      },
-      timeout: 60000,
-      validateStatus: () => true
-    });
+    // -------------------------------------------------
+    // 1. Get VSEmbed page
+    // -------------------------------------------------
 
-    const elapsed = Date.now() - startedAt;
+    const pageResponse = await axios.get(
+      'https://api.scraperapi.com',
+      {
+        params: {
+          api_key: SCRAPER_API_KEY,
+          url: targetUrl
+        },
+        timeout: 60000,
+        validateStatus: () => true
+      }
+    );
 
     const html =
-      typeof response.data === 'string'
-        ? response.data
-        : JSON.stringify(response.data);
+      typeof pageResponse.data === 'string'
+        ? pageResponse.data
+        : JSON.stringify(pageResponse.data);
 
     // -------------------------------------------------
-    // Extract URLs
+    // 2. Find script files
     // -------------------------------------------------
-
-    const absoluteUrls = [
-      ...html.matchAll(
-        /https?:\/\/[^\s"'<>\\]+/gi
-      )
-    ].map(match => match[0]);
-
-    const iframeUrls = [
-      ...html.matchAll(
-        /<iframe[^>]+src\s*=\s*["']([^"']+)["']/gi
-      )
-    ].map(match => match[1]);
 
     const scriptUrls = [
       ...html.matchAll(
@@ -79,77 +72,161 @@ app.get('/api/inspect', async (req, res) => {
       )
     ].map(match => match[1]);
 
-    const m3u8Urls = [
-      ...html.matchAll(
-        /https?:\/\/[^\s"'<>\\]+\.m3u8[^\s"'<>\\]*/gi
-      )
-    ].map(match => match[0]);
+    const absoluteScriptUrls = scriptUrls.map(src => {
+      try {
+        return new URL(src, targetUrl).href;
+      } catch {
+        return src;
+      }
+    });
 
-    const mp4Urls = [
-      ...html.matchAll(
-        /https?:\/\/[^\s"'<>\\]+\.mp4[^\s"'<>\\]*/gi
-      )
-    ].map(match => match[0]);
-
-    const playerUrls = absoluteUrls.filter(url =>
-      /player|embed|stream|video|source|file|m3u8|mp4/i.test(url)
-    );
-
-    // Remove duplicates
     const unique = array => [...new Set(array)];
 
-    return res.json({
-      success: response.status >= 200 && response.status < 300,
+    const scripts = [];
 
-      stage: 'vsembed_inspection',
+    // -------------------------------------------------
+    // 3. Download each JavaScript file through
+    //    ScraperAPI
+    // -------------------------------------------------
+
+    for (const scriptUrl of unique(absoluteScriptUrls)) {
+      try {
+        const scriptResponse = await axios.get(
+          'https://api.scraperapi.com',
+          {
+            params: {
+              api_key: SCRAPER_API_KEY,
+              url: scriptUrl
+            },
+            timeout: 60000,
+            validateStatus: () => true
+          }
+        );
+
+        const scriptBody =
+          typeof scriptResponse.data === 'string'
+            ? scriptResponse.data
+            : JSON.stringify(scriptResponse.data);
+
+        // -------------------------------------------------
+        // Search URLs inside JS
+        // -------------------------------------------------
+
+        const urls = [
+          ...scriptBody.matchAll(
+            /https?:\/\/[^\s"'`<>\\]+/gi
+          )
+        ].map(match => match[0]);
+
+        const apiPaths = [
+          ...scriptBody.matchAll(
+            /["'`](\/[^"'`]{2,300})["'`]/g
+          )
+        ].map(match => match[1]);
+
+        const videoReferences = [
+          ...scriptBody.matchAll(
+            /[^\s"'`<>\\]{0,200}\.(?:m3u8|mp4|mkv|mpd)[^\s"'`<>\\]*/gi
+          )
+        ].map(match => match[0]);
+
+        const interestingStrings = [
+          ...scriptBody.matchAll(
+            /["'`](.{0,200}(?:iframe|player|video|source|stream|embed|ajax|fetch|axios|m3u8|mp4|playlist).{0,300})["'`]/gi
+          )
+        ].map(match => match[1]);
+
+        scripts.push({
+          url: scriptUrl,
+
+          status: scriptResponse.status,
+
+          content_type:
+            scriptResponse.headers['content-type'] || null,
+
+          size: scriptBody.length,
+
+          external_urls: unique(urls).slice(0, 100),
+
+          api_paths: unique(apiPaths).slice(0, 100),
+
+          video_references:
+            unique(videoReferences).slice(0, 100),
+
+          interesting_strings:
+            unique(interestingStrings).slice(0, 100),
+
+          preview: scriptBody.substring(0, 2000)
+        });
+
+      } catch (scriptError) {
+        scripts.push({
+          url: scriptUrl,
+
+          error_code:
+            scriptError.code || null,
+
+          error_message:
+            scriptError.message || null
+        });
+      }
+    }
+
+    // -------------------------------------------------
+    // 4. Search the HTML itself for important
+    //    JavaScript keywords
+    // -------------------------------------------------
+
+    const htmlMatches = [
+      ...html.matchAll(
+        /.{0,150}(?:iframe|player|video|source|stream|embed|fetch|axios|ajax|m3u8|mp4|playlist).{0,300}/gi
+      )
+    ].map(match => match[0]);
+
+    return res.json({
+      success: pageResponse.status >= 200 &&
+        pageResponse.status < 300,
+
+      stage: 'javascript_inspection',
 
       target_url: targetUrl,
 
-      scraper_status: response.status,
+      page_status: pageResponse.status,
 
-      response_time_ms: elapsed,
+      page_size: html.length,
 
-      content_type:
-        response.headers['content-type'] || null,
+      page_response_time_ms:
+        Date.now() - startedAt,
 
-      response_size: html.length,
+      script_count:
+        unique(absoluteScriptUrls).length,
 
-      has_iframe: iframeUrls.length > 0,
+      script_urls:
+        unique(absoluteScriptUrls),
 
-      has_scripts: scriptUrls.length > 0,
+      html_interesting_matches:
+        unique(htmlMatches).slice(0, 100),
 
-      has_m3u8: m3u8Urls.length > 0,
-
-      has_mp4: mp4Urls.length > 0,
-
-      iframe_urls: unique(iframeUrls),
-
-      script_urls: unique(scriptUrls),
-
-      m3u8_urls: unique(m3u8Urls),
-
-      mp4_urls: unique(mp4Urls),
-
-      player_related_urls: unique(playerUrls),
-
-      all_external_urls: unique(absoluteUrls),
-
-      preview: html.substring(0, 3000)
+      scripts
     });
 
   } catch (error) {
     return res.status(200).json({
       success: false,
 
-      stage: 'inspection_connection',
+      stage: 'javascript_inspection_connection',
 
-      diagnosis: 'فشل جلب الصفحة عبر ScraperAPI',
+      diagnosis:
+        'فشل أثناء فحص JavaScript عبر ScraperAPI',
 
-      error_code: error.code || null,
+      error_code:
+        error.code || null,
 
-      error_message: error.message || null,
+      error_message:
+        error.message || null,
 
-      response_time_ms: Date.now() - startedAt
+      response_time_ms:
+        Date.now() - startedAt
     });
   }
 });
@@ -159,5 +236,7 @@ app.get('/api/inspect', async (req, res) => {
 // =====================================================
 
 app.listen(PORT, () => {
-  console.log(`StreamFlix Backend running on port ${PORT}`);
+  console.log(
+    `StreamFlix Backend running on port ${PORT}`
+  );
 });
