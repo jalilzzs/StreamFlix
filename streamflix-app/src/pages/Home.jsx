@@ -111,7 +111,7 @@ export default function Home() {
               <p className="hero-desc">{featured.synopsis || featured.description || 'لا يوجد وصف متاح لهذا العمل حالياً.'}</p>
               <div className="hero-actions">
                 <button className="btn btn-primary" onClick={() => navigate(`/title/${featured.id}`)}>
-                  ▶ {t('play')}
+                   {t('play')}
                 </button>
                 <button className="btn btn-ghost" onClick={() => navigate(`/title/${featured.id}`)}>
                   ＋ {t('my_list_add')}
