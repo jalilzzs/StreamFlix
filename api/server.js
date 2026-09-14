@@ -6,7 +6,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY;
 
-const TARGET_URL = "https://vidsrc.to/embed/movie/920";
+const TARGET_URL = "const TARGET_URL ="https://vsembed.ru/embed/movie/920/";
 
 function scraperUrl(target) {
   const params = new URLSearchParams({
