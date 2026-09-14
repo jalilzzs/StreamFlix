@@ -12,6 +12,19 @@ const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY;
 
 const flixhq = new MOVIES.FlixHQ();
 
+// توجيه كل طلبات axios التلقائية عبر بروكسي ScraperAPI لتجاوز Cloudflare في كل خطوة
+if (SCRAPER_API_KEY) {
+  axios.defaults.proxy = {
+    protocol: 'http',
+    host: 'proxy.scraperapi.com',
+    port: 8001,
+    auth: {
+      username: `api_${SCRAPER_API_KEY}`,
+      password: ''
+    }
+  };
+}
+
 app.get('/api/extract', async (req, res) => {
   const tmdbId = req.query.tmdb || req.query.id;
   const type = req.query.type || 'movie';
@@ -25,15 +38,6 @@ app.get('/api/extract', async (req, res) => {
   try {
     if (!SCRAPER_API_KEY) {
       return res.status(500).json({ success: false, error: 'مفتاح SCRAPER_API_KEY غير معرف في إعدادات البيئة' });
-    }
-
-    const targetUrl = `https://flixhq.to/search/${tmdbId}`;
-    const scraperUrl = `http://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&render=true&url=${encodeURIComponent(targetUrl)}`;
-    
-    const solverResponse = await axios.get(scraperUrl, { timeout: 60000 });
-
-    if (!solverResponse.data) {
-      return res.status(500).json({ success: false, error: 'فشل جلب الصفحة عبر خدمة التجاوز' });
     }
 
     const searchResults = await flixhq.search(String(tmdbId));
