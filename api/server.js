@@ -10,6 +10,11 @@ app.use(express.json());
 const PORT = process.env.PORT || 5000;
 const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY;
 
+const MOVIE_ID = '550';
+
+const CLOUD_URL =
+  'https://cloudorchestranova.com/embed/movie/550?vs=1vt55BdR0CY1qqEsBEY0eix0rTY84_HDTI9U5VqmbEqrm989c-61as7Q4vHQd3-m1IpiIHa-sBW55I-xTN0KN110Ec7vam2XQw';
+
 // =====================================================
 // BASIC TEST
 // =====================================================
@@ -23,12 +28,12 @@ app.get('/', (req, res) => {
 });
 
 // =====================================================
-// TEST VSEmbed SOURCE ENDPOINT
+// VSEmbED SOURCE TEST
 // =====================================================
 
 app.get('/api/test-vsembed', async (req, res) => {
   const targetUrl =
-    'https://vsembed.ru/vs_src.php?type=movie&id=550';
+    `https://vsembed.ru/vs_src.php?type=movie&id=${MOVIE_ID}`;
 
   if (!SCRAPER_API_KEY) {
     return res.json({
@@ -58,6 +63,12 @@ app.get('/api/test-vsembed', async (req, res) => {
         ? response.data
         : JSON.stringify(response.data);
 
+    let parsed = null;
+
+    try {
+      parsed = JSON.parse(body);
+    } catch {}
+
     return res.json({
       success:
         response.status >= 200 &&
@@ -83,6 +94,9 @@ app.get('/api/test-vsembed', async (req, res) => {
           ?.toLowerCase()
           .includes('json') || false,
 
+      returned_src:
+        parsed?.src || null,
+
       preview:
         body.substring(0, 5000)
     });
@@ -105,9 +119,6 @@ app.get('/api/test-vsembed', async (req, res) => {
 
 app.get('/api/test-cloud', async (req, res) => {
 
-  const targetUrl =
-    'https://cloudorchestranova.com/embed/movie/550?vs=1vt55BdR0CY1qqEsBEY0eix0rTY84_HDTI9U5VqmbEqrm989c-61as7Q4vHQd3-m1IpiIHa-sBW55I-xTN0KN110Ec7vam2XQw';
-
   if (!SCRAPER_API_KEY) {
     return res.json({
       success: false,
@@ -125,7 +136,7 @@ app.get('/api/test-cloud', async (req, res) => {
       {
         params: {
           api_key: SCRAPER_API_KEY,
-          url: targetUrl
+          url: CLOUD_URL
         },
 
         timeout: 90000,
@@ -148,25 +159,6 @@ app.get('/api/test-cloud', async (req, res) => {
         ? response.data
         : JSON.stringify(response.data);
 
-    const lower = body.toLowerCase();
-
-    const headers = {};
-
-    for (const [key, value] of Object.entries(response.headers)) {
-      if (
-        [
-          'content-type',
-          'location',
-          'server',
-          'cf-ray',
-          'x-powered-by',
-          'cache-control'
-        ].includes(key.toLowerCase())
-      ) {
-        headers[key] = value;
-      }
-    }
-
     return res.json({
 
       success:
@@ -177,7 +169,7 @@ app.get('/api/test-cloud', async (req, res) => {
         'cloudorchestranova_diagnostic',
 
       target_url:
-        targetUrl,
+        CLOUD_URL,
 
       scraper_status:
         response.status,
@@ -194,21 +186,25 @@ app.get('/api/test-cloud', async (req, res) => {
       response_size:
         body.length,
 
-      important_headers:
-        headers,
+      important_headers: {
+        server:
+          response.headers['server'] || null,
 
-      is_html:
-        lower.includes('<html') ||
-        lower.includes('<!doctype'),
+        content_type:
+          response.headers['content-type'] || null,
 
-      looks_json:
-        response.headers['content-type']
-          ?.toLowerCase()
-          .includes('json') || false,
+        location:
+          response.headers['location'] || null,
+
+        x_powered_by:
+          response.headers['x-powered-by'] || null,
+
+        cf_ray:
+          response.headers['cf-ray'] || null
+      },
 
       is_not_found:
-        response.status === 404 ||
-        lower.includes('not found'),
+        response.status === 404,
 
       is_forbidden:
         response.status === 403,
@@ -217,11 +213,8 @@ app.get('/api/test-cloud', async (req, res) => {
         response.status >= 300 &&
         response.status < 400,
 
-      has_location_header:
-        !!response.headers.location,
-
-      location:
-        response.headers.location || null,
+      has_location:
+        !!response.headers['location'],
 
       preview:
         body.substring(0, 4000)
