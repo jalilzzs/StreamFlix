@@ -11,18 +11,30 @@ export default function Home() {
   const { t } = useI18n();
   const navigate = useNavigate();
 
+  // الحالات الأساسية (State)
   const [featured, setFeatured] = useState(null);
   const [trending, setTrending] = useState([]);
   const [recommended, setRecommended] = useState([]);
   const [continueWatching, setContinueWatching] = useState([]);
+  
+  // حالات الكتالوج الكامل والصفحات (Pagination)
+  const [catalog, setCatalog] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  
+  // حالات التحميل
   const [loadingTrending, setLoadingTrending] = useState(true);
   const [loadingContinue, setLoadingContinue] = useState(true);
+  const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [error, setError] = useState(null);
 
+  const ITEMS_PER_PAGE = 24; // عدد العناوين في الصفحة الواحدة
+
+  // 1. جلب بيانات التريند والأعمال المميزة
   useEffect(() => {
     (async () => {
       try {
-        const titles = await fetchTitles({ limit: 12 });
+        const titles = await fetchTitles({ limit: 15 });
         setTrending(titles);
         setFeatured(titles[0] || null);
         setRecommended([...titles].reverse());
@@ -35,6 +47,7 @@ export default function Home() {
     })();
   }, [t]);
 
+  // 2. جلب بيانات "متابعة المشاهدة" للمستخدم المسجل
   useEffect(() => {
     if (!user) {
       setLoadingContinue(false);
@@ -52,43 +65,76 @@ export default function Home() {
     })();
   }, [user]);
 
+  // 3. جلب جميع عناوين المكتبة مقسمة على صفحات (Pagination)
+  useEffect(() => {
+    (async () => {
+      setLoadingCatalog(true);
+      try {
+        const offset = (currentPage - 1) * ITEMS_PER_PAGE;
+        const res = await fetchTitles({ limit: ITEMS_PER_PAGE, offset, page: currentPage });
+        
+        // دعم مرن لسواء رجعت البيانات كمصفوفة أو كائن يحتوي على count
+        if (Array.isArray(res)) {
+          setCatalog(res);
+          // تقدير إجمالي التصفح إذا لم يُرجع السيرفر الرقم الإجمالي
+          setTotalCount((prev) => Math.max(prev, offset + res.length));
+        } else if (res?.data) {
+          setCatalog(res.data);
+          if (res.count) setTotalCount(res.count);
+        }
+      } catch (err) {
+        console.error('خطأ في جلب الكتالوج:', err);
+      } finally {
+        setLoadingCatalog(false);
+      }
+    })();
+  }, [currentPage]);
+
+  const totalPages = Math.ceil((totalCount || 683) / ITEMS_PER_PAGE);
+
   return (
-    <div>
+    <div className="home-page" style={{ direction: 'rtl' }}>
       {error && <div className="container"><div className="error-banner">{error}</div></div>}
 
+      {/* --- الهيدر السينمائي (Hero Banner) --- */}
       <section
         className="hero"
         style={{
-          '--hero-image': `url('${featured?.poster_url || 'https://images.unsplash.com/photo-1478720568477-152d9b164e26?q=80&w=1600&auto=format&fit=crop'}')`,
+          '--hero-image': `url('${featured?.poster_url || featured?.poster_path || 'https://images.unsplash.com/photo-1478720568477-152d9b164e26?q=80&w=1600&auto=format&fit=crop'}')`,
         }}
       >
         <div className="hero-content">
           {featured ? (
             <>
-              <div className="hero-eyebrow">Featured</div>
-              <h1 className="hero-title">{featured.name}</h1>
-              <p className="hero-desc">{featured.synopsis || 'Synopsis coming soon.'}</p>
+              <div className="hero-eyebrow">🔥 الأكثر شعبية اليوم</div>
+              <h1 className="hero-title">{featured.name || featured.title}</h1>
+              <p className="hero-desc">{featured.synopsis || featured.description || 'لا يوجد وصف متاح لهذا العمل حالياً.'}</p>
               <div className="hero-actions">
-                <button className="btn btn-primary" onClick={() => navigate(`/title/${featured.id}`)}>▶ {t('play')}</button>
-                <button className="btn btn-ghost" onClick={() => navigate(`/title/${featured.id}`)}>＋ {t('my_list_add')}</button>
+                <button className="btn btn-primary" onClick={() => navigate(`/title/${featured.id}`)}>
+                  ▶ {t('play')}
+                </button>
+                <button className="btn btn-ghost" onClick={() => navigate(`/title/${featured.id}`)}>
+                  ＋ {t('my_list_add')}
+                </button>
               </div>
             </>
           ) : (
             <>
               <div className="hero-eyebrow">StreamFlix</div>
-              <h1 className="hero-title">Your titles will appear here</h1>
-              <p className="hero-desc">Once you add rows to the Supabase "titles" table, they'll show up across this page automatically.</p>
+              <h1 className="hero-title">أهلاً بك في منصتك السينمائية</h1>
+              <p className="hero-desc">استمتع بمشاهدة أحدث الأفلام والمسلسلات بجودة عالية.</p>
             </>
           )}
         </div>
       </section>
 
+      {/* --- شريط متابعة المشاهدة (Continue Watching) --- */}
       {user && (
         <ContentRail
           title={t('continue_watching')}
           loading={loadingContinue}
           items={continueWatching}
-          emptyText="Nothing in progress yet — start watching something!"
+          emptyText="لا توجد أعمال قيد المشاهدة حالياً."
           renderExtra={(row) => {
             const ep = row.episodes;
             const ti = ep?.titles;
@@ -99,8 +145,116 @@ export default function Home() {
         />
       )}
 
-      <ContentRail title={t('trending_now')} loading={loadingTrending} items={trending} emptyText="No titles yet — add some in Supabase." />
-      <ContentRail title={t('recommended')} loading={loadingTrending} items={recommended} emptyText="No titles yet." />
+      {/* --- شريط الأكثر تداولاً (Trending Now) --- */}
+      <ContentRail 
+        title={t('trending_now')} 
+        loading={loadingTrending} 
+        items={trending} 
+        emptyText="لا توجد عناوين متاحة." 
+      />
+
+      {/* --- شريط المقترحات (Recommended) --- */}
+      <ContentRail 
+        title={t('recommended')} 
+        loading={loadingTrending} 
+        items={recommended} 
+        emptyText="لا توجد مقترحات." 
+      />
+
+      {/* --- شبكة الكتالوج الشامل لجميع الـ 683+ عنوان مع الصفحات --- */}
+      <section className="catalog-section" style={{ padding: '30px 4%', background: '#0d0d0d', marginTop: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #222', paddingBottom: '10px' }}>
+          <h2 style={{ fontSize: '20px', margin: 0, color: '#fff', fontWeight: 'bold' }}>
+            🎬 المكتبة الشاملة ({totalCount || 683})
+          </h2>
+          <span style={{ fontSize: '13px', color: '#888' }}>
+            الصفحة {currentPage} من {totalPages}
+          </span>
+        </div>
+
+        {loadingCatalog ? (
+          <div style={{ textAlign: 'center', padding: '50px 0', color: '#888' }}>
+            ⏳ جاري تحميل الكتالوج...
+          </div>
+        ) : (
+          <>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+              gap: '16px',
+              marginBottom: '30px'
+            }}>
+              {catalog.map((item) => (
+                <MovieCard key={item.id} title={item} />
+              ))}
+            </div>
+
+            {/* أزرار التنقل بين الصفحات (Pagination Controls) */}
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '30px 0' }}>
+              <button
+                onClick={() => {
+                  setCurrentPage(1);
+                  window.scrollTo({ top: 600, behavior: 'smooth' });
+                }}
+                disabled={currentPage === 1}
+                style={navBtnStyle(currentPage === 1)}
+              >
+                « الأولى
+              </button>
+
+              <button
+                onClick={() => {
+                  setCurrentPage((prev) => Math.max(1, prev - 1));
+                  window.scrollTo({ top: 600, behavior: 'smooth' });
+                }}
+                disabled={currentPage === 1}
+                style={navBtnStyle(currentPage === 1)}
+              >
+                السابق
+              </button>
+
+              <span style={{ color: '#fff', fontSize: '14px', padding: '0 10px', fontWeight: 'bold' }}>
+                {currentPage} / {totalPages}
+              </span>
+
+              <button
+                onClick={() => {
+                  setCurrentPage((prev) => Math.min(totalPages, prev + 1));
+                  window.scrollTo({ top: 600, behavior: 'smooth' });
+                }}
+                disabled={currentPage === totalPages}
+                style={navBtnStyle(currentPage === totalPages)}
+              >
+                التالي
+              </button>
+
+              <button
+                onClick={() => {
+                  setCurrentPage(totalPages);
+                  window.scrollTo({ top: 600, behavior: 'smooth' });
+                }}
+                disabled={currentPage === totalPages}
+                style={navBtnStyle(currentPage === totalPages)}
+              >
+                الأخيرة »
+              </button>
+            </div>
+          </>
+        )}
+      </section>
     </div>
   );
 }
+
+// تنسيق أزرار الترقيم
+const navBtnStyle = (disabled) => ({
+  padding: '8px 16px',
+  borderRadius: '6px',
+  border: '1px solid #333',
+  background: disabled ? '#181818' : '#e50914',
+  color: disabled ? '#555' : '#fff',
+  cursor: disabled ? 'not-allowed' : 'pointer',
+  fontSize: '13px',
+  fontWeight: 'bold',
+  transition: 'all 0.2s ease'
+});
