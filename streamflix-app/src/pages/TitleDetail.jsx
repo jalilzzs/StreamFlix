@@ -44,9 +44,9 @@ export default function TitleDetail() {
     );
   }
 
-  // استخراج معرّف TMDB والنوع بوضوح لتمريرهما للمشغل
-  const targetId = title?.tmdb_id || title?.id || id;
-  const targetType = title?.type === 'series' || title?.type === 'tv' ? 'tv' : 'movie';
+  // جلب رقم TMDB المباشر من قاعدة البيانات وتحديد نوع العرض
+  const realTmdbId = title?.tmdb_id || title?.tmdbId || title?.imdb_id;
+  const contentType = title?.type === 'series' || title?.type === 'tv' ? 'tv' : 'movie';
 
   return (
     <div style={{ background: '#111', color: '#fff', minHeight: '100vh', padding: '20px', direction: 'rtl' }}>
@@ -59,9 +59,8 @@ export default function TitleDetail() {
       {/* --- مشغل الفيديو المحدث --- */}
       <div style={{ width: '100%', maxWidth: '900px', margin: '0 auto', background: '#000', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 4px 15px rgba(0,0,0,0.5)' }}>
         <VideoPlayer 
-          tmdbId={targetId} 
-          id={targetId}
-          type={targetType}
+          tmdbId={realTmdbId} 
+          type={contentType} 
           title={title} 
         />
       </div>
