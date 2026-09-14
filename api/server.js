@@ -1,404 +1,244 @@
-import express from 'express';
-import cors from 'cors';
-import axios from 'axios';
+const express = require("express");
+const axios = require("axios");
 
 const app = express();
 
-app.use(cors({ origin: '*' }));
-app.use(express.json());
-
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY;
 
-const MOVIE_ID = '550';
+const TARGET_URL = "https://vidsrc.to/embed/movie/920";
 
-const VSEMBED_URL =
-  `https://vsembed.ru/vs_src.php?type=movie&id=${MOVIE_ID}`;
-
-// =====================================================
-// BASIC TEST
-// =====================================================
-
-app.get('/', (req, res) => {
-  res.json({
-    success: true,
-    server: 'StreamFlix Backend',
-    status: 'online'
+function scraperUrl(target, extra = {}) {
+  const params = new URLSearchParams({
+    api_key: SCRAPER_API_KEY,
+    url: target,
+    ...extra
   });
-});
 
-// =====================================================
-// DYNAMIC VSEMBED → CLOUD DIAGNOSTIC
-// =====================================================
+  return `https://api.scraperapi.com/?${params.toString()}`;
+}
 
-app.get('/api/test-chain', async (req, res) => {
+function unique(values) {
+  return [...new Set(values.filter(Boolean))];
+}
 
-  if (!SCRAPER_API_KEY) {
-    return res.json({
-      success: false,
-      stage: 'configuration',
-      diagnosis: 'SCRAPER_API_KEY غير موجود في Render'
+function absoluteUrl(value, base = TARGET_URL) {
+  if (!value) return null;
+
+  try {
+    return new URL(value, base).href;
+  } catch {
+    return value;
+  }
+}
+
+function extractAttribute(html, tag, attribute) {
+  const results = [];
+
+  const regex = new RegExp(
+    `<${tag}\\b[^>]*\\b${attribute}\\s*=\\s*["']([^"']+)["']`,
+    "gi"
+  );
+
+  let match;
+
+  while ((match = regex.exec(html)) !== null) {
+    results.push(absoluteUrl(match[1]));
+  }
+
+  return unique(results);
+}
+
+function extractEndpoints(html) {
+  const results = [];
+
+  const patterns = [
+    /https?:\/\/[^"'`\s<>]+/gi,
+    /["'`](\/[^"'`\s<>]{2,})["'`]/g,
+    /["'`]([^"'`\s<>]*(?:\/api\/|\/ajax\/|\/source\/|\/player\/|\/embed\/|\/stream\/|\/media\/)[^"'`\s<>]*)["'`]/gi
+  ];
+
+  for (const regex of patterns) {
+    let match;
+
+    while ((match = regex.exec(html)) !== null) {
+      let value = match[1];
+
+      if (!value) continue;
+
+      value = value
+        .replace(/\\u002F/g, "/")
+        .replace(/\\\//g, "/")
+        .replace(/&amp;/g, "&");
+
+      if (
+        value.startsWith("http://") ||
+        value.startsWith("https://") ||
+        value.startsWith("/") ||
+        value.includes("/api/") ||
+        value.includes("/ajax/") ||
+        value.includes("/source/") ||
+        value.includes("/player/") ||
+        value.includes("/embed/") ||
+        value.includes("/stream/") ||
+        value.includes("/media/")
+      ) {
+        results.push(value);
+      }
+    }
+  }
+
+  return unique(results).slice(0, 200);
+}
+
+function extractDataAttributes(html) {
+  const results = [];
+
+  const regex = /\bdata-([a-zA-Z0-9_-]+)\s*=\s*["']([^"']+)["']/g;
+
+  let match;
+
+  while ((match = regex.exec(html)) !== null) {
+    results.push({
+      name: `data-${match[1]}`,
+      value: match[2]
     });
   }
 
-  const startedAt = Date.now();
+  return results.slice(0, 200);
+}
+
+function makePreview(text, length = 4000) {
+  if (!text) return "";
+
+  return text
+    .replace(/\s+/g, " ")
+    .slice(0, length);
+}
+
+app.get("/", (req, res) => {
+  res.json({
+    online: true,
+    service: "StreamFlix diagnostic API",
+    target: TARGET_URL,
+    test_endpoint: "/api/inspect-920"
+  });
+});
+
+app.get("/api/inspect-920", async (req, res) => {
+  const started = Date.now();
+
+  if (!SCRAPER_API_KEY) {
+    return res.status(500).json({
+      success: false,
+      error: "SCRAPER_API_KEY is missing"
+    });
+  }
 
   try {
-
-    // -------------------------------------------------
-    // STEP 1 — GET DYNAMIC SRC FROM VSEMBED
-    // -------------------------------------------------
-
-    const sourceResponse = await axios.get(
-      'https://api.scraperapi.com',
+    const response = await axios.get(
+      scraperUrl(TARGET_URL, {
+        render: "true"
+      }),
       {
-        params: {
-          api_key: SCRAPER_API_KEY,
-          url: VSEMBED_URL
-        },
-
-        timeout: 60000,
-
-        validateStatus: () => true
-      }
-    );
-
-    const sourceBody =
-      typeof sourceResponse.data === 'string'
-        ? sourceResponse.data
-        : JSON.stringify(sourceResponse.data);
-
-    let sourceJson = null;
-
-    try {
-      sourceJson = JSON.parse(sourceBody);
-    } catch {}
-
-    const dynamicSrc =
-      sourceJson?.src || null;
-
-    // -------------------------------------------------
-    // STEP 1 RESULT
-    // -------------------------------------------------
-
-    if (
-      sourceResponse.status < 200 ||
-      sourceResponse.status >= 300
-    ) {
-      return res.json({
-
-        success: false,
-
-        stage:
-          'vsembed_failed',
-
-        vsembed: {
-
-          url:
-            VSEMBED_URL,
-
-          status:
-            sourceResponse.status,
-
-          content_type:
-            sourceResponse.headers['content-type'] || null,
-
-          preview:
-            sourceBody.substring(0, 3000)
-
-        },
-
-        total_time_ms:
-          Date.now() - startedAt
-
-      });
-    }
-
-    if (!dynamicSrc) {
-      return res.json({
-
-        success: false,
-
-        stage:
-          'src_missing',
-
-        vsembed: {
-
-          url:
-            VSEMBED_URL,
-
-          status:
-            sourceResponse.status,
-
-          content_type:
-            sourceResponse.headers['content-type'] || null,
-
-          preview:
-            sourceBody.substring(0, 3000)
-
-        },
-
-        total_time_ms:
-          Date.now() - startedAt
-
-      });
-    }
-
-    // -------------------------------------------------
-    // STEP 2 — TEST THE NEW DYNAMIC SRC
-    // -------------------------------------------------
-
-    const cloudResponse = await axios.get(
-      'https://api.scraperapi.com',
-      {
-        params: {
-          api_key: SCRAPER_API_KEY,
-          url: dynamicSrc
-        },
-
-        timeout: 90000,
-
-        maxRedirects: 10,
-
+        timeout: 30000,
         validateStatus: () => true,
-
         headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36',
-
-          'Accept':
-            'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8'
+          "User-Agent":
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 Version/16.0 Mobile/15E148 Safari/604.1"
         }
       }
     );
 
-    const cloudBody =
-      typeof cloudResponse.data === 'string'
-        ? cloudResponse.data
-        : JSON.stringify(cloudResponse.data);
-
-    const lower =
-      cloudBody.toLowerCase();
-
-    // -------------------------------------------------
-    // FINAL DIAGNOSTIC
-    // -------------------------------------------------
-
-    return res.json({
-
-      success:
-        cloudResponse.status >= 200 &&
-        cloudResponse.status < 300,
-
-      stage:
-        'dynamic_chain_test',
-
-      total_time_ms:
-        Date.now() - startedAt,
-
-      // =========================
-      // VSEMBED
-      // =========================
-
-      vsembed: {
-
-        url:
-          VSEMBED_URL,
-
-        status:
-          sourceResponse.status,
-
-        content_type:
-          sourceResponse.headers['content-type'] || null,
-
-        returned_src:
-          dynamicSrc
-
-      },
-
-      // =========================
-      // CLOUDORCHESTRANOVA
-      // =========================
-
-      cloudorchestranova: {
-
-        status:
-          cloudResponse.status,
-
-        status_text:
-          cloudResponse.statusText || null,
-
-        content_type:
-          cloudResponse.headers['content-type'] || null,
-
-        response_size:
-          cloudBody.length,
-
-        is_html:
-          lower.includes('<html') ||
-          lower.includes('<!doctype'),
-
-        is_not_found:
-          cloudResponse.status === 404,
-
-        is_forbidden:
-          cloudResponse.status === 403,
-
-        is_redirect:
-          cloudResponse.status >= 300 &&
-          cloudResponse.status < 400,
-
-        location:
-          cloudResponse.headers['location'] || null,
-
-        server:
-          cloudResponse.headers['server'] || null,
-
-        x_powered_by:
-          cloudResponse.headers['x-powered-by'] || null,
-
-        has_script:
-          lower.includes('<script'),
-
-        has_iframe:
-          lower.includes('<iframe'),
-
-        has_video:
-          lower.includes('<video'),
-
-        has_source:
-          lower.includes('<source'),
-
-        has_m3u8:
-          lower.includes('.m3u8'),
-
-        has_mp4:
-          lower.includes('.mp4'),
-
-        preview:
-          cloudBody.substring(0, 5000)
-
-      }
-
-    });
-
-  } catch (error) {
-
-    return res.json({
-
-      success: false,
-
-      stage:
-        'chain_request_error',
-
-      error_code:
-        error.code || null,
-
-      error_message:
-        error.message || null,
-
-      total_time_ms:
-        Date.now() - startedAt
-
-    });
-
-  }
-
-});
-
-// =====================================================
-// OLD VSEMBED TEST
-// =====================================================
-
-app.get('/api/test-vsembed', async (req, res) => {
-
-  if (!SCRAPER_API_KEY) {
-    return res.json({
-      success: false,
-      stage: 'configuration',
-      diagnosis: 'SCRAPER_API_KEY غير موجود في Render'
-    });
-  }
-
-  try {
-
-    const response = await axios.get(
-      'https://api.scraperapi.com',
-      {
-        params: {
-          api_key: SCRAPER_API_KEY,
-          url: VSEMBED_URL
-        },
-
-        timeout: 60000,
-
-        validateStatus: () => true
-      }
-    );
-
-    const body =
-      typeof response.data === 'string'
+    const html =
+      typeof response.data === "string"
         ? response.data
         : JSON.stringify(response.data);
 
+    const scripts = extractAttribute(html, "script", "src");
+    const iframes = extractAttribute(html, "iframe", "src");
+    const forms = extractAttribute(html, "form", "action");
+    const links = extractAttribute(html, "a", "href");
+
+    const endpointCandidates = extractEndpoints(html);
+    const dataAttributes = extractDataAttributes(html);
+
+    const scriptDetails = [];
+
+    for (const scriptUrl of scripts.slice(0, 20)) {
+      try {
+        const scriptResponse = await axios.get(
+          scraperUrl(scriptUrl),
+          {
+            timeout: 15000,
+            validateStatus: () => true,
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15"
+            }
+          }
+        );
+
+        const scriptBody =
+          typeof scriptResponse.data === "string"
+            ? scriptResponse.data
+            : JSON.stringify(scriptResponse.data);
+
+        scriptDetails.push({
+          url: scriptUrl,
+          status: scriptResponse.status,
+          content_type:
+            scriptResponse.headers["content-type"] || null,
+          size: scriptBody.length,
+          endpoint_candidates:
+            extractEndpoints(scriptBody).slice(0, 100),
+          preview: makePreview(scriptBody, 1500)
+        });
+      } catch (error) {
+        scriptDetails.push({
+          url: scriptUrl,
+          error: error.message
+        });
+      }
+    }
+
     return res.json({
+      success: response.status >= 200 && response.status < 400,
+      stage: "vidsrc_endpoint_inspection",
+      target_url: TARGET_URL,
+      scraper_status: response.status,
+      content_type: response.headers["content-type"] || null,
+      response_size: html.length,
+      total_time_ms: Date.now() - started,
 
-      success:
-        response.status >= 200 &&
-        response.status < 300,
+      page: {
+        title:
+          (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]
+            ?.replace(/\s+/g, " ")
+            .trim() || null,
+        scripts,
+        iframes,
+        forms,
+        links: links.slice(0, 100),
+        data_attributes: dataAttributes
+      },
 
-      stage:
-        'vs_src_test',
+      endpoint_candidates: endpointCandidates,
 
-      target_url:
-        VSEMBED_URL,
+      scripts_inspected: scriptDetails,
 
-      scraper_status:
-        response.status,
-
-      response_time_ms:
-        null,
-
-      content_type:
-        response.headers['content-type'] || null,
-
-      response_size:
-        body.length,
-
-      preview:
-        body.substring(0, 5000)
-
+      preview: makePreview(html, 5000)
     });
-
   } catch (error) {
-
-    return res.json({
-
+    return res.status(500).json({
       success: false,
-
-      stage:
-        'request_error',
-
-      error_code:
-        error.code || null,
-
-      error_message:
-        error.message || null
-
+      stage: "vidsrc_endpoint_inspection",
+      error: error.message,
+      total_time_ms: Date.now() - started
     });
-
   }
-
 });
 
-// =====================================================
-// SERVER
-// =====================================================
-
 app.listen(PORT, () => {
-
-  console.log(
-    `StreamFlix Backend running on port ${PORT}`
-  );
-
+  console.log(`StreamFlix diagnostic API running on port ${PORT}`);
 });
