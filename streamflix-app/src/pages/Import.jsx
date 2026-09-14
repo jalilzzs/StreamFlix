@@ -4,50 +4,161 @@ import { supabase } from '../lib/supabaseClient';
 export default function Import() {
   const [query, setQuery] = useState('');
   const [movies, setMovies] = useState([]);
+
   const [loading, setLoading] = useState(false);
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   const [searchStatus, setSearchStatus] = useState(true);
   const [testStatus, setTestStatus] = useState(true);
   const [importStatus, setImportStatus] = useState(true);
-  const [bulkStatus, setBulkStatus] = useState(true);
 
   const [message, setMessage] = useState('');
-  const [bulkProgress, setBulkProgress] = useState(0);
-  const [errorDetails, setErrorDetails] = useState([]);
+  const [bulkStats, setBulkStats] = useState(null);
+  const [errors, setErrors] = useState([]);
 
   const TMDB_API_KEY = 'bb04576f643a69128d4924c5aea7c339';
 
-  const TMDB_BASE = 'https://api.themoviedb.org/3';
-  const TMDB_IMAGE = 'https://image.tmdb.org/t/p/w500';
-
-  // =========================================================
-  // TMDB REQUEST
-  // =========================================================
-
-  const tmdbRequest = async (endpoint) => {
-    const separator = endpoint.includes('?') ? '&' : '?';
-
-    const response = await fetch(
-      `${TMDB_BASE}${endpoint}${separator}api_key=${TMDB_API_KEY}&language=ar-AR`
-    );
-
-    const text = await response.text();
-
-    if (!response.ok) {
-      throw new Error(`TMDB ${response.status}: ${text.slice(0, 250)}`);
+  /*
+   * ============================================================
+   * مصدر الفيديو
+   * ============================================================
+   *
+   * ضع هنا فقط رابط/Endpoint لمصدر بث لديك الحق في استخدامه.
+   *
+   * حالياً نستعمل الرابط الموجود في مشروعك.
+   * إذا كان عندك مزود مرخّص آخر، غير هذه الدالة فقط.
+   */
+  const getVideoUrl = (type, tmdbId) => {
+    if (type === 'tv') {
+      return `https://vidsrc.to/embed/tv/${tmdbId}`;
     }
 
-    try {
-      return JSON.parse(text);
-    } catch {
-      throw new Error('TMDB أرسل استجابة غير صالحة.');
-    }
+    return `https://vidsrc.to/embed/movie/${tmdbId}`;
   };
 
-  // =========================================================
-  // SEARCH MOVIES + TV
-  // =========================================================
+  /*
+   * ============================================================
+   * جلب تفاصيل فيلم من TMDB
+   * ============================================================
+   */
+  const getMovieDetails = async (id) => {
+    const url =
+      `https://api.themoviedb.org/3/movie/${id}` +
+      `?api_key=${TMDB_API_KEY}` +
+      `&language=ar-AR`;
 
+    const res = await fetch(url);
+
+    if (!res.ok) {
+      throw new Error(`TMDB movie details: ${res.status}`);
+    }
+
+    return await res.json();
+  };
+
+  /*
+   * ============================================================
+   * جلب تفاصيل مسلسل من TMDB
+   * ============================================================
+   */
+  const getTvDetails = async (id) => {
+    const url =
+      `https://api.themoviedb.org/3/tv/${id}` +
+      `?api_key=${TMDB_API_KEY}` +
+      `&language=ar-AR`;
+
+    const res = await fetch(url);
+
+    if (!res.ok) {
+      throw new Error(`TMDB TV details: ${res.status}`);
+    }
+
+    return await res.json();
+  };
+
+  /*
+   * ============================================================
+   * تحويل بيانات الفيلم إلى شكل قاعدة البيانات
+   * ============================================================
+   */
+  const movieToTitle = (movie) => {
+    const year = movie.release_date
+      ? parseInt(movie.release_date.split('-')[0])
+      : null;
+
+    return {
+      name: movie.title || movie.name || 'بدون اسم',
+
+      synopsis:
+        movie.overview ||
+        'لا يوجد وصف متاح.',
+
+      release_year:
+        year ||
+        2026,
+
+      rating_avg:
+        Number(movie.vote_average) || 0,
+
+      type: 'movie',
+
+      is_premium: false,
+
+      poster_url:
+        movie.poster_path
+          ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
+          : '',
+
+      url: getVideoUrl('movie', movie.id),
+
+      tmdb_id: movie.id
+    };
+  };
+
+  /*
+   * ============================================================
+   * تحويل بيانات المسلسل إلى شكل قاعدة البيانات
+   * ============================================================
+   */
+  const tvToTitle = (show) => {
+    const year = show.first_air_date
+      ? parseInt(show.first_air_date.split('-')[0])
+      : null;
+
+    return {
+      name: show.name || 'بدون اسم',
+
+      synopsis:
+        show.overview ||
+        'لا يوجد وصف متاح.',
+
+      release_year:
+        year ||
+        2026,
+
+      rating_avg:
+        Number(show.vote_average) || 0,
+
+      type: 'series',
+
+      is_premium: false,
+
+      poster_url:
+        show.poster_path
+          ? `https://image.tmdb.org/t/p/w500${show.poster_path}`
+          : '',
+
+      url: getVideoUrl('tv', show.id),
+
+      tmdb_id: show.id
+    };
+  };
+
+  /*
+   * ============================================================
+   * البحث الفردي
+   * ============================================================
+   */
   const handleSearch = async (e) => {
     e.preventDefault();
 
@@ -57,6 +168,7 @@ export default function Import() {
     setSearchStatus('A');
     setMessage('');
     setMovies([]);
+    setErrors([]);
 
     try {
       if (!TMDB_API_KEY || TMDB_API_KEY.includes('ضع_مفتاح')) {
@@ -64,171 +176,121 @@ export default function Import() {
         throw new Error('مفتاح TMDB API غير معرّف.');
       }
 
-      const encodedQuery = encodeURIComponent(query.trim());
+      /*
+       * نبحث في الأفلام والمسلسلات معاً
+       */
+      const movieUrl =
+        `https://api.themoviedb.org/3/search/movie` +
+        `?api_key=${TMDB_API_KEY}` +
+        `&query=${encodeURIComponent(query)}` +
+        `&language=ar-AR`;
 
-      const [movieData, tvData] = await Promise.all([
-        tmdbRequest(`/search/movie?query=${encodedQuery}`),
-        tmdbRequest(`/search/tv?query=${encodedQuery}`)
+      const tvUrl =
+        `https://api.themoviedb.org/3/search/tv` +
+        `?api_key=${TMDB_API_KEY}` +
+        `&query=${encodeURIComponent(query)}` +
+        `&language=ar-AR`;
+
+      const [movieRes, tvRes] = await Promise.all([
+        fetch(movieUrl),
+        fetch(tvUrl)
       ]);
 
-      const movieResults = (movieData.results || []).map((item) => ({
+      if (!movieRes.ok || !tvRes.ok) {
+        setSearchStatus('C');
+        throw new Error(
+          `خطأ في الاتصال بـ TMDB`
+        );
+      }
+
+      const movieData = await movieRes.json();
+      const tvData = await tvRes.json();
+
+      const movieResults = (movieData.results || []).map(item => ({
         ...item,
         media_type: 'movie'
       }));
 
-      const tvResults = (tvData.results || []).map((item) => ({
+      const tvResults = (tvData.results || []).map(item => ({
         ...item,
         media_type: 'tv'
       }));
 
-      const combined = [...movieResults, ...tvResults];
+      const combined = [
+        ...movieResults,
+        ...tvResults
+      ];
 
-      setMovies(combined);
+      /*
+       * ترتيب حسب التقييم
+       */
+      combined.sort(
+        (a, b) =>
+          (b.vote_average || 0) -
+          (a.vote_average || 0)
+      );
+
+      setMovies(combined.slice(0, 40));
       setSearchStatus(true);
 
       if (combined.length === 0) {
         setSearchStatus('D');
-        setMessage('لم يتم العثور على أي فيلم أو مسلسل.');
+        setMessage('لم يتم العثور على أي نتائج.');
       }
     } catch (err) {
       console.error('خطأ في البحث:', err);
 
-      setSearchStatus('C');
-      setMessage(`خطأ في البحث: ${err.message}`);
+      setMessage(
+        `خطأ في البحث (${err.message})`
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  // =========================================================
-  // GET FULL DETAILS
-  // تستعمل فقط للاستيراد الفردي
-  // =========================================================
-
-  const getFullDetails = async (item) => {
-    const type = item.media_type === 'tv' ? 'tv' : 'movie';
-
-    const details = await tmdbRequest(
-      `/${type}/${item.id}`
-    );
-
-    return {
-      ...item,
-      ...details,
-      media_type: type
-    };
-  };
-
-  // =========================================================
-  // BUILD DATABASE OBJECT
-  // =========================================================
-
-  const buildTitleObject = (item, details = item) => {
-    const isTV = item.media_type === 'tv';
-
-    const title =
-      details.title ||
-      details.name ||
-      item.title ||
-      item.name ||
-      'بدون اسم';
-
-    const releaseDate =
-      details.release_date ||
-      details.first_air_date ||
-      item.release_date ||
-      item.first_air_date ||
-      '';
-
-    const year = releaseDate
-      ? parseInt(releaseDate.split('-')[0])
-      : null;
-
-    return {
-      name: title,
-
-      synopsis:
-        details.overview ||
-        item.overview ||
-        'لا يوجد وصف متاح.',
-
-      release_year:
-        Number.isFinite(year) ? year : null,
-
-      rating_avg:
-        Number(
-          details.vote_average ||
-          item.vote_average ||
-          0
-        ),
-
-      type: isTV ? 'tv' : 'movie',
-
-      is_premium: false,
-
-      poster_url:
-        details.poster_path
-          ? `${TMDB_IMAGE}${details.poster_path}`
-          : item.poster_path
-            ? `${TMDB_IMAGE}${item.poster_path}`
-            : '',
-
-      url:
-        isTV
-          ? `https://vidsrc.to/embed/tv/${item.id}`
-          : `https://vidsrc.to/embed/movie/${item.id}`,
-
-      tmdb_id: item.id
-    };
-  };
-
-  // =========================================================
-  // CHECK IF TITLE EXISTS
-  // =========================================================
-
-  const checkExisting = async (item) => {
-    const type =
-      item.media_type === 'tv'
-        ? 'tv'
-        : 'movie';
-
-    const { data, error } = await supabase
-      .from('titles')
-      .select('id')
-      .eq('tmdb_id', item.id)
-      .eq('type', type)
-      .limit(1);
-
-    if (error) {
-      throw error;
-    }
-
-    return data && data.length > 0;
-  };
-
-  // =========================================================
-  // IMPORT ONE
-  // =========================================================
-
+  /*
+   * ============================================================
+   * استيراد عنصر واحد
+   * ============================================================
+   */
   const handleImportMovie = async (item) => {
     setImportStatus('E');
     setMessage('');
-    setErrorDetails([]);
 
     try {
-      const details = await getFullDetails(item);
+      let details;
 
-      const titleObject =
-        buildTitleObject(item, details);
+      if (item.media_type === 'tv') {
+        details = await getTvDetails(item.id);
+      } else {
+        details = await getMovieDetails(item.id);
+      }
 
-      const exists =
-        await checkExisting(item);
+      const titleData =
+        item.media_type === 'tv'
+          ? tvToTitle(details)
+          : movieToTitle(details);
 
-      if (exists) {
-        setImportStatus('DUPLICATE');
+      /*
+       * أهم جزء:
+       * نتحقق من الاسم قبل INSERT
+       */
+      const { data: existing, error: checkError } =
+        await supabase
+          .from('titles')
+          .select('id,name')
+          .eq('name', titleData.name)
+          .maybeSingle();
+
+      if (checkError) {
+        throw checkError;
+      }
+
+      if (existing) {
+        setImportStatus(true);
 
         setMessage(
-          `هذا ${titleObject.type === 'tv' ? 'المسلسل' : 'الفيلم'} موجود مسبقًا.`
+          `الفيلم/المسلسل "${titleData.name}" موجود مسبقاً، لم تتم إضافته مرة أخرى.`
         );
 
         return;
@@ -236,26 +298,37 @@ export default function Import() {
 
       const { error } = await supabase
         .from('titles')
-        .insert([titleObject]);
+        .insert([titleData]);
 
       if (error) {
+        /*
+         * إذا صار Race condition أو كان موجوداً أصلاً
+         */
+        if (
+          error.code === '23505' ||
+          error.message?.includes('titles_name_key')
+        ) {
+          setImportStatus(true);
+
+          setMessage(
+            `"${titleData.name}" موجود مسبقاً، تم تخطيه.`
+          );
+
+          return;
+        }
+
         throw error;
       }
 
       setImportStatus(true);
 
       setMessage(
-        `تم استيراد "${titleObject.name}" بنجاح ✅`
+        `تم استيراد "${titleData.name}" بنجاح ✅`
       );
-
     } catch (err) {
       console.error('Import error:', err);
 
       setImportStatus('G');
-
-      setErrorDetails([
-        `${item.title || item.name || 'العنصر'}: ${err.message}`
-      ]);
 
       setMessage(
         `خطأ في الاستيراد: ${err.message}`
@@ -263,384 +336,324 @@ export default function Import() {
     }
   };
 
-  // =========================================================
-  // TEST INSERT
-  // =========================================================
-
+  /*
+   * ============================================================
+   * إضافة فيلم تجريبي
+   * ============================================================
+   */
   const handleTestInsert = async () => {
     setTestStatus('H');
     setMessage('');
-    setErrorDetails([]);
 
     try {
       const testMovieId = 550;
 
-      const generatedUrl =
-        `https://vidsrc.to/embed/movie/${testMovieId}`;
+      const details =
+        await getMovieDetails(testMovieId);
 
-      const { error } = await supabase
-        .from('titles')
-        .insert([
-          {
-            name: 'فيلم تجريبي (Fight Club)',
-            synopsis:
-              'فيلم تجريبي للاختبار الفوري.',
-            release_year: 1999,
-            rating_avg: 8.4,
-            type: 'movie',
-            is_premium: false,
-            poster_url:
-              'https://image.tmdb.org/t/p/w500/pB8BM7pdSp6B6Ih7QZ4DrQ3PmJK.jpg',
-            url: generatedUrl,
-            tmdb_id: testMovieId
-          }
-        ]);
+      const titleData =
+        movieToTitle(details);
 
-      if (error) {
-        setTestStatus('I');
+      const { data: existing, error: checkError } =
+        await supabase
+          .from('titles')
+          .select('id,name')
+          .eq('name', titleData.name)
+          .maybeSingle();
 
-        setMessage(
-          `خطأ في الإضافة التجريبية: ${error.message}`
-        );
+      if (checkError) {
+        throw checkError;
+      }
 
-        setErrorDetails([
-          `Fight Club: ${error.message}`
-        ]);
-
-      } else {
+      if (existing) {
         setTestStatus(true);
 
         setMessage(
-          'تم إضافة الفيلم التجريبي مع TMDB ID (550) بنجاح!'
+          'الفيلم التجريبي موجود مسبقاً، لذلك لم تتم إضافته مرة ثانية.'
         );
+
+        return;
       }
 
+      const { error } =
+        await supabase
+          .from('titles')
+          .insert([titleData]);
+
+      if (error) {
+        throw error;
+      }
+
+      setTestStatus(true);
+
+      setMessage(
+        'تم إضافة الفيلم التجريبي بنجاح ✅'
+      );
     } catch (err) {
+      console.error(err);
+
       setTestStatus('J');
 
       setMessage(
-        `خطأ استثنائي في الاختبار: ${err.message}`
+        `خطأ في الاختبار: ${err.message}`
       );
-
-      setErrorDetails([
-        `Test: ${err.message}`
-      ]);
     }
   };
 
-  // =========================================================
-  // BULK IMPORT
-  // =========================================================
+  /*
+   * ============================================================
+   * جلب الأفلام الشعبية
+   * ============================================================
+   */
+  const getPopularMovies = async () => {
+    const all = [];
 
-  const handleBulkImport = async () => {
-    setBulkStatus('LOADING');
-    setBulkProgress(0);
-    setMessage('');
-    setErrorDetails([]);
+    for (let page = 1; page <= 2; page++) {
+      const url =
+        `https://api.themoviedb.org/3/movie/popular` +
+        `?api_key=${TMDB_API_KEY}` +
+        `&language=ar-AR` +
+        `&page=${page}`;
 
-    try {
-      if (!TMDB_API_KEY) {
+      const res = await fetch(url);
+
+      if (!res.ok) {
         throw new Error(
-          'TMDB API Key غير موجود.'
+          `فشل جلب الأفلام: ${res.status}`
         );
       }
 
-      /*
-       * عدد الصفحات.
-       *
-       * كل صفحة فيها تقريبًا 20 عنصر.
-       *
-       * 3 صفحات أفلام
-       * + 3 صفحات مسلسلات
-       *
-       * = حوالي 120 عنصر.
-       */
+      const data = await res.json();
 
-      const pages = [1, 2, 3];
+      all.push(
+        ...(data.results || [])
+          .map(item => ({
+            ...item,
+            media_type: 'movie'
+          }))
+      );
+    }
 
-      let allItems = [];
+    return all;
+  };
 
-      // =====================================================
-      // جلب الأفلام والمسلسلات
-      // =====================================================
+  /*
+   * ============================================================
+   * جلب المسلسلات الشعبية
+   * ============================================================
+   */
+  const getPopularSeries = async () => {
+    const all = [];
 
-      for (const page of pages) {
-        try {
-          const [moviesData, tvData] =
-            await Promise.all([
-              tmdbRequest(
-                `/discover/movie?sort_by=popularity.desc&page=${page}`
-              ),
+    for (let page = 1; page <= 2; page++) {
+      const url =
+        `https://api.themoviedb.org/3/tv/popular` +
+        `?api_key=${TMDB_API_KEY}` +
+        `&language=ar-AR` +
+        `&page=${page}`;
 
-              tmdbRequest(
-                `/discover/tv?sort_by=popularity.desc&page=${page}`
-              )
-            ]);
+      const res = await fetch(url);
 
-          const movieItems =
-            (moviesData.results || []).map(
-              (item) => ({
-                ...item,
-                media_type: 'movie'
-              })
-            );
-
-          const tvItems =
-            (tvData.results || []).map(
-              (item) => ({
-                ...item,
-                media_type: 'tv'
-              })
-            );
-
-          allItems.push(
-            ...movieItems,
-            ...tvItems
-          );
-
-        } catch (pageError) {
-          console.error(
-            `خطأ في الصفحة ${page}:`,
-            pageError
-          );
-
-          setErrorDetails((prev) => [
-            ...prev,
-            `صفحة ${page}: ${pageError.message}`
-          ]);
-        }
+      if (!res.ok) {
+        throw new Error(
+          `فشل جلب المسلسلات: ${res.status}`
+        );
       }
 
-      // =====================================================
-      // إزالة التكرار
-      // =====================================================
+      const data = await res.json();
 
-      const uniqueMap = new Map();
+      all.push(
+        ...(data.results || [])
+          .map(item => ({
+            ...item,
+            media_type: 'tv'
+          }))
+      );
+    }
+
+    return all;
+  };
+
+  /*
+   * ============================================================
+   * الاستيراد الجماعي
+   * ============================================================
+   */
+  const handleBulkImport = async () => {
+    if (bulkLoading) return;
+
+    setBulkLoading(true);
+    setMessage('');
+    setErrors([]);
+
+    setBulkStats({
+      total: 0,
+      added: 0,
+      existing: 0,
+      failed: 0
+    });
+
+    try {
+      /*
+       * نجيب أفلام + مسلسلات
+       */
+      const [moviesList, seriesList] =
+        await Promise.all([
+          getPopularMovies(),
+          getPopularSeries()
+        ]);
+
+      const allItems = [
+        ...moviesList,
+        ...seriesList
+      ];
+
+      /*
+       * نمنع التكرار داخل نفس عملية الاستيراد
+       */
+      const uniqueItems = [];
+      const seenIds = new Set();
 
       for (const item of allItems) {
         const key =
           `${item.media_type}-${item.id}`;
 
-        if (!uniqueMap.has(key)) {
-          uniqueMap.set(key, item);
-        }
+        if (seenIds.has(key)) continue;
+
+        seenIds.add(key);
+        uniqueItems.push(item);
       }
 
-      const uniqueItems =
-        Array.from(uniqueMap.values());
+      /*
+       * نحدد عدد العناصر المراد معالجتها
+       */
+      const itemsToImport =
+        uniqueItems.slice(0, 40);
 
-      if (uniqueItems.length === 0) {
-        throw new Error(
-          'TMDB لم يرجع أي أفلام أو مسلسلات.'
-        );
-      }
-
-      // =====================================================
-      // تجهيز البيانات مباشرة من discover
-      //
-      // ما نحتاجوش نديرو GET details لكل فيلم.
-      // هذا هو التعديل المهم.
-      // =====================================================
-
-      const preparedItems =
-        uniqueItems.map((item) => ({
-          item,
-          titleObject:
-            buildTitleObject(item, item)
-        }));
-
-      // =====================================================
-      // جلب العناصر الموجودة مسبقًا
-      // =====================================================
-
-      const tmdbIds =
-        preparedItems.map(
-          ({ item }) => item.id
-        );
-
-      const { data: existingRows, error: existingError } =
-        await supabase
-          .from('titles')
-          .select('tmdb_id,type')
-          .in('tmdb_id', tmdbIds);
-
-      if (existingError) {
-        throw existingError;
-      }
-
-      const existingSet = new Set(
-        (existingRows || []).map(
-          (row) =>
-            `${row.type}-${row.tmdb_id}`
-        )
-      );
-
-      const itemsToInsert =
-        preparedItems.filter(
-          ({ item }) => {
-            const type =
-              item.media_type === 'tv'
-                ? 'tv'
-                : 'movie';
-
-            return !existingSet.has(
-              `${type}-${item.id}`
-            );
-          }
-        );
-
-      const skipped =
-        preparedItems.length -
-        itemsToInsert.length;
-
-      // =====================================================
-      // INSERT BATCHES
-      // =====================================================
-
-      const BATCH_SIZE = 20;
-
-      let imported = 0;
+      let added = 0;
+      let existingCount = 0;
       let failed = 0;
 
-      const errors = [];
+      const errorList = [];
 
-      for (
-        let start = 0;
-        start < itemsToInsert.length;
-        start += BATCH_SIZE
-      ) {
-        const batch =
-          itemsToInsert.slice(
-            start,
-            start + BATCH_SIZE
-          );
+      setBulkStats({
+        total: itemsToImport.length,
+        added: 0,
+        existing: 0,
+        failed: 0
+      });
 
-        const rows =
-          batch.map(
-            ({ titleObject }) =>
-              titleObject
-          );
-
+      /*
+       * نعالجهم واحداً واحداً
+       * حتى لا نضغط TMDB/Supabase دفعة واحدة
+       */
+      for (const item of itemsToImport) {
         try {
+          let details;
+
+          if (item.media_type === 'tv') {
+            details =
+              await getTvDetails(item.id);
+          } else {
+            details =
+              await getMovieDetails(item.id);
+          }
+
+          const titleData =
+            item.media_type === 'tv'
+              ? tvToTitle(details)
+              : movieToTitle(details);
+
+          /*
+           * التحقق من الاسم الموجود
+           */
+          const { data: existing, error: checkError } =
+            await supabase
+              .from('titles')
+              .select('id,name')
+              .eq('name', titleData.name)
+              .maybeSingle();
+
+          if (checkError) {
+            throw checkError;
+          }
+
+          /*
+           * موجود → نتخطاه
+           */
+          if (existing) {
+            existingCount++;
+
+            setBulkStats({
+              total: itemsToImport.length,
+              added,
+              existing: existingCount,
+              failed
+            });
+
+            continue;
+          }
+
+          /*
+           * جديد → نضيفه
+           */
           const { error } =
             await supabase
               .from('titles')
-              .insert(rows);
+              .insert([titleData]);
 
           if (error) {
             /*
-             * إذا فشلت الدفعة كاملة،
-             * نجرب عنصر بعنصر لمعرفة السبب.
+             * duplicate key = موجود
              */
-
-            console.error(
-              'Batch error:',
-              error
-            );
-
-            for (const current of batch) {
-              try {
-                const { error: singleError } =
-                  await supabase
-                    .from('titles')
-                    .insert([
-                      current.titleObject
-                    ]);
-
-                if (singleError) {
-                  failed++;
-
-                  errors.push(
-                    `${current.titleObject.name}: ${singleError.message}`
-                  );
-                } else {
-                  imported++;
-                }
-
-              } catch (singleCatchError) {
-                failed++;
-
-                errors.push(
-                  `${current.titleObject.name}: ${singleCatchError.message}`
-                );
-              }
+            if (
+              error.code === '23505' ||
+              error.message?.includes(
+                'titles_name_key'
+              )
+            ) {
+              existingCount++;
+            } else {
+              throw error;
             }
-
           } else {
-            imported += rows.length;
+            added++;
           }
 
-        } catch (batchCatchError) {
-          console.error(
-            'Batch exception:',
-            batchCatchError
-          );
+          setBulkStats({
+            total: itemsToImport.length,
+            added,
+            existing: existingCount,
+            failed
+          });
 
-          failed += batch.length;
+        } catch (err) {
+          failed++;
 
-          errors.push(
-            `Batch ${start + 1}: ${batchCatchError.message}`
-          );
-        }
+          errorList.push({
+            name:
+              item.title ||
+              item.name ||
+              'بدون اسم',
 
-        // ===================================================
-        // PROGRESS
-        // ===================================================
+            error:
+              err.message ||
+              'خطأ غير معروف'
+          });
 
-        const processed =
-          Math.min(
-            start + batch.length,
-            itemsToInsert.length
-          );
-
-        const progress =
-          Math.round(
-            (processed /
-              Math.max(
-                itemsToInsert.length,
-                1
-              )) *
-              100
-          );
-
-        setBulkProgress(progress);
-
-        /*
-         * راحة صغيرة بين الدفعات
-         * لتجنب الضغط على Supabase
-         */
-
-        if (
-          start + BATCH_SIZE <
-          itemsToInsert.length
-        ) {
-          await new Promise(
-            (resolve) =>
-              setTimeout(resolve, 500)
-          );
+          setBulkStats({
+            total: itemsToImport.length,
+            added,
+            existing: existingCount,
+            failed
+          });
         }
       }
 
-      // =====================================================
-      // حفظ الأخطاء للتشخيص
-      // =====================================================
-
-      setErrorDetails(
-        errors.slice(0, 20)
-      );
-
-      setBulkStatus(
-        failed === 0
-          ? true
-          : 'PARTIAL'
-      );
-
-      // =====================================================
-      // النتيجة
-      // =====================================================
+      setErrors(errorList);
 
       setMessage(
-        `اكتمل الاستيراد 🚀 | تمت الإضافة: ${imported} | موجود مسبقًا: ${skipped} | أخطاء: ${failed}`
+        `اكتمل الاستيراد 🚀 | تمت الإضافة: ${added} | موجود مسبقاً: ${existingCount} | أخطاء: ${failed}`
       );
 
     } catch (err) {
@@ -649,24 +662,14 @@ export default function Import() {
         err
       );
 
-      setBulkStatus('ERROR');
-
-      setErrorDetails([
-        `الخطأ الرئيسي: ${err.message}`
-      ]);
-
       setMessage(
         `فشل الاستيراد الجماعي: ${err.message}`
       );
 
     } finally {
-      setBulkProgress(0);
+      setBulkLoading(false);
     }
   };
-
-  // =========================================================
-  // UI
-  // =========================================================
 
   return (
     <div
@@ -689,45 +692,8 @@ export default function Import() {
       </h1>
 
       {/* =====================================================
-          STATUS
+          الاستيراد الجماعي
       ====================================================== */}
-
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          gap: '15px',
-          marginBottom: '30px',
-          flexWrap: 'wrap'
-        }}
-      >
-
-        <StatusBox
-          title="حالة البحث"
-          status={searchStatus}
-        />
-
-        <StatusBox
-          title="حالة الاختبار"
-          status={testStatus}
-        />
-
-        <StatusBox
-          title="حالة الاستيراد"
-          status={importStatus}
-        />
-
-        <StatusBox
-          title="الاستيراد الجماعي"
-          status={bulkStatus}
-        />
-
-      </div>
-
-      {/* =====================================================
-          BULK IMPORT
-      ====================================================== */}
-
       <div
         style={{
           background: '#1a1a1a',
@@ -739,75 +705,77 @@ export default function Import() {
           border: '1px solid #333'
         }}
       >
-
         <h2>
-          🚀 الاستيراد الجماعي
+          🚀 استيراد أفلام ومسلسلات
         </h2>
 
         <p
           style={{
             color: '#aaa',
-            fontSize: '14px',
             lineHeight: '1.8'
           }}
         >
-          يستورد دفعات من الأفلام والمسلسلات
-          مع البوسترات والوصف والتقييم والسنة
-          وTMDB ID ويضيفها تلقائيًا إلى النظام.
+          يجلب مجموعة من الأفلام والمسلسلات
+          من TMDB مع البوستر والوصف والتقييم
+          والسنة و TMDB ID.
+          <br />
+          العناصر الموجودة مسبقاً يتم تخطيها
+          تلقائياً بدون أخطاء.
         </p>
 
         <button
           onClick={handleBulkImport}
-          disabled={bulkStatus === 'LOADING'}
+          disabled={bulkLoading}
           style={{
-            padding: '12px 25px',
-            background:
-              bulkStatus === 'LOADING'
-                ? '#555'
-                : '#28a745',
+            padding: '14px 30px',
+            background: bulkLoading
+              ? '#555'
+              : '#4caf50',
             color: '#fff',
             border: 'none',
             borderRadius: '6px',
-            cursor:
-              bulkStatus === 'LOADING'
-                ? 'not-allowed'
-                : 'pointer',
+            cursor: bulkLoading
+              ? 'not-allowed'
+              : 'pointer',
             fontWeight: 'bold',
-            fontSize: '15px'
+            fontSize: '18px'
           }}
         >
-          {bulkStatus === 'LOADING'
-            ? `جاري الاستيراد... ${bulkProgress}%`
-            : '🚀 استيراد أفلام ومسلسلات'}
+          {bulkLoading
+            ? '⏳ جاري الاستيراد...'
+            : '🚀 استيراد دفعة جديدة'}
         </button>
 
-        {bulkStatus === 'LOADING' && (
+        {bulkStats && (
           <div
             style={{
-              marginTop: '15px',
-              height: '8px',
-              background: '#333',
-              borderRadius: '10px',
-              overflow: 'hidden'
+              marginTop: '20px',
+              display: 'flex',
+              justifyContent: 'center',
+              gap: '10px',
+              flexWrap: 'wrap'
             }}
           >
-            <div
-              style={{
-                width: `${bulkProgress}%`,
-                height: '100%',
-                background: '#28a745',
-                transition: 'width .2s'
-              }}
-            />
+            <span>📦 الكل: {bulkStats.total}</span>
+
+            <span>
+              ✅ تمت الإضافة: {bulkStats.added}
+            </span>
+
+            <span>
+              ♻️ موجود: {bulkStats.existing}
+            </span>
+
+            <span>
+              ❌ أخطاء: {bulkStats.failed}
+            </span>
           </div>
         )}
-
       </div>
 
       {/* =====================================================
-          TEST INSERT
+          الاختبار
       ====================================================== */}
-
       <div
         style={{
           background: '#1a1a1a',
@@ -819,7 +787,6 @@ export default function Import() {
           border: '1px solid #333'
         }}
       >
-
         <h3>
           خانة الإضافة الفورية التجريبية
         </h3>
@@ -838,27 +805,23 @@ export default function Import() {
         >
           ⚡ تنفيذ إضافة فيلم تجريبي
         </button>
-
       </div>
 
       {/* =====================================================
-          SEARCH
+          البحث الفردي
       ====================================================== */}
-
       <div
         style={{
           background: '#1a1a1a',
           padding: '20px',
           borderRadius: '10px',
-          maxWidth: '700px',
+          maxWidth: '600px',
           margin: '0 auto 20px auto',
           border: '1px solid #333'
         }}
       >
-
         <h3
           style={{
-            margin: '0 0 15px 0',
             textAlign: 'center'
           }}
         >
@@ -874,7 +837,6 @@ export default function Import() {
             flexWrap: 'wrap'
           }}
         >
-
           <input
             type="text"
             placeholder="اكتب اسم الفيلم أو المسلسل..."
@@ -907,15 +869,12 @@ export default function Import() {
               ? 'جاري البحث...'
               : 'بحث'}
           </button>
-
         </form>
-
       </div>
 
       {/* =====================================================
-          MESSAGE
+          الرسالة
       ====================================================== */}
-
       {message && (
         <p
           style={{
@@ -927,8 +886,7 @@ export default function Import() {
                 : '#46d369',
             marginBottom: '20px',
             fontWeight: 'bold',
-            fontSize: '16px',
-            lineHeight: '1.8'
+            fontSize: '18px'
           }}
         >
           {message}
@@ -936,285 +894,191 @@ export default function Import() {
       )}
 
       {/* =====================================================
-          ERROR DETAILS
+          الأخطاء
       ====================================================== */}
-
-      {errorDetails.length > 0 && (
+      {errors.length > 0 && (
         <div
           style={{
-            maxWidth: '900px',
-            margin: '0 auto 30px auto',
-            background: '#211515',
-            border: '1px solid #662222',
+            background: '#241515',
+            border: '1px solid #6b2929',
             borderRadius: '10px',
-            padding: '18px'
+            padding: '20px',
+            maxWidth: '900px',
+            margin: '0 auto 25px auto'
           }}
         >
-
           <h3
             style={{
-              color: '#ff6666',
-              marginTop: 0
+              color: '#ff7777'
             }}
           >
-            🔍 تفاصيل الأخطاء
+            🔎 تفاصيل الأخطاء
           </h3>
 
-          <p
-            style={{
-              color: '#aaa',
-              fontSize: '13px'
-            }}
-          >
-            هذه أول الأخطاء فقط حتى ما نعمرولك الصفحة.
-          </p>
-
-          {errorDetails.map(
-            (error, index) => (
+          {errors.slice(0, 20).map(
+            (item, index) => (
               <div
                 key={index}
                 style={{
-                  padding: '8px 0',
+                  padding: '10px 0',
                   borderBottom:
-                    '1px solid #392020',
-                  color: '#ff9999',
-                  fontSize: '13px',
-                  direction: 'ltr',
-                  textAlign: 'left',
-                  wordBreak: 'break-word'
+                    '1px solid #422'
                 }}
               >
-                {index + 1}. {error}
+                <strong>
+                  {index + 1}. {item.name}
+                </strong>
+
+                <div
+                  style={{
+                    color: '#ffaaaa',
+                    marginTop: '5px'
+                  }}
+                >
+                  {item.error}
+                </div>
               </div>
             )
           )}
-
         </div>
       )}
 
       {/* =====================================================
-          RESULTS
+          نتائج البحث
       ====================================================== */}
-
       <div
         style={{
           display: 'grid',
           gridTemplateColumns:
             'repeat(auto-fill, minmax(200px, 1fr))',
           gap: '20px',
-          maxWidth: '1100px',
+          maxWidth: '1000px',
           margin: '0 auto'
         }}
       >
+        {movies.map((item) => (
+          <div
+            key={`${item.media_type}-${item.id}`}
+            style={{
+              background: '#1a1a1a',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              padding: '10px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              border: '1px solid #333'
+            }}
+          >
 
-        {movies.map((item) => {
-
-          const isTV =
-            item.media_type === 'tv';
-
-          const title =
-            item.title ||
-            item.name ||
-            'بدون اسم';
-
-          const date =
-            item.release_date ||
-            item.first_air_date ||
-            '';
-
-          return (
-            <div
-              key={`${item.media_type}-${item.id}`}
-              style={{
-                background: '#1a1a1a',
-                borderRadius: '8px',
-                overflow: 'hidden',
-                padding: '10px',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                border: '1px solid #333'
-              }}
-            >
-
-              <div>
-
-                {item.poster_path ? (
-                  <img
-                    src={`${TMDB_IMAGE}${item.poster_path}`}
-                    alt={title}
-                    style={{
-                      width: '100%',
-                      height: '280px',
-                      objectFit: 'cover',
-                      borderRadius: '5px'
-                    }}
-                  />
-                ) : (
-                  <div
-                    style={{
-                      width: '100%',
-                      height: '280px',
-                      background: '#333',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderRadius: '5px'
-                    }}
-                  >
-                    لا توجد صورة
-                  </div>
-                )}
-
-                <h3
+            <div>
+              {item.poster_path ? (
+                <img
+                  src={
+                    `https://image.tmdb.org/t/p/w300` +
+                    item.poster_path
+                  }
+                  alt={
+                    item.title ||
+                    item.name
+                  }
                   style={{
-                    fontSize: '16px',
-                    margin: '10px 0 5px 0'
+                    width: '100%',
+                    height: '280px',
+                    objectFit: 'cover',
+                    borderRadius: '5px'
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    width: '100%',
+                    height: '280px',
+                    background: '#333',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: '5px'
                   }}
                 >
-                  {title}
-                </h3>
+                  لا توجد صورة
+                </div>
+              )}
 
-                <p
-                  style={{
-                    fontSize: '12px',
-                    color: '#aaa'
-                  }}
-                >
-                  {isTV
-                    ? '📺 مسلسل'
-                    : '🎬 فيلم'}
-                </p>
-
-                <p
-                  style={{
-                    fontSize: '12px',
-                    color: '#aaa'
-                  }}
-                >
-                  📅 {date
-                    ? date.split('-')[0]
-                    : 'غير معروف'}
-                </p>
-
-                <p
-                  style={{
-                    fontSize: '12px',
-                    color: '#f5c518'
-                  }}
-                >
-                  ⭐ {item.vote_average || 0}
-                </p>
-
-                <p
-                  style={{
-                    fontSize: '12px',
-                    color: '#aaa',
-                    lineHeight: '1.6'
-                  }}
-                >
-                  {item.overview
-                    ? item.overview.slice(0, 130) +
-                      (item.overview.length > 130
-                        ? '...'
-                        : '')
-                    : 'لا يوجد وصف متاح.'}
-                </p>
-
-              </div>
-
-              <button
-                onClick={() =>
-                  handleImportMovie(item)
-                }
+              <h3
                 style={{
-                  marginTop: '10px',
-                  padding: '8px',
-                  background: '#28a745',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontWeight: 'bold'
+                  fontSize: '16px',
+                  margin:
+                    '10px 0 5px 0'
                 }}
               >
-                {isTV
-                  ? 'استيراد المسلسل 📺'
-                  : 'استيراد الفيلم 🎬'}
-              </button>
+                {item.title ||
+                  item.name}
+              </h3>
 
+              <p
+                style={{
+                  fontSize: '12px',
+                  color: '#aaa'
+                }}
+              >
+                {item.media_type === 'tv'
+                  ? '📺 مسلسل'
+                  : '🎬 فيلم'}
+              </p>
+
+              <p
+                style={{
+                  fontSize: '12px',
+                  color: '#aaa'
+                }}
+              >
+                ⭐{' '}
+                {item.vote_average
+                  ? Number(
+                      item.vote_average
+                    ).toFixed(1)
+                  : '0.0'}
+              </p>
+
+              <p
+                style={{
+                  fontSize: '12px',
+                  color: '#aaa'
+                }}
+              >
+                {item.release_date
+                  ? item.release_date.split(
+                      '-'
+                    )[0]
+                  : item.first_air_date
+                    ? item.first_air_date.split(
+                        '-'
+                      )[0]
+                    : 'غير معروف'}
+              </p>
             </div>
-          );
-        })}
 
+            <button
+              onClick={() =>
+                handleImportMovie(item)
+              }
+              style={{
+                marginTop: '10px',
+                padding: '8px',
+                background: '#28a745',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              📥 استيراد للسيستيم
+            </button>
+          </div>
+        ))}
       </div>
-
-    </div>
-  );
-}
-
-
-// =========================================================
-// STATUS BOX
-// =========================================================
-
-function StatusBox({ title, status }) {
-  const good =
-    status === true;
-
-  let displayStatus = status;
-
-  if (status === 'LOADING') {
-    displayStatus = 'جاري...';
-  }
-
-  if (status === 'PARTIAL') {
-    displayStatus = 'جزئي';
-  }
-
-  if (status === 'ERROR') {
-    displayStatus = 'خطأ';
-  }
-
-  if (status === 'DUPLICATE') {
-    displayStatus = 'موجود';
-  }
-
-  return (
-    <div
-      style={{
-        background: '#222',
-        padding: '12px 20px',
-        borderRadius: '8px',
-        border: '1px solid #444',
-        textAlign: 'center'
-      }}
-    >
-
-      <p
-        style={{
-          margin: '0 0 5px 0',
-          fontSize: '14px',
-          color: '#aaa'
-        }}
-      >
-        {title}
-      </p>
-
-      <span
-        style={{
-          fontWeight: 'bold',
-          fontSize: '16px',
-          color:
-            good
-              ? '#28a745'
-              : '#ff4d4d'
-        }}
-      >
-        {good
-          ? 'true'
-          : displayStatus}
-      </span>
 
     </div>
   );
