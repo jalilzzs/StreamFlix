@@ -13,6 +13,7 @@ export default function Import() {
 
   const [message, setMessage] = useState('');
   const [bulkProgress, setBulkProgress] = useState(0);
+  const [errorDetails, setErrorDetails] = useState([]);
 
   const TMDB_API_KEY = 'bb04576f643a69128d4924c5aea7c339';
 
@@ -30,11 +31,17 @@ export default function Import() {
       `${TMDB_BASE}${endpoint}${separator}api_key=${TMDB_API_KEY}&language=ar-AR`
     );
 
+    const text = await response.text();
+
     if (!response.ok) {
-      throw new Error(`TMDB ${response.status}`);
+      throw new Error(`TMDB ${response.status}: ${text.slice(0, 250)}`);
     }
 
-    return await response.json();
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error('TMDB أرسل استجابة غير صالحة.');
+    }
   };
 
   // =========================================================
@@ -95,6 +102,7 @@ export default function Import() {
 
   // =========================================================
   // GET FULL DETAILS
+  // تستعمل فقط للاستيراد الفردي
   // =========================================================
 
   const getFullDetails = async (item) => {
@@ -115,7 +123,7 @@ export default function Import() {
   // BUILD DATABASE OBJECT
   // =========================================================
 
-  const buildTitleObject = (item, details) => {
+  const buildTitleObject = (item, details = item) => {
     const isTV = item.media_type === 'tv';
 
     const title =
@@ -128,6 +136,8 @@ export default function Import() {
     const releaseDate =
       details.release_date ||
       details.first_air_date ||
+      item.release_date ||
+      item.first_air_date ||
       '';
 
     const year = releaseDate
@@ -146,7 +156,11 @@ export default function Import() {
         Number.isFinite(year) ? year : null,
 
       rating_avg:
-        Number(details.vote_average || item.vote_average || 0),
+        Number(
+          details.vote_average ||
+          item.vote_average ||
+          0
+        ),
 
       type: isTV ? 'tv' : 'movie',
 
@@ -169,31 +183,48 @@ export default function Import() {
   };
 
   // =========================================================
-  // IMPORT ONE MOVIE / TV SHOW
+  // CHECK IF TITLE EXISTS
+  // =========================================================
+
+  const checkExisting = async (item) => {
+    const type =
+      item.media_type === 'tv'
+        ? 'tv'
+        : 'movie';
+
+    const { data, error } = await supabase
+      .from('titles')
+      .select('id')
+      .eq('tmdb_id', item.id)
+      .eq('type', type)
+      .limit(1);
+
+    if (error) {
+      throw error;
+    }
+
+    return data && data.length > 0;
+  };
+
+  // =========================================================
+  // IMPORT ONE
   // =========================================================
 
   const handleImportMovie = async (item) => {
     setImportStatus('E');
     setMessage('');
+    setErrorDetails([]);
 
     try {
       const details = await getFullDetails(item);
 
-      const titleObject = buildTitleObject(item, details);
+      const titleObject =
+        buildTitleObject(item, details);
 
-      // منع التكرار حسب TMDB ID + النوع
-      const { data: existing, error: checkError } = await supabase
-        .from('titles')
-        .select('id')
-        .eq('tmdb_id', item.id)
-        .eq('type', titleObject.type)
-        .limit(1);
+      const exists =
+        await checkExisting(item);
 
-      if (checkError) {
-        throw checkError;
-      }
-
-      if (existing && existing.length > 0) {
+      if (exists) {
         setImportStatus('DUPLICATE');
 
         setMessage(
@@ -208,13 +239,7 @@ export default function Import() {
         .insert([titleObject]);
 
       if (error) {
-        setImportStatus('F');
-
-        setMessage(
-          `خطأ قاعدة البيانات: ${error.message}`
-        );
-
-        return;
+        throw error;
       }
 
       setImportStatus(true);
@@ -228,6 +253,10 @@ export default function Import() {
 
       setImportStatus('G');
 
+      setErrorDetails([
+        `${item.title || item.name || 'العنصر'}: ${err.message}`
+      ]);
+
       setMessage(
         `خطأ في الاستيراد: ${err.message}`
       );
@@ -240,6 +269,8 @@ export default function Import() {
 
   const handleTestInsert = async () => {
     setTestStatus('H');
+    setMessage('');
+    setErrorDetails([]);
 
     try {
       const testMovieId = 550;
@@ -252,7 +283,8 @@ export default function Import() {
         .insert([
           {
             name: 'فيلم تجريبي (Fight Club)',
-            synopsis: 'فيلم تجريبي للاختبار الفوري.',
+            synopsis:
+              'فيلم تجريبي للاختبار الفوري.',
             release_year: 1999,
             rating_avg: 8.4,
             type: 'movie',
@@ -271,6 +303,10 @@ export default function Import() {
           `خطأ في الإضافة التجريبية: ${error.message}`
         );
 
+        setErrorDetails([
+          `Fight Club: ${error.message}`
+        ]);
+
       } else {
         setTestStatus(true);
 
@@ -285,6 +321,10 @@ export default function Import() {
       setMessage(
         `خطأ استثنائي في الاختبار: ${err.message}`
       );
+
+      setErrorDetails([
+        `Test: ${err.message}`
+      ]);
     }
   };
 
@@ -296,57 +336,84 @@ export default function Import() {
     setBulkStatus('LOADING');
     setBulkProgress(0);
     setMessage('');
+    setErrorDetails([]);
 
     try {
       if (!TMDB_API_KEY) {
-        throw new Error('TMDB API Key غير موجود.');
+        throw new Error(
+          'TMDB API Key غير موجود.'
+        );
       }
 
       /*
-       * نجيب عدة صفحات:
-       * أفلام + مسلسلات
+       * عدد الصفحات.
        *
-       * يمكن تغيير عدد الصفحات من هنا.
+       * كل صفحة فيها تقريبًا 20 عنصر.
+       *
+       * 3 صفحات أفلام
+       * + 3 صفحات مسلسلات
+       *
+       * = حوالي 120 عنصر.
        */
 
       const pages = [1, 2, 3];
 
       let allItems = [];
 
+      // =====================================================
+      // جلب الأفلام والمسلسلات
+      // =====================================================
+
       for (const page of pages) {
-        const [moviesData, tvData] = await Promise.all([
-          tmdbRequest(
-            `/discover/movie?sort_by=popularity.desc&page=${page}`
-          ),
+        try {
+          const [moviesData, tvData] =
+            await Promise.all([
+              tmdbRequest(
+                `/discover/movie?sort_by=popularity.desc&page=${page}`
+              ),
 
-          tmdbRequest(
-            `/discover/tv?sort_by=popularity.desc&page=${page}`
-          )
-        ]);
+              tmdbRequest(
+                `/discover/tv?sort_by=popularity.desc&page=${page}`
+              )
+            ]);
 
-        const movieItems = (moviesData.results || []).map(
-          (item) => ({
-            ...item,
-            media_type: 'movie'
-          })
-        );
+          const movieItems =
+            (moviesData.results || []).map(
+              (item) => ({
+                ...item,
+                media_type: 'movie'
+              })
+            );
 
-        const tvItems = (tvData.results || []).map(
-          (item) => ({
-            ...item,
-            media_type: 'tv'
-          })
-        );
+          const tvItems =
+            (tvData.results || []).map(
+              (item) => ({
+                ...item,
+                media_type: 'tv'
+              })
+            );
 
-        allItems.push(
-          ...movieItems,
-          ...tvItems
-        );
+          allItems.push(
+            ...movieItems,
+            ...tvItems
+          );
+
+        } catch (pageError) {
+          console.error(
+            `خطأ في الصفحة ${page}:`,
+            pageError
+          );
+
+          setErrorDetails((prev) => [
+            ...prev,
+            `صفحة ${page}: ${pageError.message}`
+          ]);
+        }
       }
 
-      /*
-       * إزالة التكرار
-       */
+      // =====================================================
+      // إزالة التكرار
+      // =====================================================
 
       const uniqueMap = new Map();
 
@@ -362,74 +429,215 @@ export default function Import() {
       const uniqueItems =
         Array.from(uniqueMap.values());
 
+      if (uniqueItems.length === 0) {
+        throw new Error(
+          'TMDB لم يرجع أي أفلام أو مسلسلات.'
+        );
+      }
+
+      // =====================================================
+      // تجهيز البيانات مباشرة من discover
+      //
+      // ما نحتاجوش نديرو GET details لكل فيلم.
+      // هذا هو التعديل المهم.
+      // =====================================================
+
+      const preparedItems =
+        uniqueItems.map((item) => ({
+          item,
+          titleObject:
+            buildTitleObject(item, item)
+        }));
+
+      // =====================================================
+      // جلب العناصر الموجودة مسبقًا
+      // =====================================================
+
+      const tmdbIds =
+        preparedItems.map(
+          ({ item }) => item.id
+        );
+
+      const { data: existingRows, error: existingError } =
+        await supabase
+          .from('titles')
+          .select('tmdb_id,type')
+          .in('tmdb_id', tmdbIds);
+
+      if (existingError) {
+        throw existingError;
+      }
+
+      const existingSet = new Set(
+        (existingRows || []).map(
+          (row) =>
+            `${row.type}-${row.tmdb_id}`
+        )
+      );
+
+      const itemsToInsert =
+        preparedItems.filter(
+          ({ item }) => {
+            const type =
+              item.media_type === 'tv'
+                ? 'tv'
+                : 'movie';
+
+            return !existingSet.has(
+              `${type}-${item.id}`
+            );
+          }
+        );
+
+      const skipped =
+        preparedItems.length -
+        itemsToInsert.length;
+
+      // =====================================================
+      // INSERT BATCHES
+      // =====================================================
+
+      const BATCH_SIZE = 20;
+
       let imported = 0;
-      let skipped = 0;
       let failed = 0;
 
-      /*
-       * استيراد العناصر واحدًا واحدًا
-       * حتى لا نضغط على API أو Supabase
-       */
+      const errors = [];
 
-      for (let i = 0; i < uniqueItems.length; i++) {
-        const item = uniqueItems[i];
-
-        try {
-          const details =
-            await getFullDetails(item);
-
-          const titleObject =
-            buildTitleObject(item, details);
-
-          /*
-           * تحقق من وجوده
-           */
-
-          const { data: existing, error: checkError } =
-            await supabase
-              .from('titles')
-              .select('id')
-              .eq('tmdb_id', item.id)
-              .eq('type', titleObject.type)
-              .limit(1);
-
-          if (checkError) {
-            throw checkError;
-          }
-
-          if (existing && existing.length > 0) {
-            skipped++;
-          } else {
-            const { error: insertError } =
-              await supabase
-                .from('titles')
-                .insert([titleObject]);
-
-            if (insertError) {
-              throw insertError;
-            }
-
-            imported++;
-          }
-
-        } catch (itemError) {
-          console.error(
-            'Bulk item error:',
-            itemError
+      for (
+        let start = 0;
+        start < itemsToInsert.length;
+        start += BATCH_SIZE
+      ) {
+        const batch =
+          itemsToInsert.slice(
+            start,
+            start + BATCH_SIZE
           );
 
-          failed++;
+        const rows =
+          batch.map(
+            ({ titleObject }) =>
+              titleObject
+          );
+
+        try {
+          const { error } =
+            await supabase
+              .from('titles')
+              .insert(rows);
+
+          if (error) {
+            /*
+             * إذا فشلت الدفعة كاملة،
+             * نجرب عنصر بعنصر لمعرفة السبب.
+             */
+
+            console.error(
+              'Batch error:',
+              error
+            );
+
+            for (const current of batch) {
+              try {
+                const { error: singleError } =
+                  await supabase
+                    .from('titles')
+                    .insert([
+                      current.titleObject
+                    ]);
+
+                if (singleError) {
+                  failed++;
+
+                  errors.push(
+                    `${current.titleObject.name}: ${singleError.message}`
+                  );
+                } else {
+                  imported++;
+                }
+
+              } catch (singleCatchError) {
+                failed++;
+
+                errors.push(
+                  `${current.titleObject.name}: ${singleCatchError.message}`
+                );
+              }
+            }
+
+          } else {
+            imported += rows.length;
+          }
+
+        } catch (batchCatchError) {
+          console.error(
+            'Batch exception:',
+            batchCatchError
+          );
+
+          failed += batch.length;
+
+          errors.push(
+            `Batch ${start + 1}: ${batchCatchError.message}`
+          );
         }
+
+        // ===================================================
+        // PROGRESS
+        // ===================================================
+
+        const processed =
+          Math.min(
+            start + batch.length,
+            itemsToInsert.length
+          );
 
         const progress =
           Math.round(
-            ((i + 1) / uniqueItems.length) * 100
+            (processed /
+              Math.max(
+                itemsToInsert.length,
+                1
+              )) *
+              100
           );
 
         setBulkProgress(progress);
+
+        /*
+         * راحة صغيرة بين الدفعات
+         * لتجنب الضغط على Supabase
+         */
+
+        if (
+          start + BATCH_SIZE <
+          itemsToInsert.length
+        ) {
+          await new Promise(
+            (resolve) =>
+              setTimeout(resolve, 500)
+          );
+        }
       }
 
-      setBulkStatus(true);
+      // =====================================================
+      // حفظ الأخطاء للتشخيص
+      // =====================================================
+
+      setErrorDetails(
+        errors.slice(0, 20)
+      );
+
+      setBulkStatus(
+        failed === 0
+          ? true
+          : 'PARTIAL'
+      );
+
+      // =====================================================
+      // النتيجة
+      // =====================================================
 
       setMessage(
         `اكتمل الاستيراد 🚀 | تمت الإضافة: ${imported} | موجود مسبقًا: ${skipped} | أخطاء: ${failed}`
@@ -442,6 +650,10 @@ export default function Import() {
       );
 
       setBulkStatus('ERROR');
+
+      setErrorDetails([
+        `الخطأ الرئيسي: ${err.message}`
+      ]);
 
       setMessage(
         `فشل الاستيراد الجماعي: ${err.message}`
@@ -476,7 +688,9 @@ export default function Import() {
         لوحة التحكم والاستيراد
       </h1>
 
-      {/* STATUS */}
+      {/* =====================================================
+          STATUS
+      ====================================================== */}
 
       <div
         style={{
@@ -510,7 +724,9 @@ export default function Import() {
 
       </div>
 
-      {/* BULK IMPORT */}
+      {/* =====================================================
+          BULK IMPORT
+      ====================================================== */}
 
       <div
         style={{
@@ -535,7 +751,7 @@ export default function Import() {
             lineHeight: '1.8'
           }}
         >
-          يجلب دفعات من الأفلام والمسلسلات
+          يستورد دفعات من الأفلام والمسلسلات
           مع البوسترات والوصف والتقييم والسنة
           وTMDB ID ويضيفها تلقائيًا إلى النظام.
         </p>
@@ -588,7 +804,9 @@ export default function Import() {
 
       </div>
 
-      {/* TEST */}
+      {/* =====================================================
+          TEST INSERT
+      ====================================================== */}
 
       <div
         style={{
@@ -623,7 +841,9 @@ export default function Import() {
 
       </div>
 
-      {/* SEARCH */}
+      {/* =====================================================
+          SEARCH
+      ====================================================== */}
 
       <div
         style={{
@@ -692,7 +912,9 @@ export default function Import() {
 
       </div>
 
-      {/* MESSAGE */}
+      {/* =====================================================
+          MESSAGE
+      ====================================================== */}
 
       {message && (
         <p
@@ -704,14 +926,75 @@ export default function Import() {
                 ? '#ff4d4d'
                 : '#46d369',
             marginBottom: '20px',
-            fontWeight: 'bold'
+            fontWeight: 'bold',
+            fontSize: '16px',
+            lineHeight: '1.8'
           }}
         >
           {message}
         </p>
       )}
 
-      {/* RESULTS */}
+      {/* =====================================================
+          ERROR DETAILS
+      ====================================================== */}
+
+      {errorDetails.length > 0 && (
+        <div
+          style={{
+            maxWidth: '900px',
+            margin: '0 auto 30px auto',
+            background: '#211515',
+            border: '1px solid #662222',
+            borderRadius: '10px',
+            padding: '18px'
+          }}
+        >
+
+          <h3
+            style={{
+              color: '#ff6666',
+              marginTop: 0
+            }}
+          >
+            🔍 تفاصيل الأخطاء
+          </h3>
+
+          <p
+            style={{
+              color: '#aaa',
+              fontSize: '13px'
+            }}
+          >
+            هذه أول الأخطاء فقط حتى ما نعمرولك الصفحة.
+          </p>
+
+          {errorDetails.map(
+            (error, index) => (
+              <div
+                key={index}
+                style={{
+                  padding: '8px 0',
+                  borderBottom:
+                    '1px solid #392020',
+                  color: '#ff9999',
+                  fontSize: '13px',
+                  direction: 'ltr',
+                  textAlign: 'left',
+                  wordBreak: 'break-word'
+                }}
+              >
+                {index + 1}. {error}
+              </div>
+            )
+          )}
+
+        </div>
+      )}
+
+      {/* =====================================================
+          RESULTS
+      ====================================================== */}
 
       <div
         style={{
@@ -879,6 +1162,24 @@ function StatusBox({ title, status }) {
   const good =
     status === true;
 
+  let displayStatus = status;
+
+  if (status === 'LOADING') {
+    displayStatus = 'جاري...';
+  }
+
+  if (status === 'PARTIAL') {
+    displayStatus = 'جزئي';
+  }
+
+  if (status === 'ERROR') {
+    displayStatus = 'خطأ';
+  }
+
+  if (status === 'DUPLICATE') {
+    displayStatus = 'موجود';
+  }
+
   return (
     <div
       style={{
@@ -910,7 +1211,9 @@ function StatusBox({ title, status }) {
               : '#ff4d4d'
         }}
       >
-        {good ? 'true' : status}
+        {good
+          ? 'true'
+          : displayStatus}
       </span>
 
     </div>
