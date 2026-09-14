@@ -3,9 +3,9 @@ import Hls from 'hls.js';
 
 const API_BASE_URL = 'https://streamflix-api-x0ku.onrender.com';
 
-export default function VideoPlayer({ tmdbId, id, movieId, type = 'movie', season = 1, episode = 1 }) {
-  // دمج كافة احتمالات اسم الـ ID
-  const activeId = tmdbId || id || movieId;
+export default function VideoPlayer({ tmdbId, type = 'movie', season = 1, episode = 1 }) {
+  // فحص ما إذا كان الـ ID عبارة عن UUID من Supabase بدلاً من TMDB ID
+  const isUuid = typeof tmdbId === 'string' && tmdbId.includes('-') && tmdbId.length > 20;
 
   const [timeLeft, setTimeLeft] = useState(15);
   const [streamUrl, setStreamUrl] = useState(null);
@@ -19,8 +19,8 @@ export default function VideoPlayer({ tmdbId, id, movieId, type = 'movie', seaso
   const videoRef = useRef(null);
 
   const fallbackUrl = type === 'tv' 
-    ? `https://vidsrc.cc/v2/embed/tv/${activeId}/${season}/${episode}`
-    : `https://vidsrc.cc/v2/embed/movie/${activeId}`;
+    ? `https://vidsrc.cc/v2/embed/tv/${tmdbId}/${season}/${episode}`
+    : `https://vidsrc.cc/v2/embed/movie/${tmdbId}`;
 
   const addLog = (msg) => {
     const time = new Date().toLocaleTimeString();
@@ -28,9 +28,9 @@ export default function VideoPlayer({ tmdbId, id, movieId, type = 'movie', seaso
   };
 
   useEffect(() => {
-    if (!activeId) {
-      setErrorCode('ERR_NO_ID');
-      addLog('خطأ: لم يتم العثور على معرّف الفيلم (ID is undefined)');
+    if (!tmdbId || isUuid) {
+      setErrorCode('ERR_INVALID_TMDB_ID');
+      addLog(`خطأ: الرقم الممرر (${tmdbId}) ليس TMDB ID صالح.`);
       return;
     }
 
@@ -41,14 +41,14 @@ export default function VideoPlayer({ tmdbId, id, movieId, type = 'movie', seaso
     setLogs([]);
     setErrorCode('NONE');
 
-    addLog(`بدء العملية - الفيلم ID: ${activeId} | النوع: ${type}`);
+    addLog(`بدء العملية - TMDB ID: ${tmdbId} | النوع: ${type}`);
 
     async function checkStream() {
-      addLog(`إرسال طلب لـ API مع ID: ${activeId}`);
+      addLog(`إرسال طلب لـ API مع TMDB ID: ${tmdbId}`);
       try {
         const query = type === 'tv' 
-          ? `tmdb=${activeId}&type=tv&season=${season}&episode=${episode}`
-          : `tmdb=${activeId}&type=movie`;
+          ? `tmdb=${tmdbId}&type=tv&season=${season}&episode=${episode}`
+          : `tmdb=${tmdbId}&type=movie`;
 
         const res = await fetch(`${API_BASE_URL}/api/extract?${query}`);
         if (!res.ok) throw new Error(`Status ${res.status}`);
@@ -85,7 +85,7 @@ export default function VideoPlayer({ tmdbId, id, movieId, type = 'movie', seaso
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [activeId, type, season, episode]);
+  }, [tmdbId, type, season, episode, isUuid]);
 
   useEffect(() => {
     if (showPlayer && streamUrl && !forceIframe && videoRef.current) {
@@ -114,12 +114,17 @@ export default function VideoPlayer({ tmdbId, id, movieId, type = 'movie', seaso
     }
   }, [showPlayer, streamUrl, forceIframe]);
 
-  // في حالة عدم وجود ID إطلاقاً
-  if (!activeId) {
+  // تنبيه في حال غياب tmdb_id في جدول البيانات
+  if (!tmdbId || isUuid) {
     return (
-      <div className="w-full aspect-video bg-red-950/40 border border-red-800/50 rounded-lg flex flex-col items-center justify-center text-red-300 p-4 gap-2">
-        <p className="font-bold text-base">⚠️ لم يتم العثور على معرّف الفيلم (TMDB ID)</p>
-        <p className="text-xs text-gray-400">يرجى التأكد من تمرير id داخل مكون VideoPlayer في الصفحة الرئيسية.</p>
+      <div className="w-full aspect-video bg-red-950/40 border border-red-800/50 rounded-lg flex flex-col items-center justify-center text-red-300 p-6 text-center gap-2 dir-rtl">
+        <p className="font-bold text-base">⚠️ خطأ في معرّف الفيلم (TMDB ID)</p>
+        <p className="text-xs text-gray-300 max-w-md">
+          الرقم الحالي الممرر هو <code className="bg-black/50 px-1 rounded text-yellow-400">{tmdbId || 'null'}</code> وهو عبارة عن UUID خاص بـ Supabase وليس رقم TMDB.
+        </p>
+        <p className="text-[11px] text-gray-400 mt-2">
+          تأكد من إضافة عمود باسم <code className="text-white">tmdb_id</code> في جدول <code className="text-white">titles</code> وتعبئته برقم الفيلم من موقع TMDB.
+        </p>
       </div>
     );
   }
@@ -135,7 +140,7 @@ export default function VideoPlayer({ tmdbId, id, movieId, type = 'movie', seaso
             </div>
             <div className="text-center">
               <p className="font-semibold text-base">جاري تحضير السيرفر...</p>
-              <p className="text-xs text-gray-400 mt-1">معرّف الفيلم: {activeId}</p>
+              <p className="text-xs text-gray-400 mt-1">TMDB ID: {tmdbId}</p>
             </div>
             <button 
               onClick={() => setShowPlayer(true)}
