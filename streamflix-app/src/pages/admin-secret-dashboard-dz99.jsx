@@ -1,317 +1,370 @@
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
-import { supabase } from '../lib/supabaseClient'; // تأكد من صحة مسار ملف supabase
+import { supabase } from '../lib/supabaseClient';
 
-const SECRET_ACCESS_KEY = 'StreamFlix2008';
+const ADMIN_PIN = '2026'; // رمز الـ PIN السري لفتح لوحة التحكم
+const TMDB_API_KEY = 'bb04576f643a69128d4924c5aea7c339';
 
-export default function SecretAdminDashboard() {
-  const router = useRouter();
-  const { key } = router.query;
+export default function Admin() {
+  const [pinInput, setPinInput] = useState('');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [activeTab, setActiveTab] = useState('settings'); // settings, users, content, import
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const [authorized, setAuthorized] = useState(false);
-  const [passKey, setPassKey] = useState('');
-  const [activeTab, setActiveTab] = useState('settings');
-
+  // حالة إعدادات الموقع العامة
   const [settings, setSettings] = useState({
-    show_diagnostics: true,
-    maintenance_mode: false,
-    allow_registration: true,
-    hero_banner_text: ''
+    diagnosticsEnabled: false,
+    maintenanceMode: false,
+    announcementBar: '',
   });
 
+  // قوائم البيانات
   const [users, setUsers] = useState([]);
-  const [searchUser, setSearchUser] = useState('');
-  const [loadingUsers, setLoadingUsers] = useState(false);
-  const [stats, setStats] = useState({ totalUsers: 0, vipUsers: 0, bannedUsers: 0 });
+  const [titles, setTitles] = useState([]);
+  
+  // حالات الاستيراد
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [fillLoading, setFillLoading] = useState(false);
 
-  // التحقق من المفتاح في الرابط بعد تجهيز الـ Router
-  useEffect(() => {
-    if (!router.isReady) return;
-    if (key === SECRET_ACCESS_KEY) {
-      setAuthorized(true);
-      fetchSettings();
-      fetchUsers();
-    }
-  }, [router.isReady, key]);
-
-  const fetchSettings = async () => {
-    const { data, error } = await supabase.from('site_settings').select('*');
-    if (!error && data) {
-      const config = {};
-      data.forEach(item => {
-        config[item.key] = item.value;
-      });
-      setSettings(prev => ({ ...prev, ...config }));
-    }
-  };
-
-  const fetchUsers = async () => {
-    setLoadingUsers(true);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      setUsers(data);
-      setStats({
-        totalUsers: data.length,
-        vipUsers: data.filter(u => u.is_vip).length,
-        bannedUsers: data.filter(u => u.is_banned).length
-      });
-    }
-    setLoadingUsers(false);
-  };
-
-  const toggleSetting = async (keyName, currentValue) => {
-    const newValue = !currentValue;
-    setSettings(prev => ({ ...prev, [keyName]: newValue }));
-
-    await supabase
-      .from('site_settings')
-      .upsert({ key: keyName, value: newValue, updated_at: new Date() });
-  };
-
-  const updateTextSetting = async (keyName, value) => {
-    setSettings(prev => ({ ...prev, [keyName]: value }));
-    await supabase
-      .from('site_settings')
-      .upsert({ key: keyName, value, updated_at: new Date() });
-  };
-
-  const toggleVipStatus = async (userId, currentStatus) => {
-    const newStatus = !currentStatus;
-    const { error } = await supabase
-      .from('profiles')
-      .update({ is_vip: newStatus })
-      .eq('id', userId);
-
-    if (!error) {
-      setUsers(users.map(u => u.id === userId ? { ...u, is_vip: newStatus } : u));
-      setStats(prev => ({
-        ...prev,
-        vipUsers: newStatus ? prev.vipUsers + 1 : prev.vipUsers - 1
-      }));
-    }
-  };
-
-  const toggleBanStatus = async (userId, currentStatus) => {
-    const newStatus = !currentStatus;
-    const { error } = await supabase
-      .from('profiles')
-      .update({ is_banned: newStatus })
-      .eq('id', userId);
-
-    if (!error) {
-      setUsers(users.map(u => u.id === userId ? { ...u, is_banned: newStatus } : u));
-      setStats(prev => ({
-        ...prev,
-        bannedUsers: newStatus ? prev.bannedUsers + 1 : prev.bannedUsers - 1
-      }));
-    }
-  };
-
-  const handleManualLogin = (e) => {
+  // التحقق من رمز الـ PIN
+  const handlePinSubmit = (e) => {
     e.preventDefault();
-    if (passKey === SECRET_ACCESS_KEY) {
-      setAuthorized(true);
-      fetchSettings();
-      fetchUsers();
+    if (pinInput === ADMIN_PIN) {
+      setIsAuthenticated(true);
+      setMessage('');
+      fetchAdminData();
     } else {
-      alert('رمز الدخول غير صحيح!');
+      setMessage('❌ رمز الـ PIN غير صحيح!');
     }
   };
 
-  if (!authorized) {
+  // جلب كافة بيانات اللوحة عند تسجيل الدخول
+  const fetchAdminData = async () => {
+    setLoading(true);
+    try {
+      // 1. جلب إعدادات الموقع
+      const { data: settingsData } = await supabase.from('site_settings').select('*');
+      if (settingsData) {
+        const settingsObj = {};
+        settingsData.forEach(item => {
+          settingsObj[item.key] = item.value;
+        });
+        setSettings({
+          diagnosticsEnabled: settingsObj.diagnostics_enabled === 'true',
+          maintenanceMode: settingsObj.maintenance_mode === 'true',
+          announcementBar: settingsObj.announcement_bar || '',
+        });
+      }
+
+      // 2. جلب قائمة المستخدمين
+      const { data: usersData } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+      if (usersData) setUsers(usersData);
+
+      // 3. جلب قائمة الأفلام والمسلسلات للإشراف
+      const { data: titlesData } = await supabase.from('titles').select('id, name, type, is_hidden, url, tmdb_id').order('id', { ascending: false }).limit(50);
+      if (titlesData) setTitles(titlesData);
+
+    } catch (err) {
+      console.error('فشل جلب البيانات:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ------------------ 1. تحديث إعدادات الموقع والتشخيص ------------------
+  const toggleSetting = async (key, currentValue) => {
+    const newValue = (!currentValue).toString();
+    try {
+      const { error } = await supabase
+        .from('site_settings')
+        .upsert({ key, value: newValue });
+
+      if (error) throw error;
+
+      setSettings(prev => ({ ...prev, [key === 'diagnostics_enabled' ? 'diagnosticsEnabled' : 'maintenanceMode']: !currentValue }));
+      setMessage(`تم تحديث حالة ${key === 'diagnostics_enabled' ? 'شاشة التشخيص' : 'وضع الصيانة'} بنجاح ✅`);
+    } catch (err) {
+      setMessage(`خطأ أثناء التحديث: ${err.message}`);
+    }
+  };
+
+  const saveAnnouncement = async () => {
+    try {
+      const { error } = await supabase
+        .from('site_settings')
+        .upsert({ key: 'announcement_bar', value: settings.announcementBar });
+
+      if (error) throw error;
+      setMessage('تم حفظ شريط الإعلانات بنجاح ✅');
+    } catch (err) {
+      setMessage(`خطأ في الحفظ: ${err.message}`);
+    }
+  };
+
+  // ------------------ 2. إشراف وحظر المستخدمين ------------------
+  const toggleUserBan = async (userId, isBanned) => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ is_banned: !isBanned })
+        .eq('id', userId);
+
+      if (error) throw error;
+
+      setUsers(users.map(u => u.id === userId ? { ...u, is_banned: !isBanned } : u));
+      setMessage(`تم ${!isBanned ? 'حظر' : 'إلغاء حظر'} المستخدم بنجاح 🔒`);
+    } catch (err) {
+      setMessage(`فشل تعديل حالة الحظر: ${err.message}`);
+    }
+  };
+
+  // ------------------ 3. إخفاء وإظهار المحتوى ------------------
+  const toggleTitleVisibility = async (titleId, isHidden) => {
+    try {
+      const { error } = await supabase
+        .from('titles')
+        .update({ is_hidden: !isHidden })
+        .eq('id', titleId);
+
+      if (error) throw error;
+
+      setTitles(titles.map(t => t.id === titleId ? { ...t, is_hidden: !isHidden } : t));
+      setMessage(`تم ${!isHidden ? 'إخفاء' : 'إظهار'} المحتوى بنجاح 👁️`);
+    } catch (err) {
+      setMessage(`فشل تغيير الرؤية: ${err.message}`);
+    }
+  };
+
+  // ------------------ 4. أداة Stelar وتوليد الروابط تلقائياً ------------------
+  const getStelarUrl = (tmdbId, type = 'movie') => {
+    if (!tmdbId) return '';
+    return (type === 'series' || type === 'tv')
+      ? `https://stelar.rip/embed/tv/${tmdbId}/1/1`
+      : `https://stelar.rip/embed/movie/${tmdbId}`;
+  };
+
+  const handleFillEmptyUrls = async () => {
+    if (fillLoading) return;
+    setFillLoading(true);
+    setMessage('');
+
+    try {
+      const { data: emptyTitles, error: fetchError } = await supabase
+        .from('titles')
+        .select('id, name, tmdb_id, type, url')
+        .or('url.is.null,url.eq.');
+
+      if (fetchError) throw fetchError;
+
+      const rows = emptyTitles || [];
+      let filled = 0;
+
+      for (const row of rows) {
+        if (!row.tmdb_id) continue;
+        const generatedUrl = getStelarUrl(row.tmdb_id, row.type);
+        const { error: updateError } = await supabase
+          .from('titles')
+          .update({ url: generatedUrl })
+          .eq('id', row.id);
+
+        if (!updateError) filled++;
+      }
+
+      setMessage(`تم ملء ${filled} رابط فارغ بـ Stelar بنجاح! 🔗`);
+      fetchAdminData();
+    } catch (err) {
+      setMessage(`فشل عملية ملء الروابط: ${err.message}`);
+    } finally {
+      setFillLoading(false);
+    }
+  };
+
+  // ================= شاشة حماية رمز الـ PIN السرية =================
+  if (!isAuthenticated) {
     return (
-      <div style={{ background: '#0d0d0d', color: '#fff', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', direction: 'rtl', fontFamily: 'sans-serif' }}>
-        <form onSubmit={handleManualLogin} style={{ background: '#1a1a1a', padding: '30px', borderRadius: '12px', border: '1px solid #333', textAlign: 'center', width: '350px' }}>
-          <h2>🔒 منطقة محمية</h2>
-          <p style={{ color: '#aaa', fontSize: '14px', marginBottom: '20px' }}>أدخل رمز الوصول السري للدخول إلى لوحة التحكم</p>
+      <div style={{ background: '#0d0d0d', color: '#fff', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui, sans-serif', direction: 'rtl' }}>
+        <form onSubmit={handlePinSubmit} style={{ background: '#181818', padding: '30px', borderRadius: '12px', border: '1px solid #282828', textAlign: 'center', width: '100%', maxWidth: '360px' }}>
+          <h2 style={{ fontSize: '22px', marginBottom: '10px', color: '#e50914' }}>🔒 منطقة محمية</h2>
+          <p style={{ color: '#aaa', fontSize: '14px', marginBottom: '20px' }}>أدخل رمز ה-PIN للوصول إلى لوحة الشرف والإدارة</p>
           <input
             type="password"
-            placeholder="أدخل المفتاح السري..."
-            value={passKey}
-            onChange={(e) => setPassKey(e.target.value)}
-            style={{ width: '100%', padding: '12px', borderRadius: '6px', border: '1px solid #444', background: '#222', color: '#fff', marginBottom: '15px', outline: 'none' }}
+            maxLength={6}
+            placeholder="****"
+            value={pinInput}
+            onChange={(e) => setPinInput(e.target.value)}
+            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #333', background: '#222', color: '#fff', textAlign: 'center', fontSize: '20px', letterSpacing: '5px', marginBottom: '15px', outline: 'none' }}
           />
-          <button type="submit" style={{ width: '100%', padding: '12px', background: '#e50914', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
-            دخول
+          <button type="submit" style={{ width: '100%', padding: '12px', background: '#e50914', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+            تأكيد الدخول
           </button>
+          {message && <p style={{ color: '#ff5555', marginTop: '15px', fontSize: '14px' }}>{message}</p>}
         </form>
       </div>
     );
   }
 
-  const filteredUsers = users.filter(u =>
-    (u.email || u.username || u.name || '').toLowerCase().includes(searchUser.toLowerCase())
-  );
-
+  // ================= لوحة التحكم الرئيسية =================
   return (
-    <div style={{ background: '#0e0e10', color: '#fff', minHeight: '100vh', padding: '25px', direction: 'rtl', fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', borderBottom: '1px solid #222', paddingBottom: '15px' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '24px' }}>⚙️ لوحة التحكم السرية (StreamFlix)</h1>
-          <p style={{ margin: '5px 0 0 0', color: '#888', fontSize: '13px' }}>إدارة الشاشات، الميزات، المستخدمين والحظر</p>
+    <div style={{ background: '#0d0d0d', color: '#fff', minHeight: '100vh', padding: '25px', direction: 'rtl', fontFamily: 'system-ui, sans-serif' }}>
+      <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
+        
+        {/* الهيدر وعناصر التنقل */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', marginBottom: '25px', borderBottom: '1px solid #222', paddingBottom: '15px' }}>
+          <h1 style={{ color: '#e50914', fontSize: '24px', margin: 0 }}>⚙️ لوحة الإدارة العامة (StreamFlix)</h1>
+          <button onClick={() => setIsAuthenticated(false)} style={{ background: '#333', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer' }}>
+            🔒 قفل اللوحة
+          </button>
         </div>
-        <button onClick={() => setAuthorized(false)} style={{ background: '#333', color: '#ccc', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer' }}>
-          خروج 🚪
-        </button>
-      </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '30px' }}>
-        <div style={{ background: '#16161a', padding: '20px', borderRadius: '10px', border: '1px solid #282830' }}>
-          <span style={{ color: '#888', fontSize: '13px' }}>إجمالي المستخدمين</span>
-          <h2 style={{ margin: '10px 0 0 0', color: '#00d2ff' }}>{stats.totalUsers}</h2>
-        </div>
-        <div style={{ background: '#16161a', padding: '20px', borderRadius: '10px', border: '1px solid #282830' }}>
-          <span style={{ color: '#888', fontSize: '13px' }}>مشتركي VIP 👑</span>
-          <h2 style={{ margin: '10px 0 0 0', color: '#ffb703' }}>{stats.vipUsers}</h2>
-        </div>
-        <div style={{ background: '#16161a', padding: '20px', borderRadius: '10px', border: '1px solid #282830' }}>
-          <span style={{ color: '#888', fontSize: '13px' }}>المستخدِمين المحظورين 🚫</span>
-          <h2 style={{ margin: '10px 0 0 0', color: '#ff4d4d' }}>{stats.bannedUsers}</h2>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '25px', borderBottom: '1px solid #222' }}>
-        <button
-          onClick={() => setActiveTab('settings')}
-          style={{ padding: '10px 20px', background: activeTab === 'settings' ? '#e50914' : 'transparent', color: '#fff', border: 'none', borderRadius: '6px 6px 0 0', cursor: 'pointer', fontWeight: 'bold' }}>
-          🎛️ التحكم في الميزات والواجهات
-        </button>
-        <button
-          onClick={() => setActiveTab('users')}
-          style={{ padding: '10px 20px', background: activeTab === 'users' ? '#e50914' : 'transparent', color: '#fff', border: 'none', borderRadius: '6px 6px 0 0', cursor: 'pointer', fontWeight: 'bold' }}>
-          👥 إدارة المستخدمين (VIP والحظر)
-        </button>
-      </div>
-
-      {activeTab === 'settings' && (
-        <div style={{ background: '#16161a', padding: '25px', borderRadius: '12px', border: '1px solid #282830', maxWidth: '800px' }}>
-          <h3 style={{ marginTop: 0, borderBottom: '1px solid #333', paddingBottom: '10px' }}>إعدادات الظهور والميزات الحية</h3>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 0', borderBottom: '1px solid #222' }}>
-            <div>
-              <strong style={{ display: 'block', fontSize: '16px' }}>إظهار لوحات التشخيص والتوصيات الشخصية</strong>
-              <span style={{ color: '#888', fontSize: '13px' }}>تفعيل أو إخفاء قسم التوصيات والتشخيص المخصص لكل مستخدم في الصفحة الرئيسية</span>
-            </div>
+        {/* أزرار التبويبات */}
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '25px', overflowX: 'auto', paddingBottom: '5px' }}>
+          {[
+            { id: 'settings', label: '🛠️ إعدادات الموقع والتشخيص' },
+            { id: 'users', label: '👥 حظر وإدارة المستخدمين' },
+            { id: 'content', label: '🎬 إخفاء وإظهار المحتوى' },
+            { id: 'import', label: '🔗 الاستيراد والروابط' },
+          ].map(tab => (
             <button
-              onClick={() => toggleSetting('show_diagnostics', settings.show_diagnostics)}
-              style={{ padding: '8px 20px', background: settings.show_diagnostics ? '#28a745' : '#dc3545', color: '#fff', border: 'none', borderRadius: '20px', cursor: 'pointer', fontWeight: 'bold' }}>
-              {settings.show_diagnostics ? 'ظاهر (مفعّل) ✅' : 'مخفي (معطّل) ❌'}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              style={{
+                padding: '10px 20px',
+                background: activeTab === tab.id ? '#e50914' : '#181818',
+                color: '#fff',
+                border: '1px solid #282828',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {tab.label}
             </button>
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 0', borderBottom: '1px solid #222' }}>
-            <div>
-              <strong style={{ display: 'block', fontSize: '16px' }}>تفعيل وضع الصيانة (Maintenance Mode)</strong>
-              <span style={{ color: '#888', fontSize: '13px' }}>إغلاق الموقع للزوار العاديين وإظهار رسالة صيانة</span>
-            </div>
-            <button
-              onClick={() => toggleSetting('maintenance_mode', settings.maintenance_mode)}
-              style={{ padding: '8px 20px', background: settings.maintenance_mode ? '#dc3545' : '#444', color: '#fff', border: 'none', borderRadius: '20px', cursor: 'pointer', fontWeight: 'bold' }}>
-              {settings.maintenance_mode ? 'مفعّل (الموقع مغلق) 🛑' : 'معطّل (الموقع يعمل) 🟢'}
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 0', borderBottom: '1px solid #222' }}>
-            <div>
-              <strong style={{ display: 'block', fontSize: '16px' }}>السماح بتسجيل حسابات جديدة</strong>
-              <span style={{ color: '#888', fontSize: '13px' }}>توقيف أو إتاحة إنشاء حسابات جديدة في المنصة</span>
-            </div>
-            <button
-              onClick={() => toggleSetting('allow_registration', settings.allow_registration)}
-              style={{ padding: '8px 20px', background: settings.allow_registration ? '#28a745' : '#dc3545', color: '#fff', border: 'none', borderRadius: '20px', cursor: 'pointer', fontWeight: 'bold' }}>
-              {settings.allow_registration ? 'متاح 🔓' : 'مغلق 🔒'}
-            </button>
-          </div>
-
-          <div style={{ padding: '15px 0' }}>
-            <strong style={{ display: 'block', fontSize: '16px', marginBottom: '8px' }}>نص بنر الإعلانات أعلى الموقع:</strong>
-            <input
-              type="text"
-              value={settings.hero_banner_text || ''}
-              onChange={(e) => updateTextSetting('hero_banner_text', e.target.value)}
-              placeholder="اكتب نصاً ليظهر كشريط تنبيه أعلى الموقع..."
-              style={{ width: '100%', padding: '10px', background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '6px' }}
-            />
-          </div>
+          ))}
         </div>
-      )}
 
-      {activeTab === 'users' && (
-        <div style={{ background: '#16161a', padding: '25px', borderRadius: '12px', border: '1px solid #282830' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h3 style={{ margin: 0 }}>قائمة المستخدمين والتحكم بالحسابات</h3>
-            <input
-              type="text"
-              placeholder="🔍 بحث بالبريد أو الاسم..."
-              value={searchUser}
-              onChange={(e) => setSearchUser(e.target.value)}
-              style={{ padding: '8px 15px', background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '6px', width: '250px' }}
-            />
+        {/* رسائل التنبيه */}
+        {message && (
+          <div style={{ background: '#18331e', color: '#77ff94', padding: '12px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #28422e', textAlign: 'center', fontWeight: 'bold' }}>
+            {message}
           </div>
+        )}
 
-          {loadingUsers ? (
-            <p>جاري تحميل قائمة المستخدمين...</p>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right' }}>
-              <thead>
-                <tr style={{ background: '#222', color: '#aaa', borderBottom: '1px solid #333' }}>
-                  <th style={{ padding: '12px' }}>المستخدم</th>
-                  <th style={{ padding: '12px' }}>الرتبة</th>
-                  <th style={{ padding: '12px' }}>حالة VIP</th>
-                  <th style={{ padding: '12px' }}>حالة الحساب</th>
-                  <th style={{ padding: '12px', textAlign: 'center' }}>الإجراءات والتعديل</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredUsers.map((u) => (
-                  <tr key={u.id} style={{ borderBottom: '1px solid #26262d' }}>
-                    <td style={{ padding: '12px' }}>
-                      <div style={{ fontWeight: 'bold' }}>{u.name || u.username || 'مستخدم بدون اسم'}</div>
-                      <div style={{ fontSize: '12px', color: '#777' }}>{u.email || u.id}</div>
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <span style={{ padding: '3px 8px', background: u.role === 'admin' ? '#e50914' : '#333', borderRadius: '4px', fontSize: '12px' }}>
-                        {u.role || 'user'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      {u.is_vip ? (
-                        <span style={{ color: '#ffb703', fontWeight: 'bold' }}>👑 عضويّة VIP</span>
-                      ) : (
-                        <span style={{ color: '#777' }}>عادي</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      {u.is_banned ? (
-                        <span style={{ color: '#ff4d4d', fontWeight: 'bold' }}>🛑 محظور</span>
-                      ) : (
-                        <span style={{ color: '#28a745' }}>نشط 🟢</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '12px', textAlign: 'center' }}>
-                      <button
-                        onClick={() => toggleVipStatus(u.id, u.is_vip)}
-                        style={{ padding: '6px 12px', background: u.is_vip ? '#444' : '#ffb703', color: u.is_vip ? '#fff' : '#000', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold', marginLeft: '8px' }}>
-                        {u.is_vip ? 'إلغاء VIP' : 'ترقية لـ VIP 👑'}
-                      </button>
+        {/* 1. تبويب إعدادات الموقع والتشخيص */}
+        {activeTab === 'settings' && (
+          <div style={{ display: 'grid', gap: '20px' }}>
+            <div style={{ background: '#181818', padding: '20px', borderRadius: '12px', border: '1px solid #282828', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ margin: '0 0 5px 0' }}>🖥️ شاشة التشخيص (Diagnostics Mode)</h3>
+                <p style={{ color: '#aaa', fontSize: '13px', margin: 0 }}>تفعيل إظهار تفاصيل الـ API والأخطاء الفنية للمطورين على الشاشة.</p>
+              </div>
+              <button
+                onClick={() => toggleSetting('diagnostics_enabled', settings.diagnosticsEnabled)}
+                style={{ padding: '10px 20px', background: settings.diagnosticsEnabled ? '#28a745' : '#444', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                {settings.diagnosticsEnabled ? 'مفعلة ✅' : 'معطلة ❌'}
+              </button>
+            </div>
 
-                      <button
-                        onClick={() => toggleBanStatus(u.id, u.is_banned)}
-                        style={{ padding: '6px 12px', background: u.is_banned ? '#28a745' : '#dc3545', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}>
-                        {u.is_banned ? 'إلغاء الحظر 🔓' : 'حظر الحساب 🚫'}
-                      </button>
-                    </td>
-                  </tr>
+            <div style={{ background: '#181818', padding: '20px', borderRadius: '12px', border: '1px solid #282828', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ margin: '0 0 5px 0' }}>🚧 وضع الصيانة (Maintenance Mode)</h3>
+                <p style={{ color: '#aaa', fontSize: '13px', margin: 0 }}>إغلاق الموقع مؤقتاً أمام الزوار وإظهار شاشة الصيانة.</p>
+              </div>
+              <button
+                onClick={() => toggleSetting('maintenance_mode', settings.maintenanceMode)}
+                style={{ padding: '10px 20px', background: settings.maintenanceMode ? '#d9534f' : '#444', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                {settings.maintenanceMode ? 'مفعل 🚨' : 'معطل 🟢'}
+              </button>
+            </div>
+
+            <div style={{ background: '#181818', padding: '20px', borderRadius: '12px', border: '1px solid #282828' }}>
+              <h3 style={{ margin: '0 0 10px 0' }}>📢 شريط الإعلانات أعلى الموقع</h3>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <input
+                  type="text"
+                  placeholder="اكتب رسالة الإعلان هنا..."
+                  value={settings.announcementBar}
+                  onChange={(e) => setSettings({ ...settings, announcementBar: e.target.value })}
+                  style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #333', background: '#222', color: '#fff', outline: 'none' }}
+                />
+                <button onClick={saveAnnouncement} style={{ padding: '10px 20px', background: '#0066cc', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
+                  حفظ
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 2. تبويب حظر وإدارة المستخدمين */}
+        {activeTab === 'users' && (
+          <div style={{ background: '#181818', padding: '20px', borderRadius: '12px', border: '1px solid #282828' }}>
+            <h3 style={{ margin: '0 0 15px 0' }}>قائمة الأعضاء والمستخدمين</h3>
+            {users.length === 0 ? (
+              <p style={{ color: '#888' }}>لا يوجد مستخدمون مسجلون حالياً أو متعذر جلبهم.</p>
+            ) : (
+              <div style={{ display: 'grid', gap: '10px' }}>
+                {users.map(u => (
+                  <div key={u.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#222', padding: '12px', borderRadius: '8px' }}>
+                    <div>
+                      <div style={{ fontWeight: 'bold' }}>{u.email || u.username || 'مستخدم بدون اسم'}</div>
+                      <div style={{ fontSize: '12px', color: '#888' }}>ID: {u.id}</div>
+                    </div>
+                    <button
+                      onClick={() => toggleUserBan(u.id, u.is_banned)}
+                      style={{ padding: '6px 14px', background: u.is_banned ? '#28a745' : '#d9534f', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }}
+                    >
+                      {u.is_banned ? 'إلغاء الحظر 🔓' : 'حظر 🚫'}
+                    </button>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 3. تبويب إخفاء وإظهار المحتوى */}
+        {activeTab === 'content' && (
+          <div style={{ background: '#181818', padding: '20px', borderRadius: '12px', border: '1px solid #282828' }}>
+            <h3 style={{ margin: '0 0 15px 0' }}>التحكم برؤية الأفلام والمسلسلات</h3>
+            <div style={{ display: 'grid', gap: '10px' }}>
+              {titles.map(item => (
+                <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#222', padding: '12px', borderRadius: '8px' }}>
+                  <div>
+                    <span style={{ fontWeight: 'bold' }}>{item.name}</span>
+                    <span style={{ fontSize: '12px', color: '#aaa', marginRight: '10px' }}>({item.type === 'series' ? 'مسلسل' : 'فيلم'})</span>
+                  </div>
+                  <button
+                    onClick={() => toggleTitleVisibility(item.id, item.is_hidden)}
+                    style={{ padding: '6px 14px', background: item.is_hidden ? '#28a745' : '#ff9800', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }}
+                  >
+                    {item.is_hidden ? 'إظهار 👁️' : 'إخفاء 🙈'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 4. تبويب الاستيراد والروابط بـ Stelar */}
+        {activeTab === 'import' && (
+          <div style={{ background: '#181818', padding: '20px', borderRadius: '12px', border: '1px solid #282828', textAlign: 'center' }}>
+            <h3 style={{ margin: '0 0 10px 0' }}>🔗 ملء الروابط الفارغة عبر Stelar</h3>
+            <p style={{ color: '#aaa', fontSize: '14px', marginBottom: '20px' }}>
+              فحص قاعدة البيانات وتوليد رابط `stelar.rip` بناءً على `tmdb_id` لكل عنوان بدون رابط.
+            </p>
+            <button
+              onClick={handleFillEmptyUrls}
+              disabled={fillLoading}
+              style={{ padding: '12px 30px', background: fillLoading ? '#555' : '#8e44ad', color: '#fff', border: 'none', borderRadius: '8px', cursor: fillLoading ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '16px' }}
+            >
+              {fillLoading ? '⏳ جاري التحديث...' : '🔗 تشغيل ملء الروابط تلقائياً'}
+            </button>
+          </div>
+        )}
+
+      </div>
     </div>
   );
 }
