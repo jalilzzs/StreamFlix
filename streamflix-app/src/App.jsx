@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { supabase } from './lib/supabaseClient';
 import { useI18n } from './contexts/I18nContext';
-
+import WatchParty from './pages/WatchParty';
 // Components
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
@@ -110,6 +110,10 @@ export default function App() {
         <Route path="/about" element={<StaticPage title={t('settings_about')} body={t('empty_about')} />} />
         <Route path="/import" element={<Import />} />
         <Route path="/admin" element={<Admin />} />
+        <Route
+  path="/watch-party/:id"
+  element={<WatchParty />}
+/>
         <Route path="*" element={<StaticPage title="404" body="Page not found." />} />
       </Routes>
 
