@@ -42,6 +42,20 @@ export async function getProfile(userId) {
   return data;
 }
 
+// ---- Titles & Content (الخاصة بالبحث والمحتوى) ----------------------------
+
+export async function fetchTitles(searchQuery = '') {
+  let query = supabase.from('titles').select('*');
+
+  if (searchQuery.trim()) {
+    query = query.ilike('title', `%${searchQuery.trim()}%`);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
+
 // ---- Friendships & Requests -----------------------------------------------
 
 export async function sendFriendRequestByCode(requesterId, targetUserId) {
@@ -63,7 +77,6 @@ export async function sendFriendRequestByCode(requesterId, targetUserId) {
     throw new Error('لا يمكنك إرسال طلب صداقة لنفسك.');
   }
 
-  // التأكد من وجود المستخدم بالـ ID المباشر
   const { data: target, error: findErr } = await supabase
     .from('profiles')
     .select('id')
@@ -93,7 +106,6 @@ export async function sendFriendRequestByCode(requesterId, targetUserId) {
 
 export async function respondToFriendRequest(friendshipId, status) {
   if (status === 'rejected') {
-    // حذف الصف عند الرفض لكي يتمكن المستخدم من إعادة الإرسال لاحقاً بدون مشاكل الـ Unique Constraint
     const { error } = await supabase
       .from('friendships')
       .delete()
