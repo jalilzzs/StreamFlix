@@ -42,7 +42,7 @@ export async function getProfile(userId) {
   return data;
 }
 
-// ---- Titles & Content -----------------------------------------------------
+// ---- Titles & Content (Home & Search) -------------------------------------
 
 export async function fetchTitles(searchQuery = '') {
   let query = supabase.from('titles').select('*');
@@ -110,8 +110,12 @@ export async function updateWatchProgress(userId, titleId, progressSeconds, dura
   if (error) console.error('Error updating watch progress:', error);
 }
 
-// ---- Friendships & Requests -----------------------------------------------
+// ---- Friendships & Requests (نظام الأصدقاء) --------------------------------
 
+/**
+ * إرسال طلب صداقة باستعمال الـ User ID المباشر
+ * تدعم استقبال Object أو parameters منفصلة لمنع أخطاء الـ arguments
+ */
 export async function sendFriendRequestByCode(requesterId, targetUserId) {
   let reqId = requesterId;
   let targetId = targetUserId;
@@ -131,6 +135,7 @@ export async function sendFriendRequestByCode(requesterId, targetUserId) {
     throw new Error('لا يمكنك إرسال طلب صداقة لنفسك.');
   }
 
+  // التأكد من وجود الحساب المستهدف
   const { data: target, error: findErr } = await supabase
     .from('profiles')
     .select('id')
@@ -140,6 +145,7 @@ export async function sendFriendRequestByCode(requesterId, targetUserId) {
   if (findErr) throw findErr;
   if (!target) throw new Error('لم يتم العثور على مستخدم بهذا الـ ID.');
 
+  // إدخال طلب الصداقة
   const { error } = await supabase
     .from('friendships')
     .insert({
@@ -158,6 +164,9 @@ export async function sendFriendRequestByCode(requesterId, targetUserId) {
   return true;
 }
 
+/**
+ * القبول أو الرفض على طلب الصداقة
+ */
 export async function respondToFriendRequest(friendshipId, status) {
   if (status === 'rejected') {
     const { error } = await supabase
@@ -180,6 +189,9 @@ export async function respondToFriendRequest(friendshipId, status) {
   if (error) throw error;
 }
 
+/**
+ * جلب قائمة الأصدقاء المقبولين (Accepted Friends)
+ */
 export async function fetchFriends(userId) {
   const { data, error } = await supabase
     .from('friendships')
@@ -194,6 +206,9 @@ export async function fetchFriends(userId) {
   );
 }
 
+/**
+ * جلب الطلبات المعلقة الواردة (Pending Requests)
+ */
 export async function fetchPendingRequests(userId) {
   const { data, error } = await supabase
     .from('friendships')
@@ -205,6 +220,9 @@ export async function fetchPendingRequests(userId) {
   return data || [];
 }
 
+/**
+ * الاستماع للطلبات الجديدة لحظياً (Realtime)
+ */
 export function subscribeToFriendRequests(userId, onChange) {
   const channel = supabase
     .channel(`friend-requests:${userId}`)
@@ -223,8 +241,11 @@ export function subscribeToFriendRequests(userId, onChange) {
   return () => supabase.removeChannel(channel);
 }
 
-// ---- Messages & Chat ------------------------------------------------------
+// ---- Messages & Chat (نظام المحادثات) --------------------------------------
 
+/**
+ * جلب جميع الرسائل بين مستخدمين
+ */
 export async function fetchMessages(userId, friendId, limit = 100) {
   const { data, error } = await supabase
     .from('messages')
@@ -239,6 +260,9 @@ export async function fetchMessages(userId, friendId, limit = 100) {
   return data || [];
 }
 
+/**
+ * إرسال رسالة (نص، صوت، صورة، أو مشاركة فيلم)
+ */
 export async function sendMessage({
   senderId,
   receiverId,
@@ -262,6 +286,9 @@ export async function sendMessage({
   return data;
 }
 
+/**
+ * الاستماع للرسائل الجديدة لحظياً (Realtime)
+ */
 export function subscribeToMessages(userId, friendId, onMessage) {
   const roomKey = [userId, friendId].sort().join(':');
   const channel = supabase
@@ -287,7 +314,7 @@ export function subscribeToMessages(userId, friendId, onMessage) {
   return () => supabase.removeChannel(channel);
 }
 
-// ---- Chat Media Storage ---------------------------------------------------
+// ---- Chat Media Storage (رفع الصور والتسجيلات الصوتية) ------------------------
 
 export async function uploadChatMedia({ userId, file, kind = 'image' }) {
   if (!userId) throw new Error('يرجى تسجيل الدخول أولاً.');
