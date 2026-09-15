@@ -296,39 +296,39 @@ export async function fetchWatchedEpisodeIds(userId, titleId) {
   return new Set((data || []).map((r) => r.episode_id));
 }
 
-// ---- Friendships (معدلة تدعم Object و Direct Params والبحث بالـ ID و Code) --
+// ---- Friendships (إرسال ومعالجة مباشرة بـ User ID) -------------------------
 
-export async function sendFriendRequestByCode(requesterId, targetUserCode) {
+export async function sendFriendRequestByCode(requesterId, targetUserId) {
+  // للتعامل مع الحالة إذا تم تمريرها ككائن أو كـ arguments
   let reqId = requesterId;
-  let code = targetUserCode;
+  let targetId = targetUserId;
 
-  // إذا تم تمرير البيانات كـ Object مثل { userId, friendCode }
   if (typeof requesterId === 'object' && requesterId !== null) {
     reqId = requesterId.userId;
-    code = requesterId.friendCode;
+    targetId = requesterId.targetUserId || requesterId.friendCode;
   }
 
-  if (!code || typeof code !== 'string') {
-    throw new Error('يرجى إدخال كود الصديق.');
+  if (!targetId || typeof targetId !== 'string') {
+    throw new Error('يرجى كتابة User ID الخاص بالمستخدم.');
   }
 
-  const cleanCode = code.trim();
+  const cleanTargetId = targetId.trim();
 
-  // البحث عن المستخدم سواء بالـ id (UUID) أو الـ user_code
+  // التأكد من وجود المستخدم في قاعدة البيانات عبر id
   const { data: target, error: findErr } = await supabase
     .from('profiles')
     .select('id')
-    .or(`id.eq.${cleanCode},user_code.eq.${cleanCode}`)
+    .eq('id', cleanTargetId)
     .maybeSingle();
 
   if (findErr) throw findErr;
 
   if (!target) {
-    throw new Error('لم يتم العثور على مستخدم بهذا الكود.');
+    throw new Error('لم يتم العثور على مستخدم بهذا الـ ID.');
   }
 
   if (target.id === reqId) {
-    throw new Error('لا يمكنك إضافة نفسك.');
+    throw new Error('لا يمكنك إرسال طلب صداقة لنفسك.');
   }
 
   const { error } = await supabase.from('friendships').insert({
