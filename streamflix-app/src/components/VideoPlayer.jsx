@@ -1,174 +1,798 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import {
   fetchFriends,
-  createWatchParty,
+  createWatchPartyWithInvites,
   sendMessage,
 } from '../lib/api';
 
-export default function VideoPlayer({ tmdbId, type = 'movie', title }) {
+export default function VideoPlayer({
+  tmdbId,
+  type = 'movie',
+  title,
+  episodeId = null,
+}) {
+  const { user } = useAuth();
+
   const [selectedServer, setSelectedServer] = useState(0);
+
   const [shareOpen, setShareOpen] = useState(false);
   const [friends, setFriends] = useState([]);
   const [selectedFriends, setSelectedFriends] = useState([]);
+
+  const [loadingFriends, setLoadingFriends] = useState(false);
   const [sharing, setSharing] = useState(false);
-  const [shareError, setShareError] = useState('');
 
-  const realTmdb = tmdbId || title?.tmdb_id || title?.tmdbId;
-  const contentType = type === 'series' || title?.type === 'series' || title?.type === 'tv' ? 'tv' : 'movie';
+  const [error, setError] = useState('');
 
-  const server1Url = contentType === 'movie'
-    ? `https://vidsrc.me/embed/movie?tmdb=${realTmdb}`
-    : `https://vidsrc.me/embed/tv?tmdb=${realTmdb}&season=1&episode=1`;
+  const realTmdb =
+    tmdbId ||
+    title?.tmdb_id ||
+    title?.tmdbId ||
+    null;
 
-  const server2Url = contentType === 'movie'
-    ? `https://vidsrc.cc/v2/embed/movie/${realTmdb}`
-    : `https://vidsrc.cc/v2/embed/tv/${realTmdb}/1/1`;
+  const contentType =
+    type === 'series' ||
+    type === 'tv' ||
+    title?.type === 'series' ||
+    title?.type === 'tv'
+      ? 'tv'
+      : 'movie';
 
-  const servers = useMemo(() => [
-    { id: 0, name: 'سيرفر 1', url: server1Url },
-    { id: 1, name: 'سيرفر 2', url: server2Url },
-  ], [server1Url, server2Url]);
+  const currentEpisodeId =
+    episodeId ||
+    title?.current_episode_id ||
+    title?.episode_id ||
+    null;
+
+  const currentSeason =
+    title?.current_season ||
+    title?.season ||
+    1;
+
+  const currentEpisodeNumber =
+    title?.current_episode_number ||
+    title?.episode_number ||
+    1;
+
+  const servers = useMemo(() => {
+    return [
+      {
+        id: 0,
+        name: 'سيرفر 1',
+        url:
+          contentType === 'movie'
+            ? `https://vidsrc.me/embed/movie?tmdb=${realTmdb}`
+            : `https://vidsrc.me/embed/tv?tmdb=${realTmdb}&season=${currentSeason}&episode=${currentEpisodeNumber}`,
+      },
+      {
+        id: 1,
+        name: 'سيرفر 2',
+        url:
+          contentType === 'movie'
+            ? `https://vidsrc.cc/v2/embed/movie/${realTmdb}`
+            : `https://vidsrc.cc/v2/embed/tv/${realTmdb}/${currentSeason}/${currentEpisodeNumber}`,
+      },
+    ];
+  }, [
+    contentType,
+    realTmdb,
+    currentSeason,
+    currentEpisodeNumber,
+  ]);
+
+  const currentServer = servers[selectedServer];
 
   useEffect(() => {
-    if (!shareOpen) return;
+    if (!shareOpen || !user?.id) return;
+
     let cancelled = false;
-    (async () => {
+
+    async function loadFriends() {
       try {
-        const data = await fetchFriends();
-        if (!cancelled) setFriends(data || []);
-      } catch (e) {
-        if (!cancelled) setShareError(e.message || 'تعذر جلب الأصدقاء.');
+        setLoadingFriends(true);
+        setError('');
+
+        const result = await fetchFriends(user.id);
+
+        if (!cancelled) {
+          setFriends(result || []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err?.message ||
+              'تعذر جلب قائمة الأصدقاء'
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingFriends(false);
+        }
       }
-    })();
-    return () => { cancelled = true; };
-  }, [shareOpen]);
+    }
 
-  const toggleFriend = (id) => {
-    setSelectedFriends((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
-  };
+    loadFriends();
 
-  const shareParty = async () => {
-    if (!selectedFriends.length || !realTmdb || sharing) return;
-    setSharing(true);
-    setShareError('');
+    return () => {
+      cancelled = true;
+    };
+  }, [shareOpen, user?.id]);
+
+  function toggleFriend(friendId) {
+    setSelectedFriends((current) => {
+      if (current.includes(friendId)) {
+        return current.filter(
+          (id) => id !== friendId
+        );
+      }
+
+      return [...current, friendId];
+    });
+  }
+
+  async function createParty() {
+    if (!user?.id) {
+      setError('يجب تسجيل الدخول أولاً');
+      return;
+    }
+
+    if (!title?.id) {
+      setError(
+        'هذا المحتوى لا يملك معرفًا صالحًا في قاعدة البيانات'
+      );
+      return;
+    }
+
+    if (!selectedFriends.length) {
+      setError(
+        'اختر صديقًا واحدًا على الأقل'
+      );
+      return;
+    }
+
     try {
-      const party = await createWatchParty({
-        titleId: title?.id || null,
-        episodeId: title?.current_episode_id || null,
-        tmdbId: realTmdb,
-        contentType,
-        hostServer: selectedServer,
-      });
+      setSharing(true);
+      setError('');
+
+      const partyResult =
+        await createWatchPartyWithInvites({
+          hostId: user.id,
+          titleId: title.id,
+          episodeId: currentEpisodeId,
+          friendIds: selectedFriends,
+        });
+
+      const party = partyResult?.party;
+
+      if (!party?.id) {
+        throw new Error(
+          'لم يتم إنشاء غرفة المشاهدة'
+        );
+      }
+
+      const metadata = {
+        name:
+          title?.name ||
+          title?.title ||
+          'مشاهدة جماعية',
+
+        poster_url:
+          title?.poster_url ||
+          title?.poster ||
+          title?.image_url ||
+          title?.backdrop_url ||
+          null,
+
+        release_year:
+          title?.release_year ||
+          title?.year ||
+          null,
+
+        rating_avg:
+          title?.rating_avg ||
+          title?.rating ||
+          null,
+
+        type:
+          contentType === 'tv'
+            ? 'series'
+            : 'movie',
+
+        tmdb_id: realTmdb,
+
+        episode_id:
+          currentEpisodeId,
+
+        season:
+          contentType === 'tv'
+            ? currentSeason
+            : null,
+
+        episode_number:
+          contentType === 'tv'
+            ? currentEpisodeNumber
+            : null,
+
+        server:
+          selectedServer,
+
+        watch_party: true,
+      };
+
+      /*
+       * We intentionally use title_share here.
+       * This keeps compatibility with the existing
+       * messages.kind constraint.
+       *
+       * The actual Watch Party is identified by
+       * shared_party_id.
+       */
 
       await Promise.all(
         selectedFriends.map((friendId) =>
           sendMessage({
+            senderId: user.id,
             receiverId: friendId,
-            kind: 'watch_party',
-            content: JSON.stringify({
-              partyId: party.id,
-              tmdbId: realTmdb,
-              contentType,
-              titleName: title?.name || title?.title || 'مشاهدة جماعية',
-              poster: title?.poster_url || title?.poster_path || null,
-              releaseYear: title?.release_year || null,
-              rating: title?.rating_avg || null,
-              server: selectedServer,
-            }),
+            kind: 'title_share',
+            content:
+              metadata.name,
+            sharedTitleId: title.id,
+            sharedPartyId: party.id,
+            metadata,
           })
         )
       );
 
       setSelectedFriends([]);
       setShareOpen(false);
-    } catch (e) {
-      setShareError(e.message || 'تعذر إنشاء الدعوة.');
+    } catch (err) {
+      console.error(
+        'Watch Party creation error:',
+        err
+      );
+
+      setError(
+        err?.message ||
+          'تعذر إنشاء دعوة المشاهدة'
+      );
     } finally {
       setSharing(false);
     }
-  };
+  }
 
-  const currentServerObj = servers[selectedServer];
+  if (!realTmdb) {
+    return (
+      <div
+        style={{
+          width: '100%',
+          background: '#000',
+          color: '#fff',
+          borderRadius: '8px',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            minHeight: '420px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#aaa',
+          }}
+        >
+          لا يوجد TMDB ID لهذا المحتوى
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="player-block">
-      <div className="player-container">
+    <div
+      style={{
+        width: '100%',
+        background: '#000',
+        borderRadius: '8px',
+        overflow: 'hidden',
+        color: '#fff',
+        direction: 'rtl',
+        position: 'relative',
+      }}
+    >
+      {/* PLAYER */}
+
+      <div
+        style={{
+          position: 'relative',
+          width: '100%',
+          minHeight: '420px',
+          background: '#000',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         <iframe
-          key={`${selectedServer}-${realTmdb}`}
-          src={currentServerObj.url}
-          style={{ width: '100%', height: '100%', minHeight: '420px', border: 'none', background: '#000' }}
+          key={`${selectedServer}-${realTmdb}-${currentEpisodeId || ''}`}
+          src={currentServer.url}
+          style={{
+            width: '100%',
+            height: '420px',
+            border: 'none',
+            background: '#000',
+          }}
           allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
           allowFullScreen
           referrerPolicy="no-referrer"
-          title="Video Player"
+          title="StreamFlix Video Player"
         />
       </div>
 
-      <div className="server-row">
-        <span className="server-label">السيرفرات:</span>
-        {servers.map((srv) => (
+      {/* SERVERS + SHARE */}
+
+      <div
+        style={{
+          padding: '12px 15px',
+          background: '#111',
+          borderTop: '1px solid #222',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: '10px',
+          flexWrap: 'wrap',
+        }}
+      >
+        <span
+          style={{
+            fontSize: '13px',
+            color: '#aaa',
+          }}
+        >
+          السيرفرات:
+        </span>
+
+        {servers.map((server) => (
           <button
-            key={srv.id}
+            key={server.id}
             type="button"
-            className={`server-btn ${selectedServer === srv.id ? 'active' : ''}`}
-            onClick={() => setSelectedServer(srv.id)}
+            onClick={() =>
+              setSelectedServer(server.id)
+            }
+            style={{
+              border:
+                selectedServer === server.id
+                  ? '1px solid #d4af37'
+                  : '1px solid #333',
+              background:
+                selectedServer === server.id
+                  ? '#d4af37'
+                  : '#181818',
+              color:
+                selectedServer === server.id
+                  ? '#111'
+                  : '#ddd',
+              padding: '8px 14px',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: 700,
+            }}
           >
-            {srv.name}
+            {server.name}
           </button>
         ))}
-        <button type="button" className="server-btn watch-party-share" onClick={() => setShareOpen(true)}>
+
+        <button
+          type="button"
+          onClick={() => {
+            setError('');
+            setShareOpen(true);
+          }}
+          style={{
+            border: '1px solid #d4af37',
+            background:
+              'linear-gradient(135deg,#d4af37,#b89222)',
+            color: '#111',
+            padding: '8px 16px',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontSize: '12px',
+            fontWeight: 900,
+          }}
+        >
           🎬 مشاركة
         </button>
       </div>
 
+      {/* SHARE MODAL */}
+
       {shareOpen && (
-        <div className="watch-party-modal-backdrop" onClick={() => setShareOpen(false)}>
-          <div className="watch-party-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="watch-party-modal-head">
+        <div
+          onClick={() =>
+            !sharing &&
+            setShareOpen(false)
+          }
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 99999,
+            background:
+              'rgba(0,0,0,.75)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+        >
+          <div
+            onClick={(event) =>
+              event.stopPropagation()
+            }
+            style={{
+              width: '100%',
+              maxWidth: '470px',
+              maxHeight: '85vh',
+              overflowY: 'auto',
+              background: '#151515',
+              border:
+                '1px solid rgba(212,175,55,.25)',
+              borderRadius: '18px',
+              padding: '20px',
+              boxShadow:
+                '0 25px 80px rgba(0,0,0,.55)',
+            }}
+          >
+            {/* HEADER */}
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent:
+                  'space-between',
+                marginBottom: '18px',
+              }}
+            >
               <div>
-                <strong>🎬 مشاهدة جماعية</strong>
-                <small>اختر صديقًا أو مجموعة أصدقاء</small>
+                <div
+                  style={{
+                    color: '#d4af37',
+                    fontSize: '11px',
+                    fontWeight: 900,
+                    letterSpacing: '1px',
+                    marginBottom: '5px',
+                  }}
+                >
+                  WATCH PARTY
+                </div>
+
+                <h3
+                  style={{
+                    margin: 0,
+                    color: '#fff',
+                    fontSize: '20px',
+                  }}
+                >
+                  🎬 مشاركة المشاهدة
+                </h3>
               </div>
-              <button type="button" onClick={() => setShareOpen(false)}>×</button>
+
+              <button
+                type="button"
+                disabled={sharing}
+                onClick={() =>
+                  setShareOpen(false)
+                }
+                style={{
+                  width: '34px',
+                  height: '34px',
+                  borderRadius: '50%',
+                  border: '1px solid #333',
+                  background: '#222',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: '20px',
+                }}
+              >
+                ×
+              </button>
             </div>
 
-            {shareError && <div className="watch-party-error">{shareError}</div>}
+            {/* MOVIE INFO */}
 
-            <div className="watch-party-friends">
-              {friends.length === 0 ? (
-                <div className="watch-party-empty">لا يوجد أصدقاء متاحون للمشاركة.</div>
-              ) : friends.map((friend) => {
-                const checked = selectedFriends.includes(friend.id);
-                const name = friend.display_name || friend.full_name || friend.username || 'مستخدم';
-                return (
-                  <button
-                    type="button"
-                    key={friend.id}
-                    className={`watch-party-friend ${checked ? 'selected' : ''}`}
-                    onClick={() => toggleFriend(friend.id)}
-                  >
-                    <div
-                      className="watch-party-avatar"
-                      style={friend.avatar_url ? { backgroundImage: `url(${friend.avatar_url})` } : undefined}
+            <div
+              style={{
+                display: 'flex',
+                gap: '12px',
+                padding: '12px',
+                borderRadius: '13px',
+                background: '#0e0e0e',
+                border:
+                  '1px solid #292929',
+                marginBottom: '15px',
+              }}
+            >
+              {(
+                title?.poster_url ||
+                title?.poster ||
+                title?.image_url
+              ) ? (
+                <img
+                  src={
+                    title.poster_url ||
+                    title.poster ||
+                    title.image_url
+                  }
+                  alt=""
+                  style={{
+                    width: '58px',
+                    height: '82px',
+                    objectFit: 'cover',
+                    borderRadius: '8px',
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    width: '58px',
+                    height: '82px',
+                    borderRadius: '8px',
+                    background: '#222',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '25px',
+                  }}
+                >
+                  🎬
+                </div>
+              )}
+
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent:
+                    'center',
+                  gap: '5px',
+                }}
+              >
+                <strong
+                  style={{
+                    color: '#fff',
+                    fontSize: '15px',
+                  }}
+                >
+                  {title?.name ||
+                    title?.title ||
+                    'المحتوى الحالي'}
+                </strong>
+
+                <span
+                  style={{
+                    color: '#888',
+                    fontSize: '12px',
+                  }}
+                >
+                  {contentType === 'tv'
+                    ? `مسلسل • موسم ${currentSeason} • حلقة ${currentEpisodeNumber}`
+                    : 'فيلم'}
+                </span>
+              </div>
+            </div>
+
+            {/* ERROR */}
+
+            {error && (
+              <div
+                style={{
+                  padding: '10px 12px',
+                  marginBottom: '12px',
+                  borderRadius: '9px',
+                  background:
+                    'rgba(220,60,60,.1)',
+                  border:
+                    '1px solid rgba(220,60,60,.3)',
+                  color: '#ff8585',
+                  fontSize: '12px',
+                }}
+              >
+                {error}
+              </div>
+            )}
+
+            {/* FRIENDS */}
+
+            <div
+              style={{
+                color: '#aaa',
+                fontSize: '12px',
+                marginBottom: '8px',
+              }}
+            >
+              اختر الأصدقاء:
+            </div>
+
+            {loadingFriends ? (
+              <div
+                style={{
+                  padding: '30px',
+                  textAlign: 'center',
+                  color: '#888',
+                }}
+              >
+                جاري جلب الأصدقاء...
+              </div>
+            ) : friends.length === 0 ? (
+              <div
+                style={{
+                  padding: '25px',
+                  textAlign: 'center',
+                  color: '#888',
+                  background: '#101010',
+                  borderRadius: '12px',
+                }}
+              >
+                ما عندك حتى صديق متاح للمشاركة.
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '7px',
+                  maxHeight: '300px',
+                  overflowY: 'auto',
+                }}
+              >
+                {friends.map((friend) => {
+                  const selected =
+                    selectedFriends.includes(
+                      friend.id
+                    );
+
+                  const name =
+                    friend.display_name ||
+                    friend.full_name ||
+                    friend.username ||
+                    'مستخدم';
+
+                  return (
+                    <button
+                      key={friend.id}
+                      type="button"
+                      onClick={() =>
+                        toggleFriend(
+                          friend.id
+                        )
+                      }
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '10px',
+                        borderRadius: '10px',
+                        border: selected
+                          ? '1px solid #d4af37'
+                          : '1px solid #292929',
+                        background: selected
+                          ? 'rgba(212,175,55,.08)'
+                          : '#101010',
+                        color: '#fff',
+                        cursor: 'pointer',
+                        textAlign: 'right',
+                      }}
                     >
-                      {!friend.avatar_url && name.charAt(0).toUpperCase()}
-                    </div>
-                    <span>{name}</span>
-                    <span className="watch-party-check">{checked ? '✓' : ''}</span>
-                  </button>
-                );
-              })}
-            </div>
+                      <div
+                        style={{
+                          width: '38px',
+                          height: '38px',
+                          borderRadius: '50%',
+                          overflow: 'hidden',
+                          background: '#252525',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent:
+                            'center',
+                          color: '#d4af37',
+                          fontWeight: 900,
+                        }}
+                      >
+                        {friend.avatar_url ? (
+                          <img
+                            src={
+                              friend.avatar_url
+                            }
+                            alt=""
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                            }}
+                          />
+                        ) : (
+                          name
+                            .charAt(0)
+                            .toUpperCase()
+                        )}
+                      </div>
+
+                      <span
+                        style={{
+                          flex: 1,
+                          fontSize: '13px',
+                        }}
+                      >
+                        {name}
+                      </span>
+
+                      <span
+                        style={{
+                          width: '23px',
+                          height: '23px',
+                          borderRadius: '50%',
+                          border: selected
+                            ? '1px solid #d4af37'
+                            : '1px solid #444',
+                          display: 'flex',
+                          alignItems:
+                            'center',
+                          justifyContent:
+                            'center',
+                          color: '#d4af37',
+                          fontWeight: 900,
+                        }}
+                      >
+                        {selected
+                          ? '✓'
+                          : ''}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* SEND */}
 
             <button
               type="button"
-              className="watch-party-start"
-              disabled={!selectedFriends.length || sharing}
-              onClick={shareParty}
+              disabled={
+                sharing ||
+                selectedFriends.length === 0
+              }
+              onClick={createParty}
+              style={{
+                width: '100%',
+                marginTop: '15px',
+                padding: '13px',
+                border: 'none',
+                borderRadius: '10px',
+                background:
+                  selectedFriends.length &&
+                  !sharing
+                    ? '#d4af37'
+                    : '#333',
+                color:
+                  selectedFriends.length &&
+                  !sharing
+                    ? '#111'
+                    : '#777',
+                cursor:
+                  selectedFriends.length &&
+                  !sharing
+                    ? 'pointer'
+                    : 'not-allowed',
+                fontWeight: 900,
+                fontSize: '13px',
+              }}
             >
-              {sharing ? 'جاري الإرسال...' : `بدء المشاهدة الجماعية${selectedFriends.length ? ` (${selectedFriends.length})` : ''}`}
+              {sharing
+                ? 'جاري إرسال الدعوة...'
+                : selectedFriends.length
+                  ? `إرسال الدعوة إلى ${selectedFriends.length} صديق`
+                  : 'اختر صديقًا أولاً'}
             </button>
           </div>
         </div>
