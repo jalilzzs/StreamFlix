@@ -1029,3 +1029,138 @@
     min-width: 175px;
   }
 }
+
+/* =========================
+   SHARED MOVIE / SERIES CARD
+========================= */
+.shared-title-card {
+  width: min(100%, 390px);
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  padding: 8px;
+  border: 1px solid rgba(228,200,138,.18);
+  border-radius: 15px;
+  background: linear-gradient(135deg, rgba(228,200,138,.10), rgba(255,255,255,.035));
+  color: var(--text, #fff);
+  text-align: start;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform .2s ease, border-color .2s ease, background .2s ease;
+}
+
+.shared-title-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(228,200,138,.38);
+  background: linear-gradient(135deg, rgba(228,200,138,.15), rgba(255,255,255,.045));
+}
+
+.shared-title-poster {
+  width: 76px;
+  min-width: 76px;
+  height: 108px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: rgba(255,255,255,.06);
+}
+
+.shared-title-poster img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.shared-title-poster-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 27px;
+  background: linear-gradient(145deg, rgba(228,200,138,.12), rgba(255,255,255,.035));
+}
+
+.shared-title-info {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+
+.shared-title-kicker {
+  color: var(--gold, #e4c88a);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+
+.shared-title-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.shared-title-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--muted, #8b93a3);
+  font-size: 9px;
+}
+
+.shared-title-meta span + span::before {
+  content: '•';
+  margin-inline-end: 8px;
+  color: rgba(255,255,255,.2);
+}
+
+.shared-title-open {
+  color: var(--gold, #e4c88a);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.shared-title-missing {
+  cursor: default;
+}
+
+.shared-title-missing:hover {
+  transform: none;
+}
+
+.shared-title-icon {
+  width: 58px;
+  min-width: 58px;
+  height: 58px;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 13px;
+  background: rgba(228,200,138,.08);
+  font-size: 24px;
+}
+
+@media (max-width: 430px) {
+  .shared-title-card {
+    width: min(100%, 330px);
+    gap: 9px;
+  }
+
+  .shared-title-poster {
+    width: 65px;
+    min-width: 65px;
+    height: 92px;
+  }
+
+  .shared-title-name {
+    font-size: 12px;
+  }
+}
