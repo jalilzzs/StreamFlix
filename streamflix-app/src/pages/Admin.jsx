@@ -1,17 +1,38 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 
 const ADMIN_PIN = '0508';
 
+const automaticBadgeForPlan = (plan) => {
+  if (plan === 'month') return 'verification';
+  if (plan === 'year') return 'official';
+  return 'none';
+};
+
+const badgeFieldsForType = (type) => ({
+  verification_badge: type === 'verification',
+  official_badge: type === 'official',
+  owner_badge: type === 'owner',
+});
+
 export default function Admin() {
   const navigate = useNavigate();
 
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  const [authStep, setAuthStep] = useState('login');
   const [pinInput, setPinInput] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+
   const [activeTab, setActiveTab] = useState('stats');
 
-  const [message, setMessage] = useState({ text: '', type: '' });
+  const [message, setMessage] = useState({
+    text: '',
+    type: '',
+  });
+
   const [loading, setLoading] = useState(false);
 
   const [stats, setStats] = useState({
@@ -45,7 +66,146 @@ export default function Admin() {
   const [systemLogs, setSystemLogs] = useState([]);
 
   // =========================================================
-  // LOGIN
+  // CHECK EXISTING SUPABASE SESSION
+  // =========================================================
+
+  useEffect(() => {
+    checkExistingSession();
+  }, []);
+
+  const checkExistingSession = async () => {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.user) {
+        setAuthStep('login');
+        return;
+      }
+
+      const isAdmin = await checkAdminRole(session.user.id);
+
+      if (isAdmin) {
+        setAuthStep('pin');
+      } else {
+        await supabase.auth.signOut();
+
+        setMessage({
+          text: '❌ هذا الحساب ليس لديه صلاحية Admin.',
+          type: 'error',
+        });
+
+        setAuthStep('login');
+      }
+    } catch (err) {
+      console.error(err);
+
+      setMessage({
+        text: `خطأ في التحقق: ${err.message}`,
+        type: 'error',
+      });
+
+      setAuthStep('login');
+    }
+  };
+
+  // =========================================================
+  // CHECK ADMIN ROLE
+  // =========================================================
+
+  const checkAdminRole = async (userId) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, role')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error(error);
+      throw error;
+    }
+
+    return (
+      data &&
+      (data.role === 'admin' ||
+        data.role === 'owner')
+    );
+  };
+
+  // =========================================================
+  // SUPABASE LOGIN
+  // =========================================================
+
+  const handleSupabaseLogin = async (e) => {
+    e.preventDefault();
+
+    if (!email.trim() || !password) {
+      setMessage({
+        text: '❌ أدخل البريد الإلكتروني وكلمة المرور.',
+        type: 'error',
+      });
+      return;
+    }
+
+    setLoading(true);
+    setMessage({
+      text: '',
+      type: '',
+    });
+
+    try {
+      const {
+        data,
+        error,
+      } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data?.user) {
+        throw new Error(
+          'لم يتم العثور على المستخدم.'
+        );
+      }
+
+      const isAdmin = await checkAdminRole(
+        data.user.id
+      );
+
+      if (!isAdmin) {
+        await supabase.auth.signOut();
+
+        throw new Error(
+          'هذا الحساب ليس Admin أو Owner.'
+        );
+      }
+
+      setPassword('');
+      setMessage({
+        text: 'تم التحقق من الحساب ✅ أدخل PIN المسؤول.',
+        type: 'success',
+      });
+
+      setAuthStep('pin');
+    } catch (err) {
+      console.error(err);
+
+      setMessage({
+        text: `❌ فشل تسجيل الدخول: ${err.message}`,
+        type: 'error',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // =========================================================
+  // PIN LOGIN
   // =========================================================
 
   const handlePinSubmit = (e) => {
@@ -53,7 +213,12 @@ export default function Admin() {
 
     if (pinInput === ADMIN_PIN) {
       setIsAuthenticated(true);
-      setMessage({ text: '', type: '' });
+
+      setMessage({
+        text: '',
+        type: '',
+      });
+
       fetchData();
     } else {
       setMessage({
@@ -64,11 +229,30 @@ export default function Admin() {
   };
 
   // =========================================================
+  // LOGOUT
+  // =========================================================
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+
+    setIsAuthenticated(false);
+    setAuthStep('login');
+    setPinInput('');
+
+    setMessage({
+      text: '',
+      type: '',
+    });
+  };
+
+  // =========================================================
   // LOGS
   // =========================================================
 
   const addLog = (text) => {
-    const time = new Date().toLocaleTimeString('ar-DZ');
+    const time = new Date().toLocaleTimeString(
+      'ar-DZ'
+    );
 
     setSystemLogs((prev) => [
       `[${time}] ${text}`,
@@ -86,10 +270,12 @@ export default function Admin() {
     try {
       // ---------------- SETTINGS ----------------
 
-      const { data: settingsData, error: settingsError } =
-        await supabase
-          .from('site_settings')
-          .select('*');
+      const {
+        data: settingsData,
+        error: settingsError,
+      } = await supabase
+        .from('site_settings')
+        .select('*');
 
       if (settingsError) {
         throw settingsError;
@@ -102,7 +288,8 @@ export default function Admin() {
 
         if (
           typeof value === 'string' &&
-          (value === 'true' || value === 'false')
+          (value === 'true' ||
+            value === 'false')
         ) {
           value = value === 'true';
         }
@@ -123,10 +310,15 @@ export default function Admin() {
       });
 
       setSettings({
-        maintenance_mode: config.maintenance_mode === true,
-        diagnostics_enabled: config.diagnostics_enabled === true,
+        maintenance_mode:
+          config.maintenance_mode === true,
+
+        diagnostics_enabled:
+          config.diagnostics_enabled === true,
+
         announcement_bar:
-          typeof config.announcement_bar === 'string'
+          typeof config.announcement_bar ===
+          'string'
             ? config.announcement_bar
             : '',
 
@@ -148,31 +340,33 @@ export default function Admin() {
 
       // ---------------- USERS ----------------
 
-      const { data: usersData, error: usersError } =
-        await supabase
-          .from('profiles')
-          .select(`
-            id,
-            user_code,
-            display_name,
-            username,
-            avatar_url,
-            is_premium,
-            is_vip,
-            is_banned,
-            role,
-            verification_badge,
-            official_badge,
-            owner_badge,
-            premium_plan,
-            badge_type,
-            badge_manual,
-            created_at,
-            updated_at
-          `)
-          .order('created_at', {
-            ascending: false,
-          });
+      const {
+        data: usersData,
+        error: usersError,
+      } = await supabase
+        .from('profiles')
+        .select(`
+          id,
+          user_code,
+          display_name,
+          username,
+          avatar_url,
+          is_premium,
+          is_vip,
+          is_banned,
+          role,
+          verification_badge,
+          official_badge,
+          owner_badge,
+          premium_plan,
+          badge_type,
+          badge_manual,
+          created_at,
+          updated_at
+        `)
+        .order('created_at', {
+          ascending: false,
+        });
 
       if (usersError) {
         throw usersError;
@@ -182,14 +376,16 @@ export default function Admin() {
 
       // ---------------- TITLES ----------------
 
-      const { data: titlesData, error: titlesError } =
-        await supabase
-          .from('titles')
-          .select('*')
-          .order('id', {
-            ascending: false,
-          })
-          .limit(100);
+      const {
+        data: titlesData,
+        error: titlesError,
+      } = await supabase
+        .from('titles')
+        .select('*')
+        .order('id', {
+          ascending: false,
+        })
+        .limit(100);
 
       if (titlesError) {
         throw titlesError;
@@ -212,19 +408,24 @@ export default function Admin() {
         ).length,
 
         vipUsers: allUsers.filter(
-          (u) => u.is_vip || u.is_premium
+          (u) =>
+            u.is_vip ||
+            u.is_premium
         ).length,
 
         verifiedUsers: allUsers.filter(
-          (u) => u.verification_badge
+          (u) =>
+            u.verification_badge
         ).length,
 
         officialUsers: allUsers.filter(
-          (u) => u.official_badge
+          (u) =>
+            u.official_badge
         ).length,
 
         ownerUsers: allUsers.filter(
-          (u) => u.owner_badge
+          (u) =>
+            u.owner_badge
         ).length,
 
         hiddenTitles: allTitles.filter(
@@ -232,7 +433,9 @@ export default function Admin() {
         ).length,
       });
 
-      addLog('تم جلب وتحديث بيانات لوحة التحكم بنجاح');
+      addLog(
+        'تم جلب وتحديث بيانات لوحة التحكم بنجاح'
+      );
     } catch (err) {
       console.error(err);
 
@@ -249,7 +452,10 @@ export default function Admin() {
   // SETTINGS
   // =========================================================
 
-  const saveSetting = async (key, value) => {
+  const saveSetting = async (
+    key,
+    value
+  ) => {
     try {
       const { error } = await supabase
         .from('site_settings')
@@ -257,7 +463,8 @@ export default function Admin() {
           {
             key,
             value,
-            updated_at: new Date().toISOString(),
+            updated_at:
+              new Date().toISOString(),
           },
           {
             onConflict: 'key',
@@ -278,7 +485,11 @@ export default function Admin() {
         type: 'success',
       });
 
-      addLog(`تغيير إعداد ${key} إلى ${String(value)}`);
+      addLog(
+        `تغيير إعداد ${key} إلى ${String(
+          value
+        )}`
+      );
     } catch (err) {
       setMessage({
         text: `خطأ: ${err.message}`,
@@ -290,7 +501,10 @@ export default function Admin() {
   const toggleSetting = async (key) => {
     const newValue = !settings[key];
 
-    await saveSetting(key, newValue);
+    await saveSetting(
+      key,
+      newValue
+    );
   };
 
   const saveAnnouncement = async () => {
@@ -312,34 +526,42 @@ export default function Admin() {
     try {
       const isVip = plan !== 'none';
 
-      let premiumPlan = plan;
-
-      if (!isVip) {
-        premiumPlan = 'none';
-      }
-
-      let badgeType = currentUser.badge_type || 'none';
-
-      // إذا البادج مش يدوي، نخليه حسب الاشتراك
-      if (!currentUser.badge_manual) {
-        if (plan === 'year') {
-          badgeType = 'official';
-        } else if (plan === 'month') {
-          badgeType = 'premium';
-        } else {
-          badgeType = 'none';
-        }
-      }
+      const premiumPlan =
+        isVip ? plan : 'none';
 
       const updateData = {
         is_vip: isVip,
         is_premium: isVip,
-        premium_plan: premiumPlan,
-        badge_type: badgeType,
-        updated_at: new Date().toISOString(),
+        premium_plan:
+          premiumPlan,
+        updated_at:
+          new Date().toISOString(),
       };
 
-      const { error } = await supabase
+      // إذا البادج ليس يدوياً
+      // يتبع خطة VIP تلقائياً
+      if (!currentUser.badge_manual) {
+        const badgeType =
+          automaticBadgeForPlan(
+            premiumPlan
+          );
+
+        Object.assign(
+          updateData,
+          {
+            badge_type:
+              badgeType,
+
+            ...badgeFieldsForType(
+              badgeType
+            ),
+          }
+        );
+      }
+
+      const {
+        error,
+      } = await supabase
         .from('profiles')
         .update(updateData)
         .eq('id', userId);
@@ -359,33 +581,39 @@ export default function Admin() {
         )
       );
 
+      const wasVip =
+        currentUser.is_vip ||
+        currentUser.is_premium;
+
       setStats((prev) => ({
         ...prev,
         vipUsers:
           prev.vipUsers +
           (isVip
-            ? currentUser.is_vip ||
-              currentUser.is_premium
+            ? wasVip
               ? 0
               : 1
-            : currentUser.is_vip ||
-              currentUser.is_premium
+            : wasVip
             ? -1
             : 0),
       }));
 
-      let planText = 'إلغاء VIP';
+      let planText =
+        'إلغاء VIP';
 
       if (plan === 'month') {
-        planText = 'VIP شهر';
+        planText =
+          'VIP شهر';
       }
 
       if (plan === 'year') {
-        planText = 'VIP عام';
+        planText =
+          'VIP عام';
       }
 
       if (plan === 'manual') {
-        planText = 'VIP يدوي';
+        planText =
+          'VIP يدوي';
       }
 
       setMessage({
@@ -394,9 +622,14 @@ export default function Admin() {
       });
 
       addLog(
-        `تغيير VIP للمستخدم ${currentUser.user_code || userId} → ${planText}`
+        `تغيير VIP للمستخدم ${
+          currentUser.user_code ||
+          userId
+        } → ${planText}`
       );
     } catch (err) {
+      console.error(err);
+
       setMessage({
         text: `خطأ في VIP: ${err.message}`,
         type: 'error',
@@ -415,15 +648,80 @@ export default function Admin() {
     badgeName
   ) => {
     try {
-      const newValue = !currentValue;
+      const newValue =
+        !currentValue;
+
+      const typeMap = {
+        verification_badge:
+          'verification',
+
+        official_badge:
+          'official',
+
+        owner_badge:
+          'owner',
+      };
+
+      const badgeType =
+        typeMap[field];
 
       const updateData = {
         [field]: newValue,
+
         badge_manual: true,
-        updated_at: new Date().toISOString(),
+
+        badge_type:
+          newValue
+            ? badgeType
+            : 'none',
+
+        updated_at:
+          new Date().toISOString(),
       };
 
-      const { error } = await supabase
+      // إذا البادج الذي نزعناه هو الحالي
+      // نبحث عن بادج آخر موجود
+      if (!newValue) {
+        const currentUser =
+          users.find(
+            (u) => u.id === userId
+          );
+
+        if (currentUser) {
+          let nextType =
+            'none';
+
+          if (
+            field !==
+              'verification_badge' &&
+            currentUser.verification_badge
+          ) {
+            nextType =
+              'verification';
+          } else if (
+            field !==
+              'official_badge' &&
+            currentUser.official_badge
+          ) {
+            nextType =
+              'official';
+          } else if (
+            field !==
+              'owner_badge' &&
+            currentUser.owner_badge
+          ) {
+            nextType =
+              'owner';
+          }
+
+          updateData.badge_type =
+            nextType;
+        }
+      }
+
+      const {
+        error,
+      } = await supabase
         .from('profiles')
         .update(updateData)
         .eq('id', userId);
@@ -443,15 +741,51 @@ export default function Admin() {
         )
       );
 
+      setStats((prev) => ({
+        ...prev,
+        verifiedUsers:
+          field ===
+          'verification_badge'
+            ? prev.verifiedUsers +
+              (newValue ? 1 : -1)
+            : prev.verifiedUsers,
+
+        officialUsers:
+          field ===
+          'official_badge'
+            ? prev.officialUsers +
+              (newValue ? 1 : -1)
+            : prev.officialUsers,
+
+        ownerUsers:
+          field ===
+          'owner_badge'
+            ? prev.ownerUsers +
+              (newValue ? 1 : -1)
+            : prev.ownerUsers,
+      }));
+
       setMessage({
-        text: `${newValue ? 'تم إعطاء' : 'تم نزع'} ${badgeName} للمستخدم ${newValue ? '🏅' : '❌'}`,
+        text: `${
+          newValue
+            ? 'تم إعطاء'
+            : 'تم نزع'
+        } ${badgeName} ${
+          newValue ? '🏅' : '❌'
+        }`,
         type: 'success',
       });
 
       addLog(
-        `${newValue ? 'إعطاء' : 'نزع'} ${badgeName} للمستخدم ${userId}`
+        `${
+          newValue
+            ? 'إعطاء'
+            : 'نزع'
+        } ${badgeName} للمستخدم ${userId}`
       );
     } catch (err) {
+      console.error(err);
+
       setMessage({
         text: `خطأ في البادج: ${err.message}`,
         type: 'error',
@@ -459,14 +793,47 @@ export default function Admin() {
     }
   };
 
-  const clearManualBadge = async (userId) => {
+  // =========================================================
+  // CLEAR MANUAL BADGE
+  // =========================================================
+
+  const clearManualBadge = async (
+    userId
+  ) => {
     try {
+      const currentUser =
+        users.find(
+          (u) => u.id === userId
+        );
+
+      if (!currentUser) {
+        throw new Error(
+          'المستخدم غير موجود'
+        );
+      }
+
+      const automaticType =
+        automaticBadgeForPlan(
+          currentUser.premium_plan
+        );
+
       const updateData = {
         badge_manual: false,
-        updated_at: new Date().toISOString(),
+
+        badge_type:
+          automaticType,
+
+        ...badgeFieldsForType(
+          automaticType
+        ),
+
+        updated_at:
+          new Date().toISOString(),
       };
 
-      const { error } = await supabase
+      const {
+        error,
+      } = await supabase
         .from('profiles')
         .update(updateData)
         .eq('id', userId);
@@ -486,8 +853,59 @@ export default function Admin() {
         )
       );
 
+      setStats((prev) => {
+        const oldVerification =
+          currentUser.verification_badge;
+
+        const oldOfficial =
+          currentUser.official_badge;
+
+        const oldOwner =
+          currentUser.owner_badge;
+
+        const newVerification =
+          updateData.verification_badge;
+
+        const newOfficial =
+          updateData.official_badge;
+
+        const newOwner =
+          updateData.owner_badge;
+
+        return {
+          ...prev,
+
+          verifiedUsers:
+            prev.verifiedUsers +
+            (newVerification
+              ? 1
+              : 0) -
+            (oldVerification
+              ? 1
+              : 0),
+
+          officialUsers:
+            prev.officialUsers +
+            (newOfficial
+              ? 1
+              : 0) -
+            (oldOfficial
+              ? 1
+              : 0),
+
+          ownerUsers:
+            prev.ownerUsers +
+            (newOwner
+              ? 1
+              : 0) -
+            (oldOwner
+              ? 1
+              : 0),
+        };
+      });
+
       setMessage({
-        text: 'تم إلغاء التحكم اليدوي بالبادج 🔄',
+        text: 'تم إلغاء التحكم اليدوي وإرجاع البادج حسب VIP 🔄',
         type: 'success',
       });
 
@@ -495,6 +913,8 @@ export default function Admin() {
         `إلغاء البادج اليدوي للمستخدم ${userId}`
       );
     } catch (err) {
+      console.error(err);
+
       setMessage({
         text: `خطأ: ${err.message}`,
         type: 'error',
@@ -511,13 +931,19 @@ export default function Admin() {
     isBanned
   ) => {
     try {
-      const newValue = !isBanned;
+      const newValue =
+        !isBanned;
 
-      const { error } = await supabase
+      const {
+        error,
+      } = await supabase
         .from('profiles')
         .update({
-          is_banned: newValue,
-          updated_at: new Date().toISOString(),
+          is_banned:
+            newValue,
+
+          updated_at:
+            new Date().toISOString(),
         })
         .eq('id', userId);
 
@@ -530,7 +956,8 @@ export default function Admin() {
           u.id === userId
             ? {
                 ...u,
-                is_banned: newValue,
+                is_banned:
+                  newValue,
               }
             : u
         )
@@ -538,22 +965,35 @@ export default function Admin() {
 
       setStats((prev) => ({
         ...prev,
+
         bannedUsers:
           prev.bannedUsers +
           (newValue ? 1 : -1),
       }));
 
       setMessage({
-        text: `تم ${newValue ? 'حظر' : 'فك حظر'} المستخدم بنجاح ${
-          newValue ? '🚫' : '🔓'
+        text: `تم ${
+          newValue
+            ? 'حظر'
+            : 'فك حظر'
+        } المستخدم بنجاح ${
+          newValue
+            ? '🚫'
+            : '🔓'
         }`,
         type: 'success',
       });
 
       addLog(
-        `${newValue ? 'حظر' : 'فك حظر'} المستخدم ${userId}`
+        `${
+          newValue
+            ? 'حظر'
+            : 'فك حظر'
+        } المستخدم ${userId}`
       );
     } catch (err) {
+      console.error(err);
+
       setMessage({
         text: `خطأ: ${err.message}`,
         type: 'error',
@@ -570,12 +1010,16 @@ export default function Admin() {
     isHidden
   ) => {
     try {
-      const newValue = !isHidden;
+      const newValue =
+        !isHidden;
 
-      const { error } = await supabase
+      const {
+        error,
+      } = await supabase
         .from('titles')
         .update({
-          is_hidden: newValue,
+          is_hidden:
+            newValue,
         })
         .eq('id', titleId);
 
@@ -588,15 +1032,25 @@ export default function Admin() {
           t.id === titleId
             ? {
                 ...t,
-                is_hidden: newValue,
+                is_hidden:
+                  newValue,
               }
             : t
         )
       );
 
+      setStats((prev) => ({
+        ...prev,
+        hiddenTitles:
+          prev.hiddenTitles +
+          (newValue ? 1 : -1),
+      }));
+
       setMessage({
         text: `تم ${
-          newValue ? 'إخفاء' : 'إظهار'
+          newValue
+            ? 'إخفاء'
+            : 'إظهار'
         } العنوان 👁️`,
         type: 'success',
       });
@@ -613,12 +1067,16 @@ export default function Admin() {
     isPremium
   ) => {
     try {
-      const newValue = !isPremium;
+      const newValue =
+        !isPremium;
 
-      const { error } = await supabase
+      const {
+        error,
+      } = await supabase
         .from('titles')
         .update({
-          is_premium: newValue,
+          is_premium:
+            newValue,
         })
         .eq('id', titleId);
 
@@ -631,7 +1089,8 @@ export default function Admin() {
           t.id === titleId
             ? {
                 ...t,
-                is_premium: newValue,
+                is_premium:
+                  newValue,
               }
             : t
         )
@@ -639,7 +1098,9 @@ export default function Admin() {
 
       setMessage({
         text: `تم تغيير حالة المحتوى إلى ${
-          newValue ? 'VIP 🌟' : 'عادي'
+          newValue
+            ? 'VIP 🌟'
+            : 'عادي'
         }`,
         type: 'success',
       });
@@ -664,7 +1125,9 @@ export default function Admin() {
     }
 
     try {
-      const { error } = await supabase
+      const {
+        error,
+      } = await supabase
         .from('titles')
         .delete()
         .eq('id', titleId);
@@ -674,15 +1137,19 @@ export default function Admin() {
       }
 
       setTitles((prev) =>
-        prev.filter((t) => t.id !== titleId)
+        prev.filter(
+          (t) => t.id !== titleId
+        )
       );
 
       setStats((prev) => ({
         ...prev,
-        totalTitles: Math.max(
-          0,
-          prev.totalTitles - 1
-        ),
+
+        totalTitles:
+          Math.max(
+            0,
+            prev.totalTitles - 1
+          ),
       }));
 
       setMessage({
@@ -690,7 +1157,9 @@ export default function Admin() {
         type: 'success',
       });
 
-      addLog(`حذف العنوان: ${titleName}`);
+      addLog(
+        `حذف العنوان: ${titleName}`
+      );
     } catch (err) {
       setMessage({
         text: `خطأ في الحذف: ${err.message}`,
@@ -706,39 +1175,45 @@ export default function Admin() {
   const searchValue =
     userSearch.toLowerCase();
 
-  const filteredUsers = users.filter((u) => {
-    return (
-      (u.username || '')
-        .toLowerCase()
-        .includes(searchValue) ||
-      (u.display_name || '')
-        .toLowerCase()
-        .includes(searchValue) ||
-      (u.user_code || '')
-        .toLowerCase()
-        .includes(searchValue) ||
-      (u.id || '')
-        .toLowerCase()
-        .includes(searchValue)
-    );
-  });
+  const filteredUsers =
+    users.filter((u) => {
+      return (
+        (u.username || '')
+          .toLowerCase()
+          .includes(searchValue) ||
+        (u.display_name || '')
+          .toLowerCase()
+          .includes(searchValue) ||
+        (u.user_code || '')
+          .toLowerCase()
+          .includes(searchValue) ||
+        (u.id || '')
+          .toLowerCase()
+          .includes(searchValue)
+      );
+    });
 
   const titleSearchValue =
     titleSearch.toLowerCase();
 
-  const filteredTitles = titles.filter((t) => {
-    return (
-      (t.name || '')
-        .toLowerCase()
-        .includes(titleSearchValue) ||
-      String(t.tmdb_id || '')
-        .toLowerCase()
-        .includes(titleSearchValue)
-    );
-  });
+  const filteredTitles =
+    titles.filter((t) => {
+      return (
+        (t.name || '')
+          .toLowerCase()
+          .includes(
+            titleSearchValue
+          ) ||
+        String(t.tmdb_id || '')
+          .toLowerCase()
+          .includes(
+            titleSearchValue
+          )
+      );
+    });
 
   // =========================================================
-  // LOGIN SCREEN
+  // AUTH LOGIN SCREEN
   // =========================================================
 
   if (!isAuthenticated) {
@@ -757,102 +1232,391 @@ export default function Admin() {
           padding: '20px',
         }}
       >
-        <form
-          onSubmit={handlePinSubmit}
-          style={{
-            background: '#141414',
-            padding: '35px',
-            borderRadius: '16px',
-            border: '1px solid #282828',
-            textAlign: 'center',
-            width: '100%',
-            maxWidth: '380px',
-            boxShadow:
-              '0 10px 30px rgba(0,0,0,0.5)',
-          }}
-        >
-          <div
-            style={{
-              fontSize: '40px',
-              marginBottom: '10px',
-            }}
-          >
-            🔐
-          </div>
-
-          <h2
-            style={{
-              fontSize: '22px',
-              marginBottom: '8px',
-              color: '#e50914',
-            }}
-          >
-            لوحة تحكم StreamFlix
-          </h2>
-
-          <p
-            style={{
-              color: '#888',
-              fontSize: '13px',
-              marginBottom: '25px',
-            }}
-          >
-            أدخل رمز PIN المسؤول
-          </p>
-
-          <input
-            type="password"
-            maxLength={6}
-            placeholder="****"
-            value={pinInput}
-            onChange={(e) =>
-              setPinInput(e.target.value)
+        {authStep === 'login' && (
+          <form
+            onSubmit={
+              handleSupabaseLogin
             }
             style={{
+              background:
+                '#141414',
+              padding: '35px',
+              borderRadius:
+                '16px',
+              border:
+                '1px solid #282828',
+              textAlign:
+                'center',
               width: '100%',
-              boxSizing: 'border-box',
-              padding: '14px',
-              borderRadius: '10px',
-              border: '1px solid #333',
-              background: '#222',
-              color: '#fff',
-              textAlign: 'center',
-              fontSize: '24px',
-              letterSpacing: '6px',
-              marginBottom: '20px',
-              outline: 'none',
-            }}
-          />
-
-          <button
-            type="submit"
-            style={{
-              width: '100%',
-              padding: '14px',
-              background: '#e50914',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '10px',
-              fontWeight: 'bold',
-              fontSize: '15px',
-              cursor: 'pointer',
+              maxWidth:
+                '380px',
+              boxShadow:
+                '0 10px 30px rgba(0,0,0,0.5)',
             }}
           >
-            فتح اللوحة
-          </button>
-
-          {message.text && (
-            <p
+            <div
               style={{
-                color: '#ff4d4d',
-                marginTop: '15px',
-                fontSize: '13px',
+                fontSize:
+                  '40px',
+                marginBottom:
+                  '10px',
               }}
             >
-              {message.text}
+              🔐
+            </div>
+
+            <h2
+              style={{
+                fontSize:
+                  '22px',
+                marginBottom:
+                  '8px',
+                color:
+                  '#e50914',
+              }}
+            >
+              دخول إدارة StreamFlix
+            </h2>
+
+            <p
+              style={{
+                color:
+                  '#888',
+                fontSize:
+                  '13px',
+                marginBottom:
+                  '25px',
+              }}
+            >
+              سجل الدخول بحساب Admin أو Owner
             </p>
-          )}
-        </form>
+
+            <input
+              type="email"
+              placeholder="البريد الإلكتروني"
+              value={email}
+              onChange={(e) =>
+                setEmail(
+                  e.target.value
+                )
+              }
+              style={{
+                width:
+                  '100%',
+                boxSizing:
+                  'border-box',
+                padding:
+                  '13px',
+                borderRadius:
+                  '10px',
+                border:
+                  '1px solid #333',
+                background:
+                  '#222',
+                color:
+                  '#fff',
+                marginBottom:
+                  '12px',
+                outline:
+                  'none',
+                direction:
+                  'ltr',
+                textAlign:
+                  'left',
+              }}
+            />
+
+            <input
+              type="password"
+              placeholder="كلمة المرور"
+              value={password}
+              onChange={(e) =>
+                setPassword(
+                  e.target.value
+                )
+              }
+              style={{
+                width:
+                  '100%',
+                boxSizing:
+                  'border-box',
+                padding:
+                  '13px',
+                borderRadius:
+                  '10px',
+                border:
+                  '1px solid #333',
+                background:
+                  '#222',
+                color:
+                  '#fff',
+                marginBottom:
+                  '20px',
+                outline:
+                  'none',
+                direction:
+                  'ltr',
+                textAlign:
+                  'left',
+              }}
+            />
+
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                width:
+                  '100%',
+                padding:
+                  '14px',
+                background:
+                  '#e50914',
+                color:
+                  '#fff',
+                border:
+                  'none',
+                borderRadius:
+                  '10px',
+                fontWeight:
+                  'bold',
+                fontSize:
+                  '15px',
+                cursor:
+                  loading
+                    ? 'wait'
+                    : 'pointer',
+              }}
+            >
+              {loading
+                ? '⏳ جاري التحقق...'
+                : 'تسجيل الدخول'}
+            </button>
+
+            {message.text && (
+              <p
+                style={{
+                  color:
+                    message.type ===
+                    'success'
+                      ? '#6bff8d'
+                      : '#ff4d4d',
+                  marginTop:
+                    '15px',
+                  fontSize:
+                    '13px',
+                }}
+              >
+                {message.text}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={() =>
+                navigate('/')
+              }
+              style={{
+                marginTop:
+                  '15px',
+                background:
+                  'transparent',
+                color:
+                  '#777',
+                border:
+                  'none',
+                cursor:
+                  'pointer',
+                fontSize:
+                  '12px',
+              }}
+            >
+              ← العودة للموقع
+            </button>
+          </form>
+        )}
+
+        {authStep === 'pin' && (
+          <form
+            onSubmit={
+              handlePinSubmit
+            }
+            style={{
+              background:
+                '#141414',
+              padding:
+                '35px',
+              borderRadius:
+                '16px',
+              border:
+                '1px solid #282828',
+              textAlign:
+                'center',
+              width:
+                '100%',
+              maxWidth:
+                '380px',
+              boxShadow:
+                '0 10px 30px rgba(0,0,0,0.5)',
+            }}
+          >
+            <div
+              style={{
+                fontSize:
+                  '40px',
+                marginBottom:
+                  '10px',
+              }}
+            >
+              🛡️
+            </div>
+
+            <h2
+              style={{
+                fontSize:
+                  '22px',
+                marginBottom:
+                  '8px',
+                color:
+                  '#e50914',
+              }}
+            >
+              لوحة تحكم StreamFlix
+            </h2>
+
+            <p
+              style={{
+                color:
+                  '#888',
+                fontSize:
+                  '13px',
+                marginBottom:
+                  '25px',
+              }}
+            >
+              الحساب مصادق عليه — أدخل رمز PIN المسؤول
+            </p>
+
+            <input
+              type="password"
+              maxLength={6}
+              placeholder="****"
+              value={
+                pinInput
+              }
+              onChange={(e) =>
+                setPinInput(
+                  e.target.value
+                )
+              }
+              style={{
+                width:
+                  '100%',
+                boxSizing:
+                  'border-box',
+                padding:
+                  '14px',
+                borderRadius:
+                  '10px',
+                border:
+                  '1px solid #333',
+                background:
+                  '#222',
+                color:
+                  '#fff',
+                textAlign:
+                  'center',
+                fontSize:
+                  '24px',
+                letterSpacing:
+                  '6px',
+                marginBottom:
+                  '20px',
+                outline:
+                  'none',
+              }}
+            />
+
+            <button
+              type="submit"
+              style={{
+                width:
+                  '100%',
+                padding:
+                  '14px',
+                background:
+                  '#e50914',
+                color:
+                  '#fff',
+                border:
+                  'none',
+                borderRadius:
+                  '10px',
+                fontWeight:
+                  'bold',
+                fontSize:
+                  '15px',
+                cursor:
+                  'pointer',
+              }}
+            >
+              فتح اللوحة
+            </button>
+
+            {message.text && (
+              <p
+                style={{
+                  color:
+                    message.type ===
+                    'success'
+                      ? '#6bff8d'
+                      : '#ff4d4d',
+                  marginTop:
+                    '15px',
+                  fontSize:
+                    '13px',
+                }}
+              >
+                {message.text}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={async () => {
+                await supabase.auth.signOut();
+
+                setAuthStep(
+                  'login'
+                );
+
+                setPinInput(
+                  ''
+                );
+
+                setMessage({
+                  text: '',
+                  type: '',
+                });
+              }}
+              style={{
+                marginTop:
+                  '15px',
+                background:
+                  'transparent',
+                color:
+                  '#777',
+                border:
+                  'none',
+                cursor:
+                  'pointer',
+                fontSize:
+                  '12px',
+              }}
+            >
+              ← تسجيل الدخول بحساب آخر
+            </button>
+          </form>
+        )}
       </div>
     );
   }
@@ -875,31 +1639,44 @@ export default function Admin() {
     >
       <div
         style={{
-          maxWidth: '1250px',
-          margin: '0 auto',
+          maxWidth:
+            '1250px',
+          margin:
+            '0 auto',
         }}
       >
         {/* HEADER */}
 
         <div
           style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '25px',
-            borderBottom: '1px solid #222',
-            paddingBottom: '15px',
-            gap: '15px',
-            flexWrap: 'wrap',
+            display:
+              'flex',
+            justifyContent:
+              'space-between',
+            alignItems:
+              'center',
+            marginBottom:
+              '25px',
+            borderBottom:
+              '1px solid #222',
+            paddingBottom:
+              '15px',
+            gap:
+              '15px',
+            flexWrap:
+              'wrap',
           }}
         >
           <div>
             <h1
               style={{
-                color: '#e50914',
-                fontSize: '26px',
+                color:
+                  '#e50914',
+                fontSize:
+                  '26px',
                 margin: 0,
-                fontWeight: '800',
+                fontWeight:
+                  '800',
               }}
             >
               ⚡ لوحة تحكم StreamFlix
@@ -907,8 +1684,10 @@ export default function Admin() {
 
             <span
               style={{
-                fontSize: '12px',
-                color: '#666',
+                fontSize:
+                  '12px',
+                color:
+                  '#666',
               }}
             >
               إدارة المستخدمين والـVIP والبادجات والمحتوى
@@ -917,23 +1696,35 @@ export default function Admin() {
 
           <div
             style={{
-              display: 'flex',
-              gap: '10px',
-              flexWrap: 'wrap',
+              display:
+                'flex',
+              gap:
+                '10px',
+              flexWrap:
+                'wrap',
             }}
           >
             <button
               onClick={() =>
-                navigate('/import')
+                navigate(
+                  '/import'
+                )
               }
               style={{
-                background: '#0066cc',
-                color: '#fff',
-                border: 'none',
-                padding: '9px 16px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontWeight: 'bold',
+                background:
+                  '#0066cc',
+                color:
+                  '#fff',
+                border:
+                  'none',
+                padding:
+                  '9px 16px',
+                borderRadius:
+                  '8px',
+                cursor:
+                  'pointer',
+                fontWeight:
+                  'bold',
               }}
             >
               📥 الاستيراد
@@ -944,33 +1735,45 @@ export default function Admin() {
                 navigate('/')
               }
               style={{
-                background: '#222',
-                color: '#fff',
-                border: '1px solid #333',
-                padding: '9px 16px',
-                borderRadius: '8px',
-                cursor: 'pointer',
+                background:
+                  '#222',
+                color:
+                  '#fff',
+                border:
+                  '1px solid #333',
+                padding:
+                  '9px 16px',
+                borderRadius:
+                  '8px',
+                cursor:
+                  'pointer',
               }}
             >
               🏠 الموقع
             </button>
 
             <button
-              onClick={() =>
-                setIsAuthenticated(false)
+              onClick={
+                handleLogout
               }
               style={{
-                background: '#2a1212',
-                color: '#ff5555',
+                background:
+                  '#2a1212',
+                color:
+                  '#ff5555',
                 border:
                   '1px solid #441a1a',
-                padding: '9px 16px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontWeight: 'bold',
+                padding:
+                  '9px 16px',
+                borderRadius:
+                  '8px',
+                cursor:
+                  'pointer',
+                fontWeight:
+                  'bold',
               }}
             >
-              🔒 قفل
+              🔒 خروج
             </button>
           </div>
         </div>
@@ -979,66 +1782,93 @@ export default function Admin() {
 
         <div
           style={{
-            display: 'flex',
-            gap: '10px',
-            marginBottom: '25px',
-            overflowX: 'auto',
-            paddingBottom: '5px',
+            display:
+              'flex',
+            gap:
+              '10px',
+            marginBottom:
+              '25px',
+            overflowX:
+              'auto',
+            paddingBottom:
+              '5px',
           }}
         >
           {[
             {
               id: 'stats',
-              label: '📊 الإحصائيات',
+              label:
+                '📊 الإحصائيات',
             },
             {
               id: 'settings',
-              label: '⚙️ إعدادات VIP',
+              label:
+                '⚙️ إعدادات VIP',
             },
             {
               id: 'users',
-              label: '👥 المستخدمين والبادجات',
+              label:
+                '👥 المستخدمين والبادجات',
             },
             {
               id: 'content',
-              label: '🎬 المحتوى',
+              label:
+                '🎬 المحتوى',
             },
             {
               id: 'logs',
-              label: '📋 السجلات',
+              label:
+                '📋 السجلات',
             },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => {
-                setActiveTab(tab.id);
-                setMessage({
-                  text: '',
-                  type: '',
-                });
-              }}
-              style={{
-                padding:
-                  '12px 20px',
-                background:
-                  activeTab === tab.id
-                    ? '#e50914'
-                    : '#141414',
-                color: '#fff',
-                border: '1px solid',
-                borderColor:
-                  activeTab === tab.id
-                    ? '#e50914'
-                    : '#282828',
-                borderRadius: '10px',
-                cursor: 'pointer',
-                fontWeight: 'bold',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
+          ].map(
+            (tab) => (
+              <button
+                key={
+                  tab.id
+                }
+                onClick={() => {
+                  setActiveTab(
+                    tab.id
+                  );
+
+                  setMessage({
+                    text: '',
+                    type: '',
+                  });
+                }}
+                style={{
+                  padding:
+                    '12px 20px',
+                  background:
+                    activeTab ===
+                    tab.id
+                      ? '#e50914'
+                      : '#141414',
+                  color:
+                    '#fff',
+                  border:
+                    '1px solid',
+                  borderColor:
+                    activeTab ===
+                    tab.id
+                      ? '#e50914'
+                      : '#282828',
+                  borderRadius:
+                    '10px',
+                  cursor:
+                    'pointer',
+                  fontWeight:
+                    'bold',
+                  whiteSpace:
+                    'nowrap',
+                }}
+              >
+                {
+                  tab.label
+                }
+              </button>
+            )
+          )}
         </div>
 
         {/* MESSAGE */}
@@ -1047,26 +1877,37 @@ export default function Admin() {
           <div
             style={{
               background:
-                message.type === 'error'
+                message.type ===
+                'error'
                   ? '#2a1212'
                   : '#122a18',
               color:
-                message.type === 'error'
+                message.type ===
+                'error'
                   ? '#ff6b6b'
                   : '#6bff8d',
-              padding: '14px',
-              borderRadius: '10px',
-              marginBottom: '20px',
-              border: '1px solid',
+              padding:
+                '14px',
+              borderRadius:
+                '10px',
+              marginBottom:
+                '20px',
+              border:
+                '1px solid',
               borderColor:
-                message.type === 'error'
+                message.type ===
+                'error'
                   ? '#4a1e1e'
                   : '#1e4a28',
-              textAlign: 'center',
-              fontWeight: 'bold',
+              textAlign:
+                'center',
+              fontWeight:
+                'bold',
             }}
           >
-            {message.text}
+            {
+              message.text
+            }
           </div>
         )}
 
@@ -1074,14 +1915,17 @@ export default function Admin() {
             STATS
         ===================================================== */}
 
-        {activeTab === 'stats' && (
+        {activeTab ===
+          'stats' && (
           <div>
             <div
               style={{
-                display: 'grid',
+                display:
+                  'grid',
                 gridTemplateColumns:
                   'repeat(auto-fit,minmax(180px,1fr))',
-                gap: '15px',
+                gap:
+                  '15px',
               }}
             >
               {[
@@ -1126,44 +1970,65 @@ export default function Admin() {
                   'محتوى مخفي',
                 ],
               ].map(
-                ([icon, number, label]) => (
+                ([
+                  icon,
+                  number,
+                  label,
+                ]) => (
                   <div
-                    key={label}
+                    key={
+                      label
+                    }
                     style={{
                       background:
                         '#141414',
-                      padding: '20px',
-                      borderRadius: '12px',
+                      padding:
+                        '20px',
+                      borderRadius:
+                        '12px',
                       border:
                         '1px solid #282828',
-                      textAlign: 'center',
+                      textAlign:
+                        'center',
                     }}
                   >
                     <div
                       style={{
-                        fontSize: '30px',
-                        marginBottom: '5px',
+                        fontSize:
+                          '30px',
+                        marginBottom:
+                          '5px',
                       }}
                     >
-                      {icon}
+                      {
+                        icon
+                      }
                     </div>
 
                     <div
                       style={{
-                        fontSize: '28px',
-                        fontWeight: 'bold',
+                        fontSize:
+                          '28px',
+                        fontWeight:
+                          'bold',
                       }}
                     >
-                      {number}
+                      {
+                        number
+                      }
                     </div>
 
                     <div
                       style={{
-                        color: '#888',
-                        fontSize: '12px',
+                        color:
+                          '#888',
+                        fontSize:
+                          '12px',
                       }}
                     >
-                      {label}
+                      {
+                        label
+                      }
                     </div>
                   </div>
                 )
@@ -1172,24 +2037,33 @@ export default function Admin() {
 
             <div
               style={{
-                marginTop: '20px',
-                background: '#141414',
-                padding: '20px',
-                borderRadius: '12px',
+                marginTop:
+                  '20px',
+                background:
+                  '#141414',
+                padding:
+                  '20px',
+                borderRadius:
+                  '12px',
                 border:
                   '1px solid #282828',
-                display: 'flex',
+                display:
+                  'flex',
                 justifyContent:
                   'space-between',
-                alignItems: 'center',
-                gap: '15px',
-                flexWrap: 'wrap',
+                alignItems:
+                  'center',
+                gap:
+                  '15px',
+                flexWrap:
+                  'wrap',
               }}
             >
               <div>
                 <h3
                   style={{
-                    margin: '0 0 5px',
+                    margin:
+                      '0 0 5px',
                   }}
                 >
                   🔄 تحديث البيانات
@@ -1198,8 +2072,10 @@ export default function Admin() {
                 <p
                   style={{
                     margin: 0,
-                    color: '#888',
-                    fontSize: '13px',
+                    color:
+                      '#888',
+                    fontSize:
+                      '13px',
                   }}
                 >
                   إعادة جلب البيانات من Supabase
@@ -1207,18 +2083,27 @@ export default function Admin() {
               </div>
 
               <button
-                onClick={fetchData}
-                disabled={loading}
+                onClick={
+                  fetchData
+                }
+                disabled={
+                  loading
+                }
                 style={{
                   padding:
                     '10px 20px',
-                  background: '#222',
-                  color: '#fff',
+                  background:
+                    '#222',
+                  color:
+                    '#fff',
                   border:
                     '1px solid #444',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  fontWeight: 'bold',
+                  borderRadius:
+                    '8px',
+                  cursor:
+                    'pointer',
+                  fontWeight:
+                    'bold',
                 }}
               >
                 {loading
@@ -1233,26 +2118,34 @@ export default function Admin() {
             SETTINGS
         ===================================================== */}
 
-        {activeTab === 'settings' && (
+        {activeTab ===
+          'settings' && (
           <div
             style={{
-              display: 'grid',
-              gap: '15px',
+              display:
+                'grid',
+              gap:
+                '15px',
             }}
           >
             <div
               style={{
-                background: '#181208',
-                padding: '20px',
-                borderRadius: '12px',
+                background:
+                  '#181208',
+                padding:
+                  '20px',
+                borderRadius:
+                  '12px',
                 border:
                   '1px solid #4a3610',
               }}
             >
               <h2
                 style={{
-                  marginTop: 0,
-                  color: '#ffc107',
+                  marginTop:
+                    0,
+                  color:
+                    '#ffc107',
                 }}
               >
                 ⭐ نظام VIP
@@ -1260,8 +2153,10 @@ export default function Admin() {
 
               <p
                 style={{
-                  color: '#888',
-                  fontSize: '13px',
+                  color:
+                    '#888',
+                  fontSize:
+                    '13px',
                 }}
               >
                 من هنا تتحكم في الميزات التي تحتاج VIP.
@@ -1307,22 +2202,34 @@ export default function Admin() {
                 'إظهار معلومات التشخيص',
               ],
             ].map(
-              ([key, title, description]) => (
+              ([
+                key,
+                title,
+                description,
+              ]) => (
                 <div
-                  key={key}
+                  key={
+                    key
+                  }
                   style={{
                     background:
                       '#141414',
-                    padding: '20px',
-                    borderRadius: '12px',
+                    padding:
+                      '20px',
+                    borderRadius:
+                      '12px',
                     border:
                       '1px solid #282828',
-                    display: 'flex',
+                    display:
+                      'flex',
                     justifyContent:
                       'space-between',
-                    alignItems: 'center',
-                    gap: '20px',
-                    flexWrap: 'wrap',
+                    alignItems:
+                      'center',
+                    gap:
+                      '20px',
+                    flexWrap:
+                      'wrap',
                   }}
                 >
                   <div>
@@ -1332,24 +2239,31 @@ export default function Admin() {
                           '0 0 5px',
                       }}
                     >
-                      {title}
+                      {
+                        title
+                      }
                     </h3>
 
                     <p
                       style={{
                         margin: 0,
-                        color: '#777',
+                        color:
+                          '#777',
                         fontSize:
                           '12px',
                       }}
                     >
-                      {description}
+                      {
+                        description
+                      }
                     </p>
                   </div>
 
                   <button
                     onClick={() =>
-                      toggleSetting(key)
+                      toggleSetting(
+                        key
+                      )
                     }
                     style={{
                       minWidth:
@@ -1357,11 +2271,15 @@ export default function Admin() {
                       padding:
                         '11px 18px',
                       background:
-                        settings[key]
+                        settings[
+                          key
+                        ]
                           ? '#28a745'
                           : '#333',
-                      color: '#fff',
-                      border: 'none',
+                      color:
+                        '#fff',
+                      border:
+                        'none',
                       borderRadius:
                         '8px',
                       cursor:
@@ -1370,7 +2288,9 @@ export default function Admin() {
                         'bold',
                     }}
                   >
-                    {settings[key]
+                    {settings[
+                      key
+                    ]
                       ? '🟢 مفعلة'
                       : '⚪ معطلة'}
                   </button>
@@ -1382,15 +2302,18 @@ export default function Admin() {
               style={{
                 background:
                   '#141414',
-                padding: '20px',
-                borderRadius: '12px',
+                padding:
+                  '20px',
+                borderRadius:
+                  '12px',
                 border:
                   '1px solid #282828',
               }}
             >
               <h3
                 style={{
-                  marginTop: 0,
+                  marginTop:
+                    0,
                 }}
               >
                 📢 الشريط الإعلاني
@@ -1398,8 +2321,10 @@ export default function Admin() {
 
               <div
                 style={{
-                  display: 'flex',
-                  gap: '10px',
+                  display:
+                    'flex',
+                  gap:
+                    '10px',
                 }}
               >
                 <input
@@ -1411,21 +2336,24 @@ export default function Admin() {
                       (prev) => ({
                         ...prev,
                         announcement_bar:
-                          e.target.value,
+                          e.target
+                            .value,
                       })
                     )
                   }
                   placeholder="اكتب الإعلان..."
                   style={{
                     flex: 1,
-                    padding: '12px',
+                    padding:
+                      '12px',
                     borderRadius:
                       '8px',
                     border:
                       '1px solid #333',
                     background:
                       '#222',
-                    color: '#fff',
+                    color:
+                      '#fff',
                   }}
                 />
 
@@ -1438,8 +2366,10 @@ export default function Admin() {
                       '12px 20px',
                     background:
                       '#0066cc',
-                    color: '#fff',
-                    border: 'none',
+                    color:
+                      '#fff',
+                    border:
+                      'none',
                     borderRadius:
                       '8px',
                     cursor:
@@ -1459,25 +2389,34 @@ export default function Admin() {
             USERS
         ===================================================== */}
 
-        {activeTab === 'users' && (
+        {activeTab ===
+          'users' && (
           <div
             style={{
-              background: '#141414',
-              padding: '20px',
-              borderRadius: '12px',
+              background:
+                '#141414',
+              padding:
+                '20px',
+              borderRadius:
+                '12px',
               border:
                 '1px solid #282828',
             }}
           >
             <div
               style={{
-                display: 'flex',
+                display:
+                  'flex',
                 justifyContent:
                   'space-between',
-                alignItems: 'center',
-                marginBottom: '20px',
-                gap: '10px',
-                flexWrap: 'wrap',
+                alignItems:
+                  'center',
+                marginBottom:
+                  '20px',
+                gap:
+                  '10px',
+                flexWrap:
+                  'wrap',
               }}
             >
               <div>
@@ -1491,21 +2430,28 @@ export default function Admin() {
 
                 <span
                   style={{
-                    color: '#666',
-                    fontSize: '12px',
+                    color:
+                      '#666',
+                    fontSize:
+                      '12px',
                   }}
                 >
-                  {filteredUsers.length} مستخدم
+                  {
+                    filteredUsers.length
+                  } مستخدم
                 </span>
               </div>
 
               <input
                 type="text"
                 placeholder="🔎 username / الاسم / الكود / ID"
-                value={userSearch}
+                value={
+                  userSearch
+                }
                 onChange={(e) =>
                   setUserSearch(
-                    e.target.value
+                    e.target
+                      .value
                   )
                 }
                 style={{
@@ -1517,7 +2463,8 @@ export default function Admin() {
                     '1px solid #333',
                   background:
                     '#222',
-                  color: '#fff',
+                  color:
+                    '#fff',
                   outline:
                     'none',
                   width:
@@ -1532,8 +2479,10 @@ export default function Admin() {
 
             <div
               style={{
-                display: 'grid',
-                gap: '14px',
+                display:
+                  'grid',
+                gap:
+                  '14px',
               }}
             >
               {filteredUsers.length ===
@@ -1542,7 +2491,8 @@ export default function Admin() {
                   style={{
                     textAlign:
                       'center',
-                    color: '#777',
+                    color:
+                      '#777',
                     padding:
                       '30px',
                   }}
@@ -1553,7 +2503,9 @@ export default function Admin() {
                 filteredUsers.map(
                   (u) => (
                     <div
-                      key={u.id}
+                      key={
+                        u.id
+                      }
                       style={{
                         background:
                           '#1c1c1c',
@@ -1743,7 +2695,8 @@ export default function Admin() {
                                   '4px',
                               }}
                             >
-                              @{u.username ||
+                              @
+                              {u.username ||
                                 'no-username'}
                               {' • '}
                               {u.user_code ||
@@ -2180,25 +3133,34 @@ export default function Admin() {
             CONTENT
         ===================================================== */}
 
-        {activeTab === 'content' && (
+        {activeTab ===
+          'content' && (
           <div
             style={{
-              background: '#141414',
-              padding: '20px',
-              borderRadius: '12px',
+              background:
+                '#141414',
+              padding:
+                '20px',
+              borderRadius:
+                '12px',
               border:
                 '1px solid #282828',
             }}
           >
             <div
               style={{
-                display: 'flex',
+                display:
+                  'flex',
                 justifyContent:
                   'space-between',
-                alignItems: 'center',
-                marginBottom: '20px',
-                gap: '10px',
-                flexWrap: 'wrap',
+                alignItems:
+                  'center',
+                marginBottom:
+                  '20px',
+                gap:
+                  '10px',
+                flexWrap:
+                  'wrap',
               }}
             >
               <h3
@@ -2207,16 +3169,22 @@ export default function Admin() {
                 }}
               >
                 🎬 إدارة المحتوى (
-                {filteredTitles.length})
+                {
+                  filteredTitles.length
+                }
+                )
               </h3>
 
               <input
                 type="text"
                 placeholder="🔎 اسم الفيلم / TMDB ID"
-                value={titleSearch}
+                value={
+                  titleSearch
+                }
                 onChange={(e) =>
                   setTitleSearch(
-                    e.target.value
+                    e.target
+                      .value
                   )
                 }
                 style={{
@@ -2251,7 +3219,9 @@ export default function Admin() {
               {filteredTitles.map(
                 (item) => (
                   <div
-                    key={item.id}
+                    key={
+                      item.id
+                    }
                     style={{
                       display:
                         'flex',
@@ -2324,7 +3294,9 @@ export default function Admin() {
                               '14px',
                           }}
                         >
-                          {item.name}
+                          {
+                            item.name
+                          }
 
                           {item.is_premium && (
                             <span
@@ -2468,7 +3440,7 @@ export default function Admin() {
                             '6px',
                           cursor:
                             'pointer',
-                            fontSize:
+                          fontSize:
                             '11px',
                           fontWeight:
                             'bold',
@@ -2488,12 +3460,16 @@ export default function Admin() {
             LOGS
         ===================================================== */}
 
-        {activeTab === 'logs' && (
+        {activeTab ===
+          'logs' && (
           <div
             style={{
-              background: '#141414',
-              padding: '20px',
-              borderRadius: '12px',
+              background:
+                '#141414',
+              padding:
+                '20px',
+              borderRadius:
+                '12px',
               border:
                 '1px solid #282828',
             }}
@@ -2541,7 +3517,10 @@ export default function Admin() {
                 </div>
               ) : (
                 systemLogs.map(
-                  (log, index) => (
+                  (
+                    log,
+                    index
+                  ) => (
                     <div
                       key={
                         index
@@ -2551,7 +3530,9 @@ export default function Admin() {
                           '8px',
                       }}
                     >
-                      {log}
+                      {
+                        log
+                      }
                     </div>
                   )
                 )
