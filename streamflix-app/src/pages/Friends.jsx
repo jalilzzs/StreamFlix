@@ -1,12 +1,6 @@
-import {
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-} from 'react';
-
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-
 import {
   fetchFriends,
   fetchPendingRequests,
@@ -17,856 +11,798 @@ import {
   sendMessage,
   subscribeToMessages,
   uploadChatMedia,
-  joinWatchParty,
+  getChatMediaUrl,
 } from '../lib/api';
-
 import ProtectedRoute from '../components/ProtectedRoute';
-
 import './Friends.css';
 
 function FriendsInner() {
   const { user, profile } = useAuth();
+  const navigate = useNavigate();
 
   const [friends, setFriends] = useState([]);
   const [pending, setPending] = useState([]);
-  const [activeFriend, setActiveFriend] =
-    useState(null);
+  const [activeFriend, setActiveFriend] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [addUserId, setAddUserId] = useState('');
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
 
-  const [messages, setMessages] =
-    useState([]);
-
-  const [input, setInput] =
-    useState('');
-
-  const [addUserId, setAddUserId] =
-    useState('');
-
-  const [error, setError] =
-    useState(null);
-
-  const [success, setSuccess] =
-    useState(null);
-
-  const [uploading, setUploading] =
-    useState(false);
-
-  const messagesEndRef =
-    useRef(null);
-
-  const imageInputRef =
-    useRef(null);
+  const messagesEndRef = useRef(null);
+  const imageInputRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
 
   const userId = user?.id;
 
-  /* =========================
-     LOAD FRIENDS & REQUESTS
-  ========================= */
+  const loadFriends = useCallback(async () => {
+    if (!userId) return;
 
-  const loadFriends =
-    useCallback(async () => {
-      if (!userId) return;
+    try {
+      const [friendsData, pendingData] = await Promise.all([
+        fetchFriends(userId),
+        fetchPendingRequests(userId),
+      ]);
 
-      try {
-        const [
-          friendsData,
-          pendingData,
-        ] = await Promise.all([
-          fetchFriends(userId),
-          fetchPendingRequests(userId),
-        ]);
-
-        setFriends(
-          friendsData || []
-        );
-
-        setPending(
-          pendingData || []
-        );
-      } catch (err) {
-        console.error(
-          'Error loading friends:',
-          err
-        );
-      }
-    }, [userId]);
+      setFriends(friendsData || []);
+      setPending(pendingData || []);
+    } catch (err) {
+      console.error('Error loading friends:', err);
+    }
+  }, [userId]);
 
   useEffect(() => {
     loadFriends();
 
-    const unsubscribe =
-      subscribeToFriendRequests(
-        userId,
-        loadFriends
-      );
+    const unsubscribe = subscribeToFriendRequests(userId, loadFriends);
 
     return () => {
-      if (unsubscribe)
-        unsubscribe();
+      if (unsubscribe) unsubscribe();
     };
-  }, [
-    userId,
-    loadFriends,
-  ]);
-
-  /* =========================
-     LOAD CHAT & REALTIME
-  ========================= */
+  }, [userId, loadFriends]);
 
   useEffect(() => {
-    if (
-      !userId ||
-      !activeFriend?.id
-    ) {
+    if (!userId || !activeFriend?.id) {
       setMessages([]);
       return;
     }
 
-    fetchMessages(
-      userId,
-      activeFriend.id
-    )
+    setMessages([]);
+
+    fetchMessages(userId, activeFriend.id)
       .then(setMessages)
-      .catch(console.error);
+      .catch((err) => setError(err.message || 'تعذر تحميل الرسائل.'));
 
-    const unsubscribe =
-      subscribeToMessages(
-        userId,
-        activeFriend.id,
-        (newMessage) => {
-          setMessages((prev) => {
-            if (
-              prev.some(
-                (m) =>
-                  m.id ===
-                  newMessage.id
-              )
-            ) {
-              return prev;
-            }
-
-            return [
-              ...prev,
-              newMessage,
-            ];
-          });
-        }
-      );
-
-    return () => {
-      if (unsubscribe)
-        unsubscribe();
-    };
-  }, [
-    userId,
-    activeFriend,
-  ]);
-
-  /* =========================
-     AUTO SCROLL
-  ========================= */
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView(
-      {
-        behavior: 'smooth',
+    const unsubscribe = subscribeToMessages(
+      userId,
+      activeFriend.id,
+      (newMessage) => {
+        setMessages((prev) =>
+          prev.some((m) => m.id === newMessage.id)
+            ? prev
+            : [...prev, newMessage]
+        );
       }
     );
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [userId, activeFriend]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  /* =========================
-     FRIEND REQUEST
-  ========================= */
-
-  const handleAddFriend =
-    async (e) => {
-      e?.preventDefault();
-
-      if (!addUserId.trim())
-        return;
-
-      setError(null);
-      setSuccess(null);
-
-      try {
-        await sendFriendRequestByCode(
-          userId,
-          addUserId.trim()
-        );
-
-        setSuccess(
-          'تم إرسال طلب الصداقة بنجاح!'
-        );
-
-        setAddUserId('');
-
-        loadFriends();
-      } catch (err) {
-        setError(
-          err.message ||
-            'فشل إرسال الطلب.'
-        );
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      if (mediaRecorderRef.current?.state === 'recording') {
+        mediaRecorderRef.current.stop();
       }
     };
+  }, []);
 
-  const handleRespond =
-    async (
-      friendshipId,
-      status
-    ) => {
-      setError(null);
+  const handleAddFriend = async (e) => {
+    e?.preventDefault();
 
-      try {
-        await respondToFriendRequest(
-          friendshipId,
-          status
-        );
+    if (!addUserId.trim()) return;
 
-        loadFriends();
-      } catch (err) {
-        setError(
-          err.message ||
-            'تعذر معالجة الطلب.'
-        );
-      }
-    };
+    setError(null);
+    setSuccess(null);
 
-  /* =========================
-     SEND TEXT
-  ========================= */
+    try {
+      await sendFriendRequestByCode(userId, addUserId.trim());
+      setSuccess('تم إرسال طلب الصداقة بنجاح!');
+      setAddUserId('');
+      await loadFriends();
+    } catch (err) {
+      setError(err.message || 'فشل إرسال الطلب.');
+    }
+  };
 
-  const handleSendText =
-    async (e) => {
-      e?.preventDefault();
+  const handleRespond = async (friendshipId, status) => {
+    setError(null);
 
-      const text =
-        input.trim();
+    try {
+      await respondToFriendRequest(friendshipId, status);
+      await loadFriends();
+    } catch (err) {
+      setError(err.message || 'تعذر معالجة الطلب.');
+    }
+  };
 
-      if (
-        !text ||
-        !activeFriend ||
-        !userId
-      ) {
-        return;
-      }
+  const handleSendText = async (e) => {
+    e?.preventDefault();
 
-      setInput('');
-      setError(null);
+    const text = input.trim();
 
-      try {
-        const msg =
-          await sendMessage({
-            senderId: userId,
-            receiverId:
-              activeFriend.id,
-            kind: 'text',
-            content: text,
-          });
+    if (!text || !activeFriend || !userId) return;
 
-        setMessages((prev) =>
-          prev.some(
-            (m) =>
-              m.id === msg.id
-          )
-            ? prev
-            : [...prev, msg]
-        );
-      } catch (err) {
-        setInput(text);
+    setInput('');
+    setError(null);
 
-        setError(
-          err.message ||
-            'تعذر إرسال الرسالة.'
-        );
-      }
-    };
+    try {
+      const msg = await sendMessage({
+        senderId: userId,
+        receiverId: activeFriend.id,
+        kind: 'text',
+        content: text,
+      });
 
-  /* =========================
-     IMAGE
-  ========================= */
+      setMessages((prev) =>
+        prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]
+      );
+    } catch (err) {
+      setInput(text);
+      setError(err.message || 'تعذر إرسال الرسالة.');
+    }
+  };
 
-  const handleImageUpload =
-    async (e) => {
-      const file =
-        e.target.files?.[0];
+  const sendMediaMessage = async (file, kind) => {
+    if (!file || !activeFriend || !userId) return;
 
-      e.target.value = '';
+    setUploading(true);
+    setError(null);
 
-      if (
-        !file ||
-        !activeFriend ||
-        !userId
-      ) {
-        return;
-      }
+    try {
+      const uploaded = await uploadChatMedia({
+        userId,
+        file,
+        kind,
+      });
 
-      setUploading(true);
-      setError(null);
+      const msg = await sendMessage({
+        senderId: userId,
+        receiverId: activeFriend.id,
+        kind,
+        content: uploaded.url,
+        metadata: {
+          name: uploaded.name,
+          size: uploaded.size,
+          mime: uploaded.mime,
+          path: uploaded.path,
+        },
+      });
 
-      try {
-        const { url } =
-          await uploadChatMedia({
-            userId,
-            file,
-            kind: 'image',
-          });
+      setMessages((prev) =>
+        prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]
+      );
+    } catch (err) {
+      setError(err.message || 'فشل إرسال الملف.');
+    } finally {
+      setUploading(false);
+    }
+  };
 
-        const msg =
-          await sendMessage({
-            senderId: userId,
-            receiverId:
-              activeFriend.id,
-            kind: 'image',
-            content: url,
-          });
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
 
-        setMessages((prev) =>
-          prev.some(
-            (m) =>
-              m.id === msg.id
-          )
-            ? prev
-            : [...prev, msg]
-        );
-      } catch (err) {
-        setError(
-          err.message ||
-            'فشل رفع الصورة.'
-        );
-      } finally {
-        setUploading(false);
-      }
-    };
+    if (!file) return;
 
-  /* =========================
-     WATCH PARTY INVITATION
-  ========================= */
+    if (!file.type.startsWith('image/')) {
+      setError('الملف المختار ليس صورة.');
+      return;
+    }
 
-  const parseWatchParty =
-    (message) => {
-      if (
-        message?.kind !==
-        'watch_party'
-      ) {
-        return null;
-      }
+    await sendMediaMessage(file, 'image');
+  };
 
-      try {
-        const data =
-          typeof message.content ===
-          'string'
-            ? JSON.parse(
-                message.content
-              )
-            : message.content;
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
 
-        if (
-          data?.type !==
-          'watch_party_invite'
-        ) {
-          return null;
+    if (!file) return;
+
+    await sendMediaMessage(file, 'file');
+  };
+
+  const chooseRecorderMime = () => {
+    if (typeof MediaRecorder === 'undefined') return '';
+
+    const types = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus',
+    ];
+
+    return types.find((type) => MediaRecorder.isTypeSupported?.(type)) || '';
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current?.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+  };
+
+  const startRecording = async () => {
+    if (!activeFriend || !userId || uploading || recording) return;
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setError('التسجيل الصوتي غير مدعوم في هذا المتصفح.');
+      return;
+    }
+
+    setError(null);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = chooseRecorderMime();
+
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+      setRecording(true);
+      setRecordingSeconds(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds((seconds) => seconds + 1);
+      }, 1000);
+
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onerror = () => {
+        setError('حدث خطأ أثناء التسجيل الصوتي.');
+      };
+
+      recorder.onstop = async () => {
+        if (recordingTimerRef.current) {
+          clearInterval(recordingTimerRef.current);
+          recordingTimerRef.current = null;
         }
 
-        return data;
-      } catch {
-        return null;
-      }
-    };
+        stream.getTracks().forEach((track) => track.stop());
+        setRecording(false);
 
-  const handleJoinParty =
-    async (partyId) => {
-      if (!partyId || !userId)
-        return;
+        const chunks = audioChunksRef.current;
+        audioChunksRef.current = [];
 
-      try {
-        await joinWatchParty(
-          partyId,
-          userId
+        if (!chunks.length) return;
+
+        const blobType = recorder.mimeType || 'audio/webm';
+        const extension = blobType.includes('mp4')
+          ? 'm4a'
+          : blobType.includes('ogg')
+            ? 'ogg'
+            : 'webm';
+
+        const voiceFile = new File(
+          chunks,
+          `voice-${Date.now()}.${extension}`,
+          { type: blobType }
         );
 
-        /*
-         * صفحة Watch Party راح نربطوها
-         * في الخطوة القادمة.
-         */
-        window.location.href =
-          `/watch-party/${partyId}`;
-      } catch (err) {
-        setError(
-          err.message ||
-            'تعذر الدخول إلى Watch Party.'
-        );
-      }
-    };
+        await sendMediaMessage(voiceFile, 'voice');
+      };
 
-  const getDisplayName =
-    (person) => {
-      return (
-        person?.display_name ||
-        person?.full_name ||
-        person?.username ||
-        'مستخدم'
+      recorder.start(250);
+    } catch (err) {
+      setRecording(false);
+
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+
+      setError(
+        err?.name === 'NotAllowedError'
+          ? 'اسمح للموقع باستعمال الميكروفون باش تقدر تبعث فويس.'
+          : err.message || 'تعذر تشغيل الميكروفون.'
       );
-    };
+    }
+  };
+
+  const toggleRecording = () => {
+    if (recording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
+  const getDisplayName = (person) =>
+    person?.display_name ||
+    person?.full_name ||
+    person?.username ||
+    'مستخدم';
+
+  const formatTime = (value) => {
+    if (!value) return 'الآن';
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) return '';
+
+    return date.toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const formatFileSize = (bytes) => {
+    if (!bytes) return '';
+
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const getMediaUrl = (value) => {
+    if (!value) return '';
+    if (/^https?:\/\//i.test(value) || value.startsWith('blob:') || value.startsWith('data:')) {
+      return value;
+    }
+    return getChatMediaUrl(value);
+  };
+
+  const getTitlePoster = (title) => {
+    const value =
+      title?.poster_url ||
+      title?.poster_path ||
+      title?.poster ||
+      title?.image_url ||
+      title?.backdrop_url ||
+      '';
+
+    if (!value) return '';
+    if (/^https?:\/\//i.test(value) || value.startsWith('data:') || value.startsWith('blob:')) {
+      return value;
+    }
+    if (value.startsWith('/')) {
+      return `https://image.tmdb.org/t/p/w500${value}`;
+    }
+    return value;
+  };
+
+  const getTitleName = (title) =>
+    title?.name || title?.title || title?.original_name || 'فيلم بدون عنوان';
+
+  const renderSharedTitleCard = (title) => {
+    if (!title) {
+      return (
+        <div className="shared-title-card shared-title-missing">
+          <div className="shared-title-icon">🎬</div>
+          <div>
+            <strong>فيلم مشترك</strong>
+            <span>المعلومات غير متوفرة حالياً</span>
+          </div>
+        </div>
+      );
+    }
+
+    const poster = getTitlePoster(title);
+    const typeLabel = title.type === 'series' || title.type === 'tv' ? 'مسلسل' : 'فيلم';
+    const year = title.release_year || title.year;
+    const rating = Number(title.rating_avg || title.rating || 0);
+
+    return (
+      <button
+        type="button"
+        className="shared-title-card"
+        onClick={() => title.id && navigate(`/title/${title.id}`)}
+      >
+        <div className="shared-title-poster">
+          {poster ? (
+            <img src={poster} alt={getTitleName(title)} loading="lazy" />
+          ) : (
+            <div className="shared-title-poster-fallback">🎬</div>
+          )}
+        </div>
+        <div className="shared-title-info">
+          <span className="shared-title-kicker">STREAMFLIX · مشاركة</span>
+          <strong className="shared-title-name">{getTitleName(title)}</strong>
+          <div className="shared-title-meta">
+            <span>{typeLabel}</span>
+            {year ? <span>{year}</span> : null}
+            {rating > 0 ? <span>★ {rating.toFixed(1)}</span> : null}
+          </div>
+          <span className="shared-title-open">مشاهدة التفاصيل ›</span>
+        </div>
+      </button>
+    );
+  };
+
+  const renderMessage = (m) => {
+    const metadata = m.metadata || {};
+    const mediaUrl = getMediaUrl(m.content);
+    const sharedTitle = m.shared_title || metadata.title || metadata.shared_title;
+
+    if (m.shared_title_id || sharedTitle) {
+      return renderSharedTitleCard(sharedTitle);
+    }
+
+    if (m.kind === 'image' || metadata.mime?.startsWith?.('image/')) {
+      return (
+        <a
+          className="chat-media-image"
+          href={mediaUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <img src={mediaUrl} alt={metadata.name || 'صورة مرسلة'} loading="lazy" />
+        </a>
+      );
+    }
+
+    if (m.kind === 'voice' || metadata.mime?.startsWith?.('audio/')) {
+      return (
+        <div className="voice-message">
+          <div className="voice-icon">🎙️</div>
+          <audio controls preload="metadata" src={mediaUrl}>
+            متصفحك لا يدعم تشغيل الصوت.
+          </audio>
+        </div>
+      );
+    }
+
+    if (m.kind === 'file') {
+      return (
+        <a
+          className="file-message"
+          href={mediaUrl}
+          target="_blank"
+          rel="noreferrer"
+          download={metadata.name || undefined}
+        >
+          <span className="file-icon">📎</span>
+          <span className="file-info">
+            <strong>{metadata.name || 'ملف مرفق'}</strong>
+            <small>{formatFileSize(metadata.size)}</small>
+          </span>
+          <span className="file-download">↗</span>
+        </a>
+      );
+    }
+
+    return <span className="message-text">{m.content}</span>;
+  };
 
   return (
-    <div
-      className={`friends-app ${
-        activeFriend
-          ? 'has-active-chat'
-          : ''
-      }`}
-    >
+    <div className={`friends-app ${activeFriend ? 'has-active-chat' : ''}`}>
       <div className="app-grid">
-
-        {/* SIDEBAR */}
         <aside className="friends-col">
-
           <div className="friends-head">
+            <div className="friends-heading-row">
+              <div>
+                <span className="friends-kicker">SOCIAL</span>
+                <h2>الأصدقاء</h2>
+                <p className="friends-subtitle">
+                  تواصل مع أصحابك وشاهدوا أفلامكم مع بعض
+                </p>
+              </div>
+              <div className="friends-count">{friends.length}</div>
+            </div>
 
-            <h2>
-              الأصدقاء
-            </h2>
-
-            <form
-              className="add-friend-row"
-              onSubmit={
-                handleAddFriend
-              }
-            >
-              <input
-                value={addUserId}
-                onChange={(e) =>
-                  setAddUserId(
-                    e.target.value
-                  )
-                }
-                placeholder="أدخل User ID..."
-                autoComplete="off"
-              />
-
-              <button type="submit">
-                إضافة
-              </button>
+            <form className="add-friend-row" onSubmit={handleAddFriend}>
+              <div className="add-input-wrap">
+                <span>⌕</span>
+                <input
+                  value={addUserId}
+                  onChange={(e) => setAddUserId(e.target.value)}
+                  placeholder="User ID..."
+                  autoComplete="off"
+                />
+              </div>
+              <button type="submit">إضافة</button>
             </form>
 
             <div className="my-uid">
-              ID الخاص بك:{' '}
-              <span>
-                {userId ||
-                  profile?.id}
-              </span>
+              ID الخاص بك:
+              <span>{userId || profile?.id || '—'}</span>
             </div>
 
-            {error &&
-              !activeFriend && (
-                <div
-                  className="error-banner"
-                  style={{
-                    marginTop: 8,
-                    color:
-                      '#ff4d4d',
-                    fontSize: 13,
-                  }}
-                >
-                  {error}
-                </div>
-              )}
+            {error && !activeFriend && (
+              <div className="error-banner">{error}</div>
+            )}
 
             {success && (
-              <div
-                className="success-banner"
-                style={{
-                  marginTop: 8,
-                  color:
-                    '#4edf72',
-                  fontSize: 13,
-                }}
-              >
-                {success}
-              </div>
+              <div className="success-banner">{success}</div>
             )}
           </div>
 
-          {/* PENDING */}
-
-          {pending.length >
-            0 && (
+          {pending.length > 0 && (
             <div className="pending-block">
+              <div className="pending-title-row">
+                <span className="pending-title">طلبات الصداقة</span>
+                <span className="pending-badge">{pending.length}</span>
+              </div>
 
-              <span className="pending-title">
-                طلبات الصداقة
-              </span>
-
-              {pending.map(
-                (p) => (
-                  <div
-                    key={p.id}
-                    className="pending-row"
-                  >
-                    <span>
-                      {getDisplayName(
-                        p.requester
-                      )}
-                    </span>
-
-                    <div className="pending-actions">
-
-                      <button
-                        type="button"
-                        className="accept-btn"
-                        onClick={() =>
-                          handleRespond(
-                            p.id,
-                            'accepted'
-                          )
-                        }
-                      >
-                        ✓
-                      </button>
-
-                      <button
-                        type="button"
-                        className="reject-btn"
-                        onClick={() =>
-                          handleRespond(
-                            p.id,
-                            'rejected'
-                          )
-                        }
-                      >
-                        ✕
-                      </button>
-
+              {pending.map((p) => (
+                <div key={p.id} className="pending-row">
+                  <div className="pending-person">
+                    <div className="mini-avatar">
+                      {getDisplayName(p.requester).charAt(0).toUpperCase()}
                     </div>
+                    <span>{getDisplayName(p.requester)}</span>
                   </div>
-                )
-              )}
 
+                  <div className="pending-actions">
+                    <button
+                      type="button"
+                      className="accept-btn"
+                      onClick={() => handleRespond(p.id, 'accepted')}
+                      aria-label="قبول"
+                    >
+                      ✓
+                    </button>
+                    <button
+                      type="button"
+                      className="reject-btn"
+                      onClick={() => handleRespond(p.id, 'rejected')}
+                      aria-label="رفض"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
-          {/* FRIEND LIST */}
-
           <div className="friend-list">
-
-            {friends.length ===
-            0 ? (
+            {friends.length === 0 ? (
               <div className="friends-empty">
-                <span>
-                  لا يوجد أصدقاء حالياً
-                </span>
+                <div className="empty-icon">♧</div>
+                <strong>ما عندك حتى صديق حالياً</strong>
+                <span>استعمل User ID لإرسال أول طلب صداقة.</span>
               </div>
             ) : (
-              friends.map(
-                (f) => {
-                  const active =
-                    activeFriend?.id ===
-                    f.id;
+              friends.map((f) => {
+                const active = activeFriend?.id === f.id;
+                const name = getDisplayName(f);
 
-                  const name =
-                    getDisplayName(
-                      f
-                    );
-
-                  return (
-                    <button
-                      key={f.id}
-                      type="button"
-                      className={`friend-item ${
-                        active
-                          ? 'active'
-                          : ''
-                      }`}
-                      onClick={() => {
-                        setActiveFriend(
-                          f
-                        );
-                        setError(
-                          null
-                        );
-                      }}
+                return (
+                  <button
+                    key={f.id}
+                    type="button"
+                    className={`friend-item ${active ? 'active' : ''}`}
+                    onClick={() => {
+                      setActiveFriend(f);
+                      setError(null);
+                      setSuccess(null);
+                    }}
+                  >
+                    <div
+                      className="fav"
+                      style={
+                        f.avatar_url
+                          ? { backgroundImage: `url(${f.avatar_url})` }
+                          : undefined
+                      }
                     >
-                      <div
-                        className="fav"
-                        style={
-                          f.avatar_url
-                            ? {
-                                backgroundImage:
-                                  `url(${f.avatar_url})`,
-                              }
-                            : undefined
-                        }
-                      >
-                        {!f.avatar_url && (
-                          <span className="avatar-letter">
-                            {name
-                              .charAt(
-                                0
-                              )
-                              .toUpperCase()}
-                          </span>
-                        )}
-                      </div>
+                      {!f.avatar_url && (
+                        <span>{name.charAt(0).toUpperCase()}</span>
+                      )}
+                      <i className="online-dot" />
+                    </div>
 
-                      <div className="finfo">
-                        <div className="fname">
-                          {name}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                }
-              )
+                    <div className="finfo">
+                      <div className="fname">{name}</div>
+                      <div className="flast">اضغط لفتح المحادثة</div>
+                    </div>
+
+                    <span className="friend-arrow">›</span>
+                  </button>
+                );
+              })
             )}
-
           </div>
         </aside>
 
-        {/* CHAT */}
-
         <main className="chat-col">
-
           {!activeFriend ? (
             <div className="chat-empty">
-              <div className="chat-empty-orb">
-                💬
-              </div>
-
-              <h2>
-                اختر صديقاً
-                لبدء المحادثة
-              </h2>
-
-              <p>
-                تقدر تدردش وترسل
-                صور ودعوات
-                Watch Party
-              </p>
+              <div className="chat-empty-icon">💬</div>
+              <h2>ابدأ محادثة</h2>
+              <p>اختار واحد من أصدقائك باش تبدأو الهدرة.</p>
             </div>
           ) : (
             <>
               <header className="chat-head">
-
                 <button
                   type="button"
                   className="chat-back-btn"
-                  onClick={() =>
-                    setActiveFriend(
-                      null
-                    )
-                  }
+                  onClick={() => setActiveFriend(null)}
+                  aria-label="رجوع"
                 >
                   ‹
                 </button>
 
-                <div>
-                  <div className="chat-head-name">
-                    {getDisplayName(
-                      activeFriend
-                    )}
-                  </div>
-
-                  <div className="chat-head-status">
-                    محادثة خاصة
-                  </div>
+                <div
+                  className="chat-avatar"
+                  style={
+                    activeFriend.avatar_url
+                      ? {
+                          backgroundImage: `url(${activeFriend.avatar_url})`,
+                        }
+                      : undefined
+                  }
+                >
+                  {!activeFriend.avatar_url &&
+                    getDisplayName(activeFriend).charAt(0).toUpperCase()}
+                  <i />
                 </div>
 
+                <div className="chat-person">
+                  <div className="chat-head-name">
+                    {getDisplayName(activeFriend)}
+                  </div>
+                  <div className="chat-head-status">● متصل بالمحادثة</div>
+                </div>
+
+                <button type="button" className="chat-head-action" title="Watch Together">
+                  🎬 <span>Watch Together</span>
+                </button>
               </header>
 
               {error && (
                 <div className="chat-error-bar">
-
-                  <span>
-                    {error}
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setError(
-                        null
-                      )
-                    }
-                  >
+                  <span>{error}</span>
+                  <button type="button" onClick={() => setError(null)}>
                     ×
                   </button>
-
                 </div>
               )}
 
               <div className="messages">
+                <div className="chat-start">
+                  <div className="chat-start-line" />
+                  <span>بداية المحادثة</span>
+                  <div className="chat-start-line" />
+                </div>
 
-                {messages.map(
-                  (m) => {
-                    const mine =
-                      m.sender_id ===
-                      userId;
+                {messages.map((m) => {
+                  const mine = m.sender_id === userId;
 
-                    const party =
-                      parseWatchParty(
-                        m
-                      );
-
-                    return (
-                      <div
-                        key={m.id}
-                        className={`msg-row ${
-                          mine
-                            ? 'mine'
-                            : 'theirs'
-                        }`}
-                      >
-
-                        {party ? (
-                          <div className="watch-invite-card">
-
-                            <div className="watch-invite-icon">
-                              🎬
-                            </div>
-
-                            <div className="watch-invite-content">
-
-                              <div className="watch-invite-title">
-                                Watch Party
-                              </div>
-
-                              <div className="watch-invite-text">
-                                <strong>
-                                  {mine
-                                    ? 'You'
-                                    : getDisplayName(
-                                        activeFriend
-                                      )}
-                                </strong>{' '}
-                                invited you
-                                to watch
-                                together
-                              </div>
-
-                              <div className="watch-invite-movie">
-                                {party.titleName ||
-                                  'فيلم'}
-                              </div>
-
-                              <div className="watch-invite-question">
-                                Are you ready?
-                              </div>
-
-                              <button
-                                type="button"
-                                className="watch-join-btn"
-                                onClick={() =>
-                                  handleJoinParty(
-                                    party.partyId
-                                  )
-                                }
-                              >
-                                Join
-                              </button>
-
-                            </div>
-
-                          </div>
-                        ) : (
-                          <div className="bubble">
-
-                            {m.kind ===
-                            'image' ? (
-                              <img
-                                src={
-                                  m.content
-                                }
-                                alt="Shared attachment"
-                                className="chat-img"
-                              />
-                            ) : (
-                              <span>
-                                {
-                                  m.content
-                                }
-                              </span>
-                            )}
-
-                          </div>
-                        )}
-
+                  return (
+                    <div
+                      key={m.id}
+                      className={`msg-row ${mine ? 'mine' : 'theirs'}`}
+                    >
+                      <div className="message-content">
+                        <div className="bubble">
+                          {renderMessage(m)}
+                        </div>
+                        <span className="msg-time">
+                          {formatTime(m.created_at)}
+                        </span>
                       </div>
-                    );
-                  }
-                )}
+                    </div>
+                  );
+                })}
 
-                <div
-                  ref={
-                    messagesEndRef
-                  }
-                />
-
+                <div ref={messagesEndRef} />
               </div>
 
-              {/* COMPOSER */}
+              <div className="composer-wrap">
+                {recording && (
+                  <div className="recording-state">
+                    <span className="recording-dot" />
+                    <span>جاري التسجيل...</span>
+                    <strong>
+                      {String(Math.floor(recordingSeconds / 60)).padStart(2, '0')}:
+                      {String(recordingSeconds % 60).padStart(2, '0')}
+                    </strong>
+                    <button
+                      type="button"
+                      onClick={stopRecording}
+                    >
+                      إيقاف وإرسال
+                    </button>
+                  </div>
+                )}
 
-              <form
-                className="composer"
-                onSubmit={
-                  handleSendText
-                }
-              >
+                {uploading && (
+                  <div className="uploading-state">
+                    <span className="upload-spinner" />
+                    جاري رفع المرفق...
+                  </div>
+                )}
 
-                <button
-                  type="button"
-                  className="upload-btn"
-                  onClick={() =>
-                    imageInputRef.current?.click()
-                  }
-                  disabled={
-                    uploading
-                  }
-                  title="إرسال صورة"
-                >
-                  📷
-                </button>
+                <form className="composer" onSubmit={handleSendText}>
+                  <div className="composer-actions">
+                    <button
+                      type="button"
+                      className="action-icon-btn"
+                      onClick={() => imageInputRef.current?.click()}
+                      disabled={uploading || recording}
+                      title="إرسال صورة"
+                    >
+                      ＋
+                    </button>
 
-                <input
-                  ref={
-                    imageInputRef
-                  }
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={
-                    handleImageUpload
-                  }
-                />
+                    <button
+                      type="button"
+                      className="action-icon-btn"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading || recording}
+                      title="إرسال ملف"
+                    >
+                      📎
+                    </button>
 
-                <input
-                  value={input}
-                  onChange={(e) =>
-                    setInput(
-                      e.target.value
-                    )
-                  }
-                  placeholder={`اكتب رسالة لـ ${getDisplayName(
-                    activeFriend
-                  )}...`}
-                  disabled={
-                    uploading
-                  }
-                />
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      onChange={handleImageUpload}
+                    />
 
-                <button
-                  type="submit"
-                  className="send-btn"
-                  disabled={
-                    !input.trim() ||
-                    uploading
-                  }
-                >
-                  ➤
-                </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      hidden
+                      onChange={handleFileUpload}
+                    />
+                  </div>
 
-              </form>
+                  <input
+                    className="composer-input"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder={`اكتب رسالة لـ ${getDisplayName(activeFriend)}...`}
+                    disabled={uploading || recording}
+                  />
+
+                  <button
+                    type="button"
+                    className={`voice-btn ${recording ? 'recording' : ''}`}
+                    onClick={toggleRecording}
+                    disabled={uploading}
+                    title={recording ? 'إيقاف التسجيل' : 'رسالة صوتية'}
+                  >
+                    {recording ? '■' : '🎙'}
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="send-btn"
+                    disabled={!input.trim() || uploading || recording}
+                    aria-label="إرسال"
+                  >
+                    ➤
+                  </button>
+                </form>
+              </div>
             </>
           )}
-
         </main>
       </div>
     </div>
