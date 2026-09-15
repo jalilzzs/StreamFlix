@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
   fetchFriends,
@@ -11,14 +10,13 @@ import {
   sendMessage,
   subscribeToMessages,
   uploadChatMedia,
-  getChatMediaUrl,
+  fetchTitleById,
 } from '../lib/api';
 import ProtectedRoute from '../components/ProtectedRoute';
 import './Friends.css';
 
 function FriendsInner() {
   const { user, profile } = useAuth();
-  const navigate = useNavigate();
 
   const [friends, setFriends] = useState([]);
   const [pending, setPending] = useState([]);
@@ -31,6 +29,10 @@ function FriendsInner() {
   const [uploading, setUploading] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [showShareTitle, setShowShareTitle] = useState(false);
+  const [shareTitleId, setShareTitleId] = useState('');
+  const [sharingTitle, setSharingTitle] = useState(false);
+  const [sharedTitles, setSharedTitles] = useState({});
 
   const messagesEndRef = useRef(null);
   const imageInputRef = useRef(null);
@@ -335,6 +337,95 @@ function FriendsInner() {
     }
   };
 
+  const handleShareTitle = async (e) => {
+    e?.preventDefault();
+    const titleId = shareTitleId.trim();
+
+    if (!titleId || !activeFriend || !userId) return;
+
+    setSharingTitle(true);
+    setError(null);
+
+    try {
+      const titleData = await fetchTitleById(titleId);
+
+      if (!titleData) {
+        throw new Error('الفيلم غير موجود.');
+      }
+
+      const msg = await sendMessage({
+        senderId: userId,
+        receiverId: activeFriend.id,
+        kind: 'title',
+        content: titleData.name || titleData.title || 'فيلم مشترك',
+        sharedTitleId: titleData.id,
+        metadata: {
+          title_id: titleData.id,
+          name: titleData.name || titleData.title || '',
+          poster_url:
+            titleData.poster_url ||
+            titleData.poster ||
+            titleData.image_url ||
+            titleData.poster_path ||
+            '',
+          release_year: titleData.release_year || null,
+          rating_avg: titleData.rating_avg || null,
+          type: titleData.type || 'movie',
+        },
+      });
+
+      setSharedTitles((prev) => ({ ...prev, [titleData.id]: titleData }));
+      setMessages((prev) =>
+        prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]
+      );
+      setShareTitleId('');
+      setShowShareTitle(false);
+    } catch (err) {
+      setError(err.message || 'تعذر مشاركة الفيلم.');
+    } finally {
+      setSharingTitle(false);
+    }
+  };
+
+  const getTitleImage = (title, metadata = {}) =>
+    title?.poster_url ||
+    title?.poster ||
+    title?.image_url ||
+    title?.poster_path ||
+    metadata.poster_url ||
+    metadata.poster ||
+    metadata.image_url ||
+    metadata.poster_path ||
+    '';
+
+  const loadSharedTitle = async (titleId) => {
+    if (!titleId || sharedTitles[titleId]) return sharedTitles[titleId] || null;
+
+    try {
+      const data = await fetchTitleById(titleId);
+      if (data) {
+        setSharedTitles((prev) => ({ ...prev, [titleId]: data }));
+      }
+      return data || null;
+    } catch (err) {
+      console.error('Error loading shared title:', err);
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    const ids = messages
+      .filter((m) => m.shared_title_id)
+      .map((m) => m.shared_title_id)
+      .filter(Boolean);
+
+    if (!ids.length) return;
+
+    [...new Set(ids)].forEach((id) => {
+      loadSharedTitle(id);
+    });
+  }, [messages]);
+
   const getDisplayName = (person) =>
     person?.display_name ||
     person?.full_name ||
@@ -363,111 +454,72 @@ function FriendsInner() {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  const getMediaUrl = (value) => {
-    if (!value) return '';
-    if (/^https?:\/\//i.test(value) || value.startsWith('blob:') || value.startsWith('data:')) {
-      return value;
-    }
-    return getChatMediaUrl(value);
-  };
-
-  const getTitlePoster = (title) => {
-    const value =
-      title?.poster_url ||
-      title?.poster_path ||
-      title?.poster ||
-      title?.image_url ||
-      title?.backdrop_url ||
-      '';
-
-    if (!value) return '';
-    if (/^https?:\/\//i.test(value) || value.startsWith('data:') || value.startsWith('blob:')) {
-      return value;
-    }
-    if (value.startsWith('/')) {
-      return `https://image.tmdb.org/t/p/w500${value}`;
-    }
-    return value;
-  };
-
-  const getTitleName = (title) =>
-    title?.name || title?.title || title?.original_name || 'فيلم بدون عنوان';
-
-  const renderSharedTitleCard = (title) => {
-    if (!title) {
-      return (
-        <div className="shared-title-card shared-title-missing">
-          <div className="shared-title-icon">🎬</div>
-          <div>
-            <strong>فيلم مشترك</strong>
-            <span>المعلومات غير متوفرة حالياً</span>
-          </div>
-        </div>
-      );
-    }
-
-    const poster = getTitlePoster(title);
-    const typeLabel = title.type === 'series' || title.type === 'tv' ? 'مسلسل' : 'فيلم';
-    const year = title.release_year || title.year;
-    const rating = Number(title.rating_avg || title.rating || 0);
-
-    return (
-      <button
-        type="button"
-        className="shared-title-card"
-        onClick={() => title.id && navigate(`/title/${title.id}`)}
-      >
-        <div className="shared-title-poster">
-          {poster ? (
-            <img src={poster} alt={getTitleName(title)} loading="lazy" />
-          ) : (
-            <div className="shared-title-poster-fallback">🎬</div>
-          )}
-        </div>
-        <div className="shared-title-info">
-          <span className="shared-title-kicker">STREAMFLIX · مشاركة</span>
-          <strong className="shared-title-name">{getTitleName(title)}</strong>
-          <div className="shared-title-meta">
-            <span>{typeLabel}</span>
-            {year ? <span>{year}</span> : null}
-            {rating > 0 ? <span>★ {rating.toFixed(1)}</span> : null}
-          </div>
-          <span className="shared-title-open">مشاهدة التفاصيل ›</span>
-        </div>
-      </button>
-    );
-  };
-
   const renderMessage = (m) => {
     const metadata = m.metadata || {};
-    const mediaUrl = getMediaUrl(m.content);
-    const sharedTitle = m.shared_title || metadata.title || metadata.shared_title;
 
-    if (m.shared_title_id || sharedTitle) {
-      return renderSharedTitleCard(sharedTitle);
-    }
-
-    if (m.kind === 'image' || metadata.mime?.startsWith?.('image/')) {
+    if (m.kind === 'image') {
       return (
         <a
           className="chat-media-image"
-          href={mediaUrl}
+          href={m.content}
           target="_blank"
           rel="noreferrer"
         >
-          <img src={mediaUrl} alt={metadata.name || 'صورة مرسلة'} loading="lazy" />
+          <img src={m.content} alt="صورة مرسلة" />
         </a>
       );
     }
 
-    if (m.kind === 'voice' || metadata.mime?.startsWith?.('audio/')) {
+    if (m.kind === 'voice') {
       return (
         <div className="voice-message">
           <div className="voice-icon">🎙️</div>
-          <audio controls preload="metadata" src={mediaUrl}>
+          <audio controls preload="metadata" src={m.content}>
             متصفحك لا يدعم تشغيل الصوت.
           </audio>
         </div>
+      );
+    }
+
+    if (m.shared_title_id || m.kind === 'title') {
+      const title = m.shared_title_id ? sharedTitles[m.shared_title_id] : null;
+      const titleName =
+        title?.name ||
+        title?.title ||
+        metadata.name ||
+        m.content ||
+        'فيلم مشترك';
+      const image = getTitleImage(title, metadata);
+      const typeLabel = (title?.type || metadata.type || 'movie') === 'series' ? 'مسلسل' : 'فيلم';
+      const year = title?.release_year || metadata.release_year;
+      const rating = title?.rating_avg || metadata.rating_avg;
+
+      return (
+        <a
+          className="shared-title-card"
+          href={m.shared_title_id ? `/title/${m.shared_title_id}` : '#'}
+          onClick={(e) => {
+            if (!m.shared_title_id) e.preventDefault();
+          }}
+        >
+          <div className="shared-title-poster">
+            {image ? (
+              <img src={image} alt={titleName} loading="lazy" />
+            ) : (
+              <div className="shared-title-poster-fallback">🎬</div>
+            )}
+          </div>
+          <div className="shared-title-info">
+            <span className="shared-title-label">🎬 مشاركة من StreamFlix</span>
+            <strong>{titleName}</strong>
+            <div className="shared-title-meta">
+              <span>{typeLabel}</span>
+              {year ? <span>{year}</span> : null}
+              {rating ? <span>⭐ {Number(rating).toFixed(1)}</span> : null}
+            </div>
+            <span className="shared-title-open">مشاهدة التفاصيل ←</span>
+          </div>
+        </a>
       );
     }
 
@@ -475,10 +527,9 @@ function FriendsInner() {
       return (
         <a
           className="file-message"
-          href={mediaUrl}
+          href={m.content}
           target="_blank"
           rel="noreferrer"
-          download={metadata.name || undefined}
         >
           <span className="file-icon">📎</span>
           <span className="file-info">
@@ -666,10 +717,39 @@ function FriendsInner() {
                   <div className="chat-head-status">● متصل بالمحادثة</div>
                 </div>
 
-                <button type="button" className="chat-head-action" title="Watch Together">
-                  🎬 <span>Watch Together</span>
-                </button>
+                <div className="chat-head-actions">
+                  <button
+                    type="button"
+                    className="chat-head-action share-title-trigger"
+                    onClick={() => setShowShareTitle((value) => !value)}
+                    title="مشاركة فيلم"
+                  >
+                    🎬 <span>مشاركة فيلم</span>
+                  </button>
+                  <button type="button" className="chat-head-action" title="Watch Together">
+                    ▶ <span>Watch Together</span>
+                  </button>
+                </div>
               </header>
+
+              {showShareTitle && (
+                <form className="share-title-panel" onSubmit={handleShareTitle}>
+                  <div className="share-title-panel-text">
+                    <strong>مشاركة فيلم أو مسلسل</strong>
+                    <span>حط ID تاع العمل من قاعدة البيانات</span>
+                  </div>
+                  <input
+                    value={shareTitleId}
+                    onChange={(e) => setShareTitleId(e.target.value)}
+                    placeholder="Title ID..."
+                    autoComplete="off"
+                    disabled={sharingTitle}
+                  />
+                  <button type="submit" disabled={!shareTitleId.trim() || sharingTitle}>
+                    {sharingTitle ? '...' : 'مشاركة'}
+                  </button>
+                </form>
+              )}
 
               {error && (
                 <div className="chat-error-bar">
