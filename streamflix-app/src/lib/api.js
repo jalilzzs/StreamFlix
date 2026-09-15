@@ -363,44 +363,6 @@ export function subscribeToFriendRequests(userId, onRequest) {
 
 // ---- Messages -------------------------------------------------------------
 
-async function hydrateSharedTitles(messages) {
-  const rows = Array.isArray(messages) ? messages : [];
-  const ids = [...new Set(rows.map((m) => m?.shared_title_id).filter(Boolean))];
-
-  if (!ids.length) return rows;
-
-  const { data: titles, error } = await supabase
-    .from('titles')
-    .select('*')
-    .in('id', ids);
-
-  if (error) {
-    console.error('Error loading shared titles:', error);
-    return rows;
-  }
-
-  const byId = new Map((titles || []).map((title) => [String(title.id), title]));
-
-  return rows.map((message) => ({
-    ...message,
-    shared_title: message.shared_title ||
-      (message.shared_title_id ? byId.get(String(message.shared_title_id)) || null : null),
-  }));
-}
-
-export async function fetchSharedTitle(titleId) {
-  if (!titleId) return null;
-
-  const { data, error } = await supabase
-    .from('titles')
-    .select('*')
-    .eq('id', titleId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data || null;
-}
-
 export async function fetchMessages(userId, friendId, limit = 100) {
   const { data, error } = await supabase
     .from('messages')
@@ -412,7 +374,7 @@ export async function fetchMessages(userId, friendId, limit = 100) {
     .limit(limit);
 
   if (error) throw error;
-  return hydrateSharedTitles(data || []);
+  return data || [];
 }
 
 export async function sendMessage({
@@ -546,15 +508,7 @@ export function subscribeToMessages(userId, friendId, onMessage) {
           (m.sender_id === userId && m.receiver_id === friendId) ||
           (m.sender_id === friendId && m.receiver_id === userId);
 
-        if (matches) {
-          if (m.shared_title_id) {
-            fetchSharedTitle(m.shared_title_id)
-              .then((title) => onMessage?.({ ...m, shared_title: title }))
-              .catch(() => onMessage?.(m));
-          } else {
-            onMessage?.(m);
-          }
-        }
+        if (matches) onMessage(m);
       }
     )
     .subscribe();
