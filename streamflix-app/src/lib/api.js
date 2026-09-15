@@ -42,7 +42,7 @@ export async function getProfile(userId) {
   return data;
 }
 
-// ---- Titles & Content (الخاصة بالبحث والمحتوى) ----------------------------
+// ---- Titles & Content -----------------------------------------------------
 
 export async function fetchTitles(searchQuery = '') {
   let query = supabase.from('titles').select('*');
@@ -54,6 +54,60 @@ export async function fetchTitles(searchQuery = '') {
   const { data, error } = await query;
   if (error) throw error;
   return data || [];
+}
+
+export async function fetchTitleById(id) {
+  const { data, error } = await supabase
+    .from('titles')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+// ---- Watch History & Progress ---------------------------------------------
+
+export async function fetchContinueWatching(userId) {
+  if (!userId) return [];
+
+  const { data, error } = await supabase
+    .from('watch_progress')
+    .select('*, title:title_id(*)')
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.warn('Watch progress query failed or table missing:', error.message);
+    return [];
+  }
+
+  return (data || []).map((item) => ({
+    ...item.title,
+    progress: item.progress_seconds || item.progress || 0,
+    duration: item.duration_seconds || item.duration || 0,
+    lastWatched: item.updated_at,
+  }));
+}
+
+export async function updateWatchProgress(userId, titleId, progressSeconds, durationSeconds) {
+  if (!userId || !titleId) return;
+
+  const { error } = await supabase
+    .from('watch_progress')
+    .upsert(
+      {
+        user_id: userId,
+        title_id: titleId,
+        progress_seconds: progressSeconds,
+        duration_seconds: durationSeconds,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id,title_id' }
+    );
+
+  if (error) console.error('Error updating watch progress:', error);
 }
 
 // ---- Friendships & Requests -----------------------------------------------
