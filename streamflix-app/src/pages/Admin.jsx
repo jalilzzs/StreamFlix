@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 
-const ADMIN_PIN = '0508302024';
+const ADMIN_PIN = '0508';
 
 export default function Admin() {
   const navigate = useNavigate();
