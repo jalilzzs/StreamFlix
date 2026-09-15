@@ -128,29 +128,29 @@ export default function Friends() {
   }, [messages]);
 
   /* =========================
-     ADD FRIEND
+     ADD FRIEND BY USER ID
   ========================= */
 
   const handleAddFriend = async (event) => {
     event.preventDefault();
 
-    const code = addValue.trim();
+    const targetUserId = addValue.trim();
 
-    if (!code) return;
+    if (!targetUserId) return;
 
     try {
       setError(null);
       setSuccess(null);
 
-      // تمرير ID المستخدم ورمز الصداقة/الـ UUID
-      await sendFriendRequestByCode(userId, code);
+      // إرسال الطلب عبر user_id المباشر
+      await sendFriendRequestByCode(userId, targetUserId);
 
-      setSuccess('Friend request sent successfully!');
+      setSuccess('تم إرسال طلب الصداقة بنجاح!');
       setAddValue('');
       await loadFriends();
     } catch (err) {
       console.error(err);
-      setError(err?.message || 'Unable to send friend request.');
+      setError(err?.message || 'تعذر إرسال طلب الصداقة.');
     }
   };
 
@@ -163,7 +163,6 @@ export default function Friends() {
       setError(null);
       setSuccess(null);
 
-      // تحويل الحالة النصية لتطابق api.js
       await respondToFriendRequest(requestId, accept ? 'accepted' : 'rejected');
 
       await loadFriends();
@@ -477,23 +476,27 @@ export default function Friends() {
               <input
                 value={addValue}
                 onChange={(event) => setAddValue(event.target.value)}
-                placeholder="Friend code or ID..."
+                placeholder="Enter User ID..."
                 autoComplete="off"
               />
               <button type="submit">Add</button>
             </form>
 
-            {/* إظهار التنبيهات الخاصة بإضافة الأصدقاء */}
+            {/* إظهار رسائل النجاح أو الخطأ تحت الخانة مباشرة */}
             {error && !activeFriend && (
-              <div className="friend-alert error-text">{error}</div>
+              <div style={{ color: '#ff4d4d', fontSize: '13px', marginTop: '8px', textAlign: 'center' }}>
+                {error}
+              </div>
             )}
             {success && (
-              <div className="friend-alert success-text">{success}</div>
+              <div style={{ color: '#4edf72', fontSize: '13px', marginTop: '8px', textAlign: 'center' }}>
+                {success}
+              </div>
             )}
 
             {userId && (
               <div className="my-uid">
-                Your code: <span>{userId}</span>
+                Your User ID: <span>{userId}</span>
               </div>
             )}
           </div>
@@ -541,7 +544,7 @@ export default function Friends() {
               <div className="friends-empty">
                 <div className="friends-empty-icon">👥</div>
                 <strong>No friends yet</strong>
-                <span>Add someone using their friend code.</span>
+                <span>Add someone using their User ID.</span>
               </div>
             ) : (
               friends.map((friend) => {
