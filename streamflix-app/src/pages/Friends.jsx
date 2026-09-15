@@ -104,7 +104,10 @@ function FriendsInner() {
 
   useEffect(() => {
     return () => {
-      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+
       if (mediaRecorderRef.current?.state === 'recording') {
         mediaRecorderRef.current.stop();
       }
@@ -236,7 +239,11 @@ function FriendsInner() {
       'audio/ogg;codecs=opus',
     ];
 
-    return types.find((type) => MediaRecorder.isTypeSupported?.(type)) || '';
+    return (
+      types.find((type) =>
+        MediaRecorder.isTypeSupported?.(type)
+      ) || ''
+    );
   };
 
   const stopRecording = () => {
@@ -248,7 +255,10 @@ function FriendsInner() {
   const startRecording = async () => {
     if (!activeFriend || !userId || uploading || recording) return;
 
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+    if (
+      !navigator.mediaDevices?.getUserMedia ||
+      typeof MediaRecorder === 'undefined'
+    ) {
       setError('التسجيل الصوتي غير مدعوم في هذا المتصفح.');
       return;
     }
@@ -256,7 +266,11 @@ function FriendsInner() {
     setError(null);
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream =
+        await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
+
       const mimeType = chooseRecorderMime();
 
       const recorder = mimeType
@@ -265,6 +279,7 @@ function FriendsInner() {
 
       mediaRecorderRef.current = recorder;
       audioChunksRef.current = [];
+
       setRecording(true);
       setRecordingSeconds(0);
 
@@ -289,6 +304,7 @@ function FriendsInner() {
         }
 
         stream.getTracks().forEach((track) => track.stop());
+
         setRecording(false);
 
         const chunks = audioChunksRef.current;
@@ -297,6 +313,7 @@ function FriendsInner() {
         if (!chunks.length) return;
 
         const blobType = recorder.mimeType || 'audio/webm';
+
         const extension = blobType.includes('mp4')
           ? 'm4a'
           : blobType.includes('ogg')
@@ -306,7 +323,9 @@ function FriendsInner() {
         const voiceFile = new File(
           chunks,
           `voice-${Date.now()}.${extension}`,
-          { type: blobType }
+          {
+            type: blobType,
+          }
         );
 
         await sendMediaMessage(voiceFile, 'voice');
@@ -339,6 +358,7 @@ function FriendsInner() {
 
   const handleShareTitle = async (e) => {
     e?.preventDefault();
+
     const titleId = shareTitleId.trim();
 
     if (!titleId || !activeFriend || !userId) return;
@@ -357,31 +377,49 @@ function FriendsInner() {
         senderId: userId,
         receiverId: activeFriend.id,
         kind: 'title',
-        content: titleData.name || titleData.title || 'فيلم مشترك',
+        content:
+          titleData.name ||
+          titleData.title ||
+          'فيلم مشترك',
         sharedTitleId: titleData.id,
         metadata: {
           title_id: titleData.id,
-          name: titleData.name || titleData.title || '',
+          name:
+            titleData.name ||
+            titleData.title ||
+            '',
           poster_url:
             titleData.poster_url ||
             titleData.poster ||
             titleData.image_url ||
             titleData.poster_path ||
             '',
-          release_year: titleData.release_year || null,
-          rating_avg: titleData.rating_avg || null,
-          type: titleData.type || 'movie',
+          release_year:
+            titleData.release_year || null,
+          rating_avg:
+            titleData.rating_avg || null,
+          type:
+            titleData.type || 'movie',
         },
       });
 
-      setSharedTitles((prev) => ({ ...prev, [titleData.id]: titleData }));
+      setSharedTitles((prev) => ({
+        ...prev,
+        [titleData.id]: titleData,
+      }));
+
       setMessages((prev) =>
-        prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]
+        prev.some((m) => m.id === msg.id)
+          ? prev
+          : [...prev, msg]
       );
+
       setShareTitleId('');
       setShowShareTitle(false);
     } catch (err) {
-      setError(err.message || 'تعذر مشاركة الفيلم.');
+      setError(
+        err.message || 'تعذر مشاركة الفيلم.'
+      );
     } finally {
       setSharingTitle(false);
     }
@@ -399,16 +437,27 @@ function FriendsInner() {
     '';
 
   const loadSharedTitle = async (titleId) => {
-    if (!titleId || sharedTitles[titleId]) return sharedTitles[titleId] || null;
+    if (!titleId || sharedTitles[titleId]) {
+      return sharedTitles[titleId] || null;
+    }
 
     try {
       const data = await fetchTitleById(titleId);
+
       if (data) {
-        setSharedTitles((prev) => ({ ...prev, [titleId]: data }));
+        setSharedTitles((prev) => ({
+          ...prev,
+          [titleId]: data,
+        }));
       }
+
       return data || null;
     } catch (err) {
-      console.error('Error loading shared title:', err);
+      console.error(
+        'Error loading shared title:',
+        err
+      );
+
       return null;
     }
   };
@@ -449,7 +498,10 @@ function FriendsInner() {
     if (!bytes) return '';
 
     if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+
+    if (bytes < 1024 * 1024) {
+      return `${Math.round(bytes / 1024)} KB`;
+    }
 
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
@@ -465,7 +517,10 @@ function FriendsInner() {
           target="_blank"
           rel="noreferrer"
         >
-          <img src={m.content} alt="صورة مرسلة" />
+          <img
+            src={m.content}
+            alt="صورة مرسلة"
+          />
         </a>
       );
     }
@@ -474,50 +529,218 @@ function FriendsInner() {
       return (
         <div className="voice-message">
           <div className="voice-icon">🎙️</div>
-          <audio controls preload="metadata" src={m.content}>
+
+          <audio
+            controls
+            preload="metadata"
+            src={m.content}
+          >
             متصفحك لا يدعم تشغيل الصوت.
           </audio>
         </div>
       );
     }
 
-    if (m.shared_title_id || m.kind === 'title') {
-      const title = m.shared_title_id ? sharedTitles[m.shared_title_id] : null;
+    /*
+     * WATCH PARTY INVITATION
+     *
+     * إذا كانت الرسالة تحتوي على shared_party_id
+     * فهي دعوة مشاهدة جماعية وليست مشاركة فيلم عادية.
+     */
+    if (m.shared_party_id) {
+      const title = m.shared_title_id
+        ? sharedTitles[m.shared_title_id]
+        : null;
+
+      const titleName =
+        title?.name ||
+        title?.title ||
+        metadata.name ||
+        m.content ||
+        'مشاهدة جماعية';
+
+      const image = getTitleImage(
+        title,
+        metadata
+      );
+
+      const typeValue =
+        title?.type ||
+        metadata.type ||
+        'movie';
+
+      const typeLabel =
+        typeValue === 'series' ||
+        typeValue === 'tv'
+          ? 'مسلسل'
+          : 'فيلم';
+
+      const year =
+        title?.release_year ||
+        metadata.release_year;
+
+      const rating =
+        title?.rating_avg ||
+        metadata.rating_avg;
+
+      const partyUrl =
+        `/watch-party/${m.shared_party_id}`;
+
+      return (
+        <div className="watch-party-invite-card">
+          <div className="watch-party-invite-poster">
+            {image ? (
+              <img
+                src={image}
+                alt={titleName}
+                loading="lazy"
+              />
+            ) : (
+              <div className="watch-party-invite-poster-fallback">
+                🎬
+              </div>
+            )}
+          </div>
+
+          <div className="watch-party-invite-body">
+            <span className="watch-party-invite-label">
+              🎬 دعوة مشاهدة جماعية
+            </span>
+
+            <strong>{titleName}</strong>
+
+            <div className="watch-party-invite-meta">
+              <span>{typeLabel}</span>
+
+              {year ? (
+                <span>{year}</span>
+              ) : null}
+
+              {rating ? (
+                <span>
+                  ⭐ {Number(rating).toFixed(1)}
+                </span>
+              ) : null}
+            </div>
+
+            {typeValue === 'series' ||
+            typeValue === 'tv' ? (
+              metadata.season &&
+              metadata.episode_number ? (
+                <div className="watch-party-invite-episode">
+                  الموسم {metadata.season}
+                  {' • '}
+                  الحلقة {metadata.episode_number}
+                </div>
+              ) : null
+            ) : null}
+
+            <a
+              className="watch-party-join-btn"
+              href={partyUrl}
+            >
+              ▶ JOIN — انضم للمشاهدة
+            </a>
+          </div>
+        </div>
+      );
+    }
+
+    /*
+     * NORMAL TITLE SHARE
+     *
+     * إذا ماكانش shared_party_id فهي مشاركة
+     * فيلم عادية وتبقى تفتح صفحة التفاصيل.
+     */
+    if (
+      m.shared_title_id ||
+      m.kind === 'title'
+    ) {
+      const title = m.shared_title_id
+        ? sharedTitles[m.shared_title_id]
+        : null;
+
       const titleName =
         title?.name ||
         title?.title ||
         metadata.name ||
         m.content ||
         'فيلم مشترك';
-      const image = getTitleImage(title, metadata);
-      const typeLabel = (title?.type || metadata.type || 'movie') === 'series' ? 'مسلسل' : 'فيلم';
-      const year = title?.release_year || metadata.release_year;
-      const rating = title?.rating_avg || metadata.rating_avg;
+
+      const image = getTitleImage(
+        title,
+        metadata
+      );
+
+      const typeLabel =
+        (
+          title?.type ||
+          metadata.type ||
+          'movie'
+        ) === 'series'
+          ? 'مسلسل'
+          : 'فيلم';
+
+      const year =
+        title?.release_year ||
+        metadata.release_year;
+
+      const rating =
+        title?.rating_avg ||
+        metadata.rating_avg;
 
       return (
         <a
           className="shared-title-card"
-          href={m.shared_title_id ? `/title/${m.shared_title_id}` : '#'}
+          href={
+            m.shared_title_id
+              ? `/title/${m.shared_title_id}`
+              : '#'
+          }
           onClick={(e) => {
-            if (!m.shared_title_id) e.preventDefault();
+            if (!m.shared_title_id) {
+              e.preventDefault();
+            }
           }}
         >
           <div className="shared-title-poster">
             {image ? (
-              <img src={image} alt={titleName} loading="lazy" />
+              <img
+                src={image}
+                alt={titleName}
+                loading="lazy"
+              />
             ) : (
-              <div className="shared-title-poster-fallback">🎬</div>
+              <div className="shared-title-poster-fallback">
+                🎬
+              </div>
             )}
           </div>
+
           <div className="shared-title-info">
-            <span className="shared-title-label">🎬 مشاركة من StreamFlix</span>
+            <span className="shared-title-label">
+              🎬 مشاركة من StreamFlix
+            </span>
+
             <strong>{titleName}</strong>
+
             <div className="shared-title-meta">
               <span>{typeLabel}</span>
-              {year ? <span>{year}</span> : null}
-              {rating ? <span>⭐ {Number(rating).toFixed(1)}</span> : null}
+
+              {year ? (
+                <span>{year}</span>
+              ) : null}
+
+              {rating ? (
+                <span>
+                  ⭐ {Number(rating).toFixed(1)}
+                </span>
+              ) : null}
             </div>
-            <span className="shared-title-open">مشاهدة التفاصيل ←</span>
+
+            <span className="shared-title-open">
+              مشاهدة التفاصيل ←
+            </span>
           </div>
         </a>
       );
@@ -531,91 +754,169 @@ function FriendsInner() {
           target="_blank"
           rel="noreferrer"
         >
-          <span className="file-icon">📎</span>
-          <span className="file-info">
-            <strong>{metadata.name || 'ملف مرفق'}</strong>
-            <small>{formatFileSize(metadata.size)}</small>
+          <span className="file-icon">
+            📎
           </span>
-          <span className="file-download">↗</span>
+
+          <span className="file-info">
+            <strong>
+              {metadata.name ||
+                'ملف مرفق'}
+            </strong>
+
+            <small>
+              {formatFileSize(
+                metadata.size
+              )}
+            </small>
+          </span>
+
+          <span className="file-download">
+            ↗
+          </span>
         </a>
       );
     }
 
-    return <span className="message-text">{m.content}</span>;
+    return (
+      <span className="message-text">
+        {m.content}
+      </span>
+    );
   };
 
   return (
-    <div className={`friends-app ${activeFriend ? 'has-active-chat' : ''}`}>
+    <div
+      className={`friends-app ${
+        activeFriend
+          ? 'has-active-chat'
+          : ''
+      }`}
+    >
       <div className="app-grid">
         <aside className="friends-col">
           <div className="friends-head">
             <div className="friends-heading-row">
               <div>
-                <span className="friends-kicker">SOCIAL</span>
+                <span className="friends-kicker">
+                  SOCIAL
+                </span>
+
                 <h2>الأصدقاء</h2>
+
                 <p className="friends-subtitle">
                   تواصل مع أصحابك وشاهدوا أفلامكم مع بعض
                 </p>
               </div>
-              <div className="friends-count">{friends.length}</div>
+
+              <div className="friends-count">
+                {friends.length}
+              </div>
             </div>
 
-            <form className="add-friend-row" onSubmit={handleAddFriend}>
+            <form
+              className="add-friend-row"
+              onSubmit={handleAddFriend}
+            >
               <div className="add-input-wrap">
                 <span>⌕</span>
+
                 <input
                   value={addUserId}
-                  onChange={(e) => setAddUserId(e.target.value)}
+                  onChange={(e) =>
+                    setAddUserId(
+                      e.target.value
+                    )
+                  }
                   placeholder="User ID..."
                   autoComplete="off"
                 />
               </div>
-              <button type="submit">إضافة</button>
+
+              <button type="submit">
+                إضافة
+              </button>
             </form>
 
             <div className="my-uid">
               ID الخاص بك:
-              <span>{userId || profile?.id || '—'}</span>
+              <span>
+                {userId ||
+                  profile?.id ||
+                  '—'}
+              </span>
             </div>
 
             {error && !activeFriend && (
-              <div className="error-banner">{error}</div>
+              <div className="error-banner">
+                {error}
+              </div>
             )}
 
             {success && (
-              <div className="success-banner">{success}</div>
+              <div className="success-banner">
+                {success}
+              </div>
             )}
           </div>
 
           {pending.length > 0 && (
             <div className="pending-block">
               <div className="pending-title-row">
-                <span className="pending-title">طلبات الصداقة</span>
-                <span className="pending-badge">{pending.length}</span>
+                <span className="pending-title">
+                  طلبات الصداقة
+                </span>
+
+                <span className="pending-badge">
+                  {pending.length}
+                </span>
               </div>
 
               {pending.map((p) => (
-                <div key={p.id} className="pending-row">
+                <div
+                  key={p.id}
+                  className="pending-row"
+                >
                   <div className="pending-person">
                     <div className="mini-avatar">
-                      {getDisplayName(p.requester).charAt(0).toUpperCase()}
+                      {getDisplayName(
+                        p.requester
+                      )
+                        .charAt(0)
+                        .toUpperCase()}
                     </div>
-                    <span>{getDisplayName(p.requester)}</span>
+
+                    <span>
+                      {getDisplayName(
+                        p.requester
+                      )}
+                    </span>
                   </div>
 
                   <div className="pending-actions">
                     <button
                       type="button"
                       className="accept-btn"
-                      onClick={() => handleRespond(p.id, 'accepted')}
+                      onClick={() =>
+                        handleRespond(
+                          p.id,
+                          'accepted'
+                        )
+                      }
                       aria-label="قبول"
                     >
                       ✓
                     </button>
+
                     <button
                       type="button"
                       className="reject-btn"
-                      onClick={() => handleRespond(p.id, 'rejected')}
+                      onClick={() =>
+                        handleRespond(
+                          p.id,
+                          'rejected'
+                        )
+                      }
                       aria-label="رفض"
                     >
                       ×
@@ -629,20 +930,36 @@ function FriendsInner() {
           <div className="friend-list">
             {friends.length === 0 ? (
               <div className="friends-empty">
-                <div className="empty-icon">♧</div>
-                <strong>ما عندك حتى صديق حالياً</strong>
-                <span>استعمل User ID لإرسال أول طلب صداقة.</span>
+                <div className="empty-icon">
+                  ♧
+                </div>
+
+                <strong>
+                  ما عندك حتى صديق حالياً
+                </strong>
+
+                <span>
+                  استعمل User ID لإرسال أول طلب صداقة.
+                </span>
               </div>
             ) : (
               friends.map((f) => {
-                const active = activeFriend?.id === f.id;
-                const name = getDisplayName(f);
+                const active =
+                  activeFriend?.id ===
+                  f.id;
+
+                const name =
+                  getDisplayName(f);
 
                 return (
                   <button
                     key={f.id}
                     type="button"
-                    className={`friend-item ${active ? 'active' : ''}`}
+                    className={`friend-item ${
+                      active
+                        ? 'active'
+                        : ''
+                    }`}
                     onClick={() => {
                       setActiveFriend(f);
                       setError(null);
@@ -653,22 +970,37 @@ function FriendsInner() {
                       className="fav"
                       style={
                         f.avatar_url
-                          ? { backgroundImage: `url(${f.avatar_url})` }
+                          ? {
+                              backgroundImage:
+                                `url(${f.avatar_url})`,
+                            }
                           : undefined
                       }
                     >
                       {!f.avatar_url && (
-                        <span>{name.charAt(0).toUpperCase()}</span>
+                        <span>
+                          {name
+                            .charAt(0)
+                            .toUpperCase()}
+                        </span>
                       )}
+
                       <i className="online-dot" />
                     </div>
 
                     <div className="finfo">
-                      <div className="fname">{name}</div>
-                      <div className="flast">اضغط لفتح المحادثة</div>
+                      <div className="fname">
+                        {name}
+                      </div>
+
+                      <div className="flast">
+                        اضغط لفتح المحادثة
+                      </div>
                     </div>
 
-                    <span className="friend-arrow">›</span>
+                    <span className="friend-arrow">
+                      ›
+                    </span>
                   </button>
                 );
               })
@@ -679,9 +1011,15 @@ function FriendsInner() {
         <main className="chat-col">
           {!activeFriend ? (
             <div className="chat-empty">
-              <div className="chat-empty-icon">💬</div>
+              <div className="chat-empty-icon">
+                💬
+              </div>
+
               <h2>ابدأ محادثة</h2>
-              <p>اختار واحد من أصدقائك باش تبدأو الهدرة.</p>
+
+              <p>
+                اختار واحد من أصدقائك باش تبدأو الهدرة.
+              </p>
             </div>
           ) : (
             <>
@@ -689,7 +1027,9 @@ function FriendsInner() {
                 <button
                   type="button"
                   className="chat-back-btn"
-                  onClick={() => setActiveFriend(null)}
+                  onClick={() =>
+                    setActiveFriend(null)
+                  }
                   aria-label="رجوع"
                 >
                   ‹
@@ -700,53 +1040,94 @@ function FriendsInner() {
                   style={
                     activeFriend.avatar_url
                       ? {
-                          backgroundImage: `url(${activeFriend.avatar_url})`,
+                          backgroundImage:
+                            `url(${activeFriend.avatar_url})`,
                         }
                       : undefined
                   }
                 >
                   {!activeFriend.avatar_url &&
-                    getDisplayName(activeFriend).charAt(0).toUpperCase()}
+                    getDisplayName(
+                      activeFriend
+                    )
+                      .charAt(0)
+                      .toUpperCase()}
+
                   <i />
                 </div>
 
                 <div className="chat-person">
                   <div className="chat-head-name">
-                    {getDisplayName(activeFriend)}
+                    {getDisplayName(
+                      activeFriend
+                    )}
                   </div>
-                  <div className="chat-head-status">● متصل بالمحادثة</div>
+
+                  <div className="chat-head-status">
+                    ● متصل بالمحادثة
+                  </div>
                 </div>
 
                 <div className="chat-head-actions">
                   <button
                     type="button"
                     className="chat-head-action share-title-trigger"
-                    onClick={() => setShowShareTitle((value) => !value)}
+                    onClick={() =>
+                      setShowShareTitle(
+                        (value) => !value
+                      )
+                    }
                     title="مشاركة فيلم"
                   >
-                    🎬 <span>مشاركة فيلم</span>
-                  </button>
-                  <button type="button" className="chat-head-action" title="Watch Together">
-                    ▶ <span>Watch Together</span>
+                    🎬{' '}
+                    <span>
+                      مشاركة فيلم
+                    </span>
                   </button>
                 </div>
               </header>
 
               {showShareTitle && (
-                <form className="share-title-panel" onSubmit={handleShareTitle}>
+                <form
+                  className="share-title-panel"
+                  onSubmit={
+                    handleShareTitle
+                  }
+                >
                   <div className="share-title-panel-text">
-                    <strong>مشاركة فيلم أو مسلسل</strong>
-                    <span>حط ID تاع العمل من قاعدة البيانات</span>
+                    <strong>
+                      مشاركة فيلم أو مسلسل
+                    </strong>
+
+                    <span>
+                      حط ID تاع العمل من قاعدة البيانات
+                    </span>
                   </div>
+
                   <input
                     value={shareTitleId}
-                    onChange={(e) => setShareTitleId(e.target.value)}
+                    onChange={(e) =>
+                      setShareTitleId(
+                        e.target.value
+                      )
+                    }
                     placeholder="Title ID..."
                     autoComplete="off"
-                    disabled={sharingTitle}
+                    disabled={
+                      sharingTitle
+                    }
                   />
-                  <button type="submit" disabled={!shareTitleId.trim() || sharingTitle}>
-                    {sharingTitle ? '...' : 'مشاركة'}
+
+                  <button
+                    type="submit"
+                    disabled={
+                      !shareTitleId.trim() ||
+                      sharingTitle
+                    }
+                  >
+                    {sharingTitle
+                      ? '...'
+                      : 'مشاركة'}
                   </button>
                 </form>
               )}
@@ -754,7 +1135,13 @@ function FriendsInner() {
               {error && (
                 <div className="chat-error-bar">
                   <span>{error}</span>
-                  <button type="button" onClick={() => setError(null)}>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setError(null)
+                    }
+                  >
                     ×
                   </button>
                 </div>
@@ -763,45 +1150,75 @@ function FriendsInner() {
               <div className="messages">
                 <div className="chat-start">
                   <div className="chat-start-line" />
-                  <span>بداية المحادثة</span>
+
+                  <span>
+                    بداية المحادثة
+                  </span>
+
                   <div className="chat-start-line" />
                 </div>
 
                 {messages.map((m) => {
-                  const mine = m.sender_id === userId;
+                  const mine =
+                    m.sender_id ===
+                    userId;
 
                   return (
                     <div
                       key={m.id}
-                      className={`msg-row ${mine ? 'mine' : 'theirs'}`}
+                      className={`msg-row ${
+                        mine
+                          ? 'mine'
+                          : 'theirs'
+                      }`}
                     >
                       <div className="message-content">
                         <div className="bubble">
                           {renderMessage(m)}
                         </div>
+
                         <span className="msg-time">
-                          {formatTime(m.created_at)}
+                          {formatTime(
+                            m.created_at
+                          )}
                         </span>
                       </div>
                     </div>
                   );
                 })}
 
-                <div ref={messagesEndRef} />
+                <div
+                  ref={messagesEndRef}
+                />
               </div>
 
               <div className="composer-wrap">
                 {recording && (
                   <div className="recording-state">
                     <span className="recording-dot" />
-                    <span>جاري التسجيل...</span>
+
+                    <span>
+                      جاري التسجيل...
+                    </span>
+
                     <strong>
-                      {String(Math.floor(recordingSeconds / 60)).padStart(2, '0')}:
-                      {String(recordingSeconds % 60).padStart(2, '0')}
+                      {String(
+                        Math.floor(
+                          recordingSeconds /
+                            60
+                        )
+                      ).padStart(2, '0')}
+                      :
+                      {String(
+                        recordingSeconds % 60
+                      ).padStart(2, '0')}
                     </strong>
+
                     <button
                       type="button"
-                      onClick={stopRecording}
+                      onClick={
+                        stopRecording
+                      }
                     >
                       إيقاف وإرسال
                     </button>
@@ -815,13 +1232,23 @@ function FriendsInner() {
                   </div>
                 )}
 
-                <form className="composer" onSubmit={handleSendText}>
+                <form
+                  className="composer"
+                  onSubmit={
+                    handleSendText
+                  }
+                >
                   <div className="composer-actions">
                     <button
                       type="button"
                       className="action-icon-btn"
-                      onClick={() => imageInputRef.current?.click()}
-                      disabled={uploading || recording}
+                      onClick={() =>
+                        imageInputRef.current?.click()
+                      }
+                      disabled={
+                        uploading ||
+                        recording
+                      }
                       title="إرسال صورة"
                     >
                       ＋
@@ -830,8 +1257,13 @@ function FriendsInner() {
                     <button
                       type="button"
                       className="action-icon-btn"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploading || recording}
+                      onClick={() =>
+                        fileInputRef.current?.click()
+                      }
+                      disabled={
+                        uploading ||
+                        recording
+                      }
                       title="إرسال ملف"
                     >
                       📎
@@ -842,39 +1274,68 @@ function FriendsInner() {
                       type="file"
                       accept="image/*"
                       hidden
-                      onChange={handleImageUpload}
+                      onChange={
+                        handleImageUpload
+                      }
                     />
 
                     <input
                       ref={fileInputRef}
                       type="file"
                       hidden
-                      onChange={handleFileUpload}
+                      onChange={
+                        handleFileUpload
+                      }
                     />
                   </div>
 
                   <input
                     className="composer-input"
                     value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder={`اكتب رسالة لـ ${getDisplayName(activeFriend)}...`}
-                    disabled={uploading || recording}
+                    onChange={(e) =>
+                      setInput(
+                        e.target.value
+                      )
+                    }
+                    placeholder={`اكتب رسالة لـ ${getDisplayName(
+                      activeFriend
+                    )}...`}
+                    disabled={
+                      uploading ||
+                      recording
+                    }
                   />
 
                   <button
                     type="button"
-                    className={`voice-btn ${recording ? 'recording' : ''}`}
-                    onClick={toggleRecording}
+                    className={`voice-btn ${
+                      recording
+                        ? 'recording'
+                        : ''
+                    }`}
+                    onClick={
+                      toggleRecording
+                    }
                     disabled={uploading}
-                    title={recording ? 'إيقاف التسجيل' : 'رسالة صوتية'}
+                    title={
+                      recording
+                        ? 'إيقاف التسجيل'
+                        : 'رسالة صوتية'
+                    }
                   >
-                    {recording ? '■' : '🎙'}
+                    {recording
+                      ? '■'
+                      : '🎙'}
                   </button>
 
                   <button
                     type="submit"
                     className="send-btn"
-                    disabled={!input.trim() || uploading || recording}
+                    disabled={
+                      !input.trim() ||
+                      uploading ||
+                      recording
+                    }
                     aria-label="إرسال"
                   >
                     ➤
