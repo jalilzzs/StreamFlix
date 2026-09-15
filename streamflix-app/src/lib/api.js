@@ -42,18 +42,64 @@ export async function getProfile(userId) {
   return data;
 }
 
-// ---- Titles & Content (Home & Search) -------------------------------------
+export async function updateProfile(userId, patch) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(patch)
+    .eq('id', userId)
+    .select()
+    .single();
 
-export async function fetchTitles(searchQuery = '') {
-  let query = supabase.from('titles').select('*');
+  if (error) throw error;
+  return data;
+}
 
-  if (searchQuery.trim()) {
-    query = query.ilike('title', `%${searchQuery.trim()}%`);
+// ---- Titles (تم التعديل لدعم 24 عنصر بالصفحة وتصفح جميع الأفلام والمسلسلات) ----
+
+export async function fetchTitles({
+  type,
+  genre,
+  year,
+  minRating,
+  search,
+  sortBy = 'created_at',
+  page = 1,
+  limit = 24,
+} = {}) {
+  let query = supabase.from('titles').select('*', { count: 'exact' });
+
+  // تصفية حسب النوع (أفلام / مسلسلات) مع إمكانية عرض الكل
+  if (type && type !== 'all') query = query.eq('type', type);
+  
+  // تصفية حسب التصنيف
+  if (genre && genre !== 'all') query = query.contains('genres', [genre]);
+  
+  // تصفية حسب السنة والتقييم والبحث
+  if (year) query = query.eq('release_year', year);
+  if (minRating) query = query.gte('rating_avg', minRating);
+  if (search) query = query.ilike('name', `%${search}%`);
+
+  // الترتيب
+  if (sortBy === 'rating') {
+    query = query.order('rating_avg', { ascending: false });
+  } else if (sortBy === 'year') {
+    query = query.order('release_year', { ascending: false });
+  } else {
+    query = query.order('created_at', { ascending: false });
   }
 
-  const { data, error } = await query;
+  // التقسيم على صفحات (Pagination - 24 عنصر لكل صفحة)
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+  query = query.range(from, to);
+
+  const { data, count, error } = await query;
+
   if (error) throw error;
-  return data || [];
+
+  const result = data || [];
+  result.count = count || 0;
+  return result;
 }
 
 export async function fetchTitleById(id) {
@@ -67,148 +113,266 @@ export async function fetchTitleById(id) {
   return data;
 }
 
-// ---- Watch History & Progress ---------------------------------------------
-
-export async function fetchContinueWatching(userId) {
-  if (!userId) return [];
-
+export async function fetchEpisodes(titleId) {
   const { data, error } = await supabase
-    .from('watch_progress')
-    .select('*, title:title_id(*)')
-    .eq('user_id', userId)
-    .order('updated_at', { ascending: false });
+    .from('episodes')
+    .select('*')
+    .eq('title_id', titleId)
+    .order('season', { ascending: true })
+    .order('episode_number', { ascending: true });
 
-  if (error) {
-    console.warn('Watch progress query failed or table missing:', error.message);
-    return [];
-  }
-
-  return (data || []).map((item) => ({
-    ...item.title,
-    progress: item.progress_seconds || item.progress || 0,
-    duration: item.duration_seconds || item.duration || 0,
-    lastWatched: item.updated_at,
-  }));
+  if (error) throw error;
+  return data || [];
 }
 
-export async function updateWatchProgress(userId, titleId, progressSeconds, durationSeconds) {
-  if (!userId || !titleId) return;
+export async function fetchRecommendations(
+  genres,
+  excludeId,
+  limit = 12
+) {
+  let query = supabase
+    .from('titles')
+    .select('*')
+    .neq('id', excludeId)
+    .limit(limit);
 
+  if (genres?.length) {
+    query = query.overlaps('genres', genres);
+  }
+
+  const { data, error } = await query;
+
+  if (error) throw error;
+  return data || [];
+}
+
+// ---- Ratings ----------------------------------------------------------
+
+export async function rateTitle(userId, titleId, score) {
   const { error } = await supabase
-    .from('watch_progress')
+    .from('ratings')
     .upsert(
       {
         user_id: userId,
         title_id: titleId,
-        progress_seconds: progressSeconds,
-        duration_seconds: durationSeconds,
-        updated_at: new Date().toISOString(),
+        score,
       },
-      { onConflict: 'user_id,title_id' }
+      {
+        onConflict: 'user_id,title_id',
+      }
     );
 
-  if (error) console.error('Error updating watch progress:', error);
+  if (error) throw error;
+
+  const { data: all, error: fetchErr } = await supabase
+    .from('ratings')
+    .select('score')
+    .eq('title_id', titleId);
+
+  if (fetchErr) throw fetchErr;
+
+  const avg = all.length
+    ? all.reduce((s, r) => s + r.score, 0) / all.length
+    : 0;
+
+  await supabase
+    .from('titles')
+    .update({ rating_avg: avg })
+    .eq('id', titleId);
+
+  return avg;
 }
 
-// ---- Friendships & Requests (نظام الأصدقاء) --------------------------------
+export async function getUserRating(userId, titleId) {
+  const { data, error } = await supabase
+    .from('ratings')
+    .select('score')
+    .eq('user_id', userId)
+    .eq('title_id', titleId)
+    .maybeSingle();
 
-/**
- * إرسال طلب صداقة باستعمال الـ User ID المباشر
- * تدعم استقبال Object أو parameters منفصلة لمنع أخطاء الـ arguments
- */
-export async function sendFriendRequestByCode(requesterId, targetUserId) {
-  let reqId = requesterId;
-  let targetId = targetUserId;
+  if (error) throw error;
+  return data?.score || 0;
+}
 
-  if (typeof requesterId === 'object' && requesterId !== null) {
-    reqId = requesterId.userId;
-    targetId = requesterId.targetUserId || requesterId.friendCode;
-  }
+// ---- Watchlist ----------------------------------------------------------
 
-  if (!targetId || typeof targetId !== 'string' || !targetId.trim()) {
-    throw new Error('يرجى إدخال User ID الخاص بالمستخدم.');
-  }
+export async function addToWatchlist(userId, titleId) {
+  const { error } = await supabase
+    .from('watchlist')
+    .insert({
+      user_id: userId,
+      title_id: titleId,
+    });
 
-  const cleanTargetId = targetId.trim();
+  if (error && error.code !== '23505') throw error;
+}
 
-  if (cleanTargetId === reqId) {
-    throw new Error('لا يمكنك إرسال طلب صداقة لنفسك.');
-  }
+export async function removeFromWatchlist(userId, titleId) {
+  const { error } = await supabase
+    .from('watchlist')
+    .delete()
+    .eq('user_id', userId)
+    .eq('title_id', titleId);
 
-  // التأكد من وجود الحساب المستهدف
+  if (error) throw error;
+}
+
+export async function isInWatchlist(userId, titleId) {
+  const { data, error } = await supabase
+    .from('watchlist')
+    .select('title_id')
+    .eq('user_id', userId)
+    .eq('title_id', titleId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return !!data;
+}
+
+export async function fetchWatchlist(userId) {
+  const { data, error } = await supabase
+    .from('watchlist')
+    .select('title_id, added_at, titles(*)')
+    .eq('user_id', userId)
+    .order('added_at', { ascending: false });
+
+  if (error) throw error;
+
+  return (data || [])
+    .map((row) => row.titles)
+    .filter(Boolean);
+}
+
+// ---- Watch history / Continue Watching -----------------------------------
+
+export async function saveProgress(
+  userId,
+  episodeId,
+  progressSeconds,
+  completed = false
+) {
+  const { error } = await supabase
+    .from('watch_history')
+    .upsert(
+      {
+        user_id: userId,
+        episode_id: episodeId,
+        progress_seconds: Math.floor(progressSeconds),
+        completed,
+        updated_at: new Date().toISOString(),
+      },
+      {
+        onConflict: 'user_id,episode_id',
+      }
+    );
+
+  if (error) throw error;
+}
+
+export async function fetchContinueWatching(userId, limit = 10) {
+  const { data, error } = await supabase
+    .from('watch_history')
+    .select(
+      'progress_seconds, completed, updated_at, episodes(*, titles(*))'
+    )
+    .eq('user_id', userId)
+    .eq('completed', false)
+    .order('updated_at', { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return data || [];
+}
+
+export async function fetchWatchedEpisodeIds(userId, titleId) {
+  const { data, error } = await supabase
+    .from('watch_history')
+    .select(
+      'episode_id, completed, episodes!inner(title_id)'
+    )
+    .eq('user_id', userId)
+    .eq('episodes.title_id', titleId)
+    .eq('completed', true);
+
+  if (error) throw error;
+
+  return new Set(
+    (data || []).map((r) => r.episode_id)
+  );
+}
+
+// ---- Friendships ----------------------------------------------------------
+
+export async function sendFriendRequestByCode(
+  requesterId,
+  targetUserCode
+) {
   const { data: target, error: findErr } = await supabase
     .from('profiles')
     .select('id')
-    .eq('id', cleanTargetId)
+    .eq('user_code', targetUserCode.trim())
     .maybeSingle();
 
   if (findErr) throw findErr;
-  if (!target) throw new Error('لم يتم العثور على مستخدم بهذا الـ ID.');
 
-  // إدخال طلب الصداقة
+  if (!target) {
+    throw new Error('No user found with that ID.');
+  }
+
+  if (target.id === requesterId) {
+    throw new Error("You can't add yourself.");
+  }
+
   const { error } = await supabase
     .from('friendships')
     .insert({
-      requester_id: reqId,
+      requester_id: requesterId,
       addressee_id: target.id,
       status: 'pending',
     });
 
   if (error) {
     if (error.code === '23505') {
-      throw new Error('تم إرسال طلب الصداقة من قبل أو أنتما أصدقاء بالفعل.');
+      throw new Error('Friend request already sent.');
     }
+
     throw error;
   }
-
-  return true;
 }
 
-/**
- * القبول أو الرفض على طلب الصداقة
- */
-export async function respondToFriendRequest(friendshipId, status) {
-  if (status === 'rejected') {
-    const { error } = await supabase
-      .from('friendships')
-      .delete()
-      .eq('id', friendshipId);
-
-    if (error) throw error;
-    return;
-  }
-
+export async function respondToFriendRequest(
+  friendshipId,
+  status
+) {
   const { error } = await supabase
     .from('friendships')
-    .update({
-      status,
-      responded_at: new Date().toISOString(),
-    })
+    .update({ status })
     .eq('id', friendshipId);
 
   if (error) throw error;
 }
 
-/**
- * جلب قائمة الأصدقاء المقبولين (Accepted Friends)
- */
 export async function fetchFriends(userId) {
   const { data, error } = await supabase
     .from('friendships')
-    .select('*, requester:requester_id(*), addressee:addressee_id(*)')
-    .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
+    .select(
+      '*, requester:requester_id(*), addressee:addressee_id(*)'
+    )
+    .or(
+      `requester_id.eq.${userId},addressee_id.eq.${userId}`
+    )
     .eq('status', 'accepted');
 
   if (error) throw error;
 
   return (data || []).map((f) =>
-    f.requester_id === userId ? f.addressee : f.requester
+    f.requester_id === userId
+      ? f.addressee
+      : f.requester
   );
 }
 
-/**
- * جلب الطلبات المعلقة الواردة (Pending Requests)
- */
 export async function fetchPendingRequests(userId) {
   const { data, error } = await supabase
     .from('friendships')
@@ -220,33 +384,13 @@ export async function fetchPendingRequests(userId) {
   return data || [];
 }
 
-/**
- * الاستماع للطلبات الجديدة لحظياً (Realtime)
- */
-export function subscribeToFriendRequests(userId, onChange) {
-  const channel = supabase
-    .channel(`friend-requests:${userId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'friendships',
-        filter: `addressee_id=eq.${userId}`,
-      },
-      onChange
-    )
-    .subscribe();
+// ---- Messages / chat --------------------------------------------------
 
-  return () => supabase.removeChannel(channel);
-}
-
-// ---- Messages & Chat (نظام المحادثات) --------------------------------------
-
-/**
- * جلب جميع الرسائل بين مستخدمين
- */
-export async function fetchMessages(userId, friendId, limit = 100) {
+export async function fetchMessages(
+  userId,
+  friendId,
+  limit = 100
+) {
   const { data, error } = await supabase
     .from('messages')
     .select('*')
@@ -260,9 +404,6 @@ export async function fetchMessages(userId, friendId, limit = 100) {
   return data || [];
 }
 
-/**
- * إرسال رسالة (نص، صوت، صورة، أو مشاركة فيلم)
- */
 export async function sendMessage({
   senderId,
   receiverId,
@@ -286,13 +427,111 @@ export async function sendMessage({
   return data;
 }
 
-/**
- * الاستماع للرسائل الجديدة لحظياً (Realtime)
- */
-export function subscribeToMessages(userId, friendId, onMessage) {
-  const roomKey = [userId, friendId].sort().join(':');
+// ---- Chat Media -----------------------------------------------------------
+
+function getFileExtension(file) {
+  const originalName = file?.name || '';
+  const originalExtension = originalName.includes('.')
+    ? originalName.split('.').pop().toLowerCase()
+    : '';
+
+  if (originalExtension) {
+    return originalExtension;
+  }
+
+  const mime = file?.type || '';
+
+  if (mime.includes('jpeg')) return 'jpg';
+  if (mime.includes('png')) return 'png';
+  if (mime.includes('webp')) return 'webp';
+  if (mime.includes('gif')) return 'gif';
+  if (mime.includes('mp4')) return 'mp4';
+  if (mime.includes('mpeg')) return 'mp3';
+  if (mime.includes('wav')) return 'wav';
+  if (mime.includes('ogg')) return 'ogg';
+  if (mime.includes('webm')) return 'webm';
+
+  return 'bin';
+}
+
+export async function uploadChatMedia({
+  userId,
+  file,
+  kind = 'image',
+}) {
+  if (!userId) {
+    throw new Error('You must be signed in.');
+  }
+
+  if (!file) {
+    throw new Error('No file selected.');
+  }
+
+  const maxImageSize = 15 * 1024 * 1024;
+  const maxAudioSize = 25 * 1024 * 1024;
+
+  if (kind === 'image' && file.size > maxImageSize) {
+    throw new Error('Image is too large. Maximum size is 15 MB.');
+  }
+
+  if (kind === 'voice' && file.size > maxAudioSize) {
+    throw new Error('Voice message is too large. Maximum size is 25 MB.');
+  }
+
+  const extension = getFileExtension(file);
+
+  const filePath = `${userId}/${kind}-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}.${extension}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('chat-media')
+    .upload(filePath, file, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType: file.type || undefined,
+    });
+
+  if (uploadError) {
+    throw uploadError;
+  }
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage
+    .from('chat-media')
+    .getPublicUrl(filePath);
+
+  return {
+    path: filePath,
+    url: publicUrl,
+    kind,
+  };
+}
+
+export function getChatMediaUrl(path) {
+  if (!path) return '';
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage
+    .from('chat-media')
+    .getPublicUrl(path);
+
+  return publicUrl;
+}
+
+// ---- Messages Realtime ----------------------------------------------------
+
+export function subscribeToMessages(
+  userId,
+  friendId,
+  onMessage
+) {
   const channel = supabase
-    .channel(`messages:${roomKey}`)
+    .channel(
+      `messages:${[userId, friendId].sort().join(':')}`
+    )
     .on(
       'postgres_changes',
       {
@@ -302,39 +541,107 @@ export function subscribeToMessages(userId, friendId, onMessage) {
       },
       (payload) => {
         const m = payload.new;
-        const matches =
-          (m.sender_id === userId && m.receiver_id === friendId) ||
-          (m.sender_id === friendId && m.receiver_id === userId);
 
-        if (matches) onMessage(m);
+        const matches =
+          (m.sender_id === userId &&
+            m.receiver_id === friendId) ||
+          (m.sender_id === friendId &&
+            m.receiver_id === userId);
+
+        if (matches) {
+          onMessage(m);
+        }
       }
     )
     .subscribe();
 
-  return () => supabase.removeChannel(channel);
+  return () =>
+    supabase.removeChannel(channel);
 }
 
-// ---- Chat Media Storage (رفع الصور والتسجيلات الصوتية) ------------------------
+// ---- Watch Party ------------------------------------------------------
 
-export async function uploadChatMedia({ userId, file, kind = 'image' }) {
-  if (!userId) throw new Error('يرجى تسجيل الدخول أولاً.');
-  if (!file) throw new Error('لم يتم اختيار أي ملف.');
+export async function createWatchParty({
+  hostId,
+  titleId,
+  episodeId,
+}) {
+  const { data, error } = await supabase
+    .from('watch_parties')
+    .insert({
+      host_id: hostId,
+      title_id: titleId,
+      episode_id: episodeId,
+      status: 'pending',
+    })
+    .select()
+    .single();
 
-  const extension = file.name?.split('.').pop() || (kind === 'image' ? 'jpg' : 'webm');
-  const filePath = `${userId}/${kind}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${extension}`;
+  if (error) throw error;
 
-  const { error: uploadError } = await supabase.storage
-    .from('chat-media')
-    .upload(filePath, file, {
-      cacheControl: '3600',
-      upsert: false,
+  await supabase
+    .from('watch_party_members')
+    .insert({
+      party_id: data.id,
+      user_id: hostId,
     });
 
-  if (uploadError) throw uploadError;
+  return data;
+}
 
-  const { data: { publicUrl } } = supabase.storage
-    .from('chat-media')
-    .getPublicUrl(filePath);
+export async function joinWatchParty(
+  partyId,
+  userId
+) {
+  const { error } = await supabase
+    .from('watch_party_members')
+    .insert({
+      party_id: partyId,
+      user_id: userId,
+    });
 
-  return { url: publicUrl, path: filePath };
+  if (error && error.code !== '23505') throw error;
+}
+
+export async function updatePartyPlayback(
+  partyId,
+  playbackPosition,
+  status
+) {
+  const patch = {
+    playback_position: Math.floor(playbackPosition),
+  };
+
+  if (status) {
+    patch.status = status;
+  }
+
+  const { error } = await supabase
+    .from('watch_parties')
+    .update(patch)
+    .eq('id', partyId);
+
+  if (error) throw error;
+}
+
+export function subscribeToParty(
+  partyId,
+  onUpdate
+) {
+  const channel = supabase
+    .channel(`party:${partyId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'watch_parties',
+        filter: `id=eq.${partyId}`,
+      },
+      (payload) => onUpdate(payload.new)
+    )
+    .subscribe();
+
+  return () =>
+    supabase.removeChannel(channel);
 }
