@@ -42,264 +42,9 @@ export async function getProfile(userId) {
   return data;
 }
 
-export async function updateProfile(userId, patch) {
-  const { data, error } = await supabase
-    .from('profiles')
-    .update(patch)
-    .eq('id', userId)
-    .select()
-    .single();
-
-  if (error) throw error;
-  return data;
-}
-
-// ---- Titles ---------------------------------------------------------------
-
-export async function fetchTitles({
-  type,
-  genre,
-  year,
-  minRating,
-  search,
-  sortBy = 'created_at',
-  page,
-  limit = 24,
-  offset,
-} = {}) {
-  let query = supabase.from('titles').select('*', { count: 'exact' });
-
-  if (type && type !== 'all') query = query.eq('type', type);
-  if (genre && genre !== 'all') query = query.contains('genres', [genre]);
-  if (year) query = query.eq('release_year', year);
-  if (minRating) query = query.gte('rating_avg', minRating);
-  if (search) query = query.ilike('name', `%${search}%`);
-
-  if (sortBy === 'rating') {
-    query = query.order('rating_avg', { ascending: false });
-  } else if (sortBy === 'year') {
-    query = query.order('release_year', { ascending: false });
-  } else {
-    query = query.order('created_at', { ascending: false });
-  }
-
-  if (page !== undefined && page !== null) {
-    const from = (page - 1) * limit;
-    const to = from + limit - 1;
-    query = query.range(from, to);
-  } else if (offset !== undefined && offset !== null) {
-    const from = offset;
-    const to = offset + limit - 1;
-    query = query.range(from, to);
-  } else if (limit) {
-    query = query.limit(limit);
-  }
-
-  const { data, count, error } = await query;
-
-  if (error) throw error;
-
-  const result = data || [];
-  result.count = count ?? result.length;
-  return result;
-}
-
-export async function fetchTitleById(id) {
-  const { data, error } = await supabase
-    .from('titles')
-    .select('*')
-    .eq('id', id)
-    .single();
-
-  if (error) throw error;
-  return data;
-}
-
-export async function fetchEpisodes(titleId) {
-  const { data, error } = await supabase
-    .from('episodes')
-    .select('*')
-    .eq('title_id', titleId)
-    .order('season', { ascending: true })
-    .order('episode_number', { ascending: true });
-
-  if (error) throw error;
-  return data || [];
-}
-
-export async function fetchRecommendations(genres, excludeId, limit = 12) {
-  let query = supabase
-    .from('titles')
-    .select('*')
-    .neq('id', excludeId)
-    .limit(limit);
-
-  if (genres?.length) {
-    query = query.overlaps('genres', genres);
-  }
-
-  const { data, error } = await query;
-
-  if (error) throw error;
-  return data || [];
-}
-
-// ---- Ratings ----------------------------------------------------------
-
-export async function rateTitle(userId, titleId, score) {
-  const { error } = await supabase
-    .from('ratings')
-    .upsert(
-      {
-        user_id: userId,
-        title_id: titleId,
-        score,
-      },
-      {
-        onConflict: 'user_id,title_id',
-      }
-    );
-
-  if (error) throw error;
-
-  const { data: all, error: fetchErr } = await supabase
-    .from('ratings')
-    .select('score')
-    .eq('title_id', titleId);
-
-  if (fetchErr) throw fetchErr;
-
-  const avg = all.length
-    ? all.reduce((s, r) => s + r.score, 0) / all.length
-    : 0;
-
-  await supabase
-    .from('titles')
-    .update({ rating_avg: avg })
-    .eq('id', titleId);
-
-  return avg;
-}
-
-export async function getUserRating(userId, titleId) {
-  const { data, error } = await supabase
-    .from('ratings')
-    .select('score')
-    .eq('user_id', userId)
-    .eq('title_id', titleId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data?.score || 0;
-}
-
-// ---- Watchlist ----------------------------------------------------------
-
-export async function addToWatchlist(userId, titleId) {
-  const { error } = await supabase
-    .from('watchlist')
-    .insert({
-      user_id: userId,
-      title_id: titleId,
-    });
-
-  if (error && error.code !== '23505') throw error;
-}
-
-export async function removeFromWatchlist(userId, titleId) {
-  const { error } = await supabase
-    .from('watchlist')
-    .delete()
-    .eq('user_id', userId)
-    .eq('title_id', titleId);
-
-  if (error) throw error;
-}
-
-export async function isInWatchlist(userId, titleId) {
-  const { data, error } = await supabase
-    .from('watchlist')
-    .select('title_id')
-    .eq('user_id', userId)
-    .eq('title_id', titleId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return !!data;
-}
-
-export async function fetchWatchlist(userId) {
-  const { data, error } = await supabase
-    .from('watchlist')
-    .select('title_id, added_at, titles(*)')
-    .eq('user_id', userId)
-    .order('added_at', { ascending: false });
-
-  if (error) throw error;
-
-  return (data || [])
-    .map((row) => row.titles)
-    .filter(Boolean);
-}
-
-// ---- Watch history / Continue Watching -----------------------------------
-
-export async function saveProgress(
-  userId,
-  episodeId,
-  progressSeconds,
-  completed = false
-) {
-  const { error } = await supabase
-    .from('watch_history')
-    .upsert(
-      {
-        user_id: userId,
-        episode_id: episodeId,
-        progress_seconds: Math.floor(progressSeconds),
-        completed,
-        updated_at: new Date().toISOString(),
-      },
-      {
-        onConflict: 'user_id,episode_id',
-      }
-    );
-
-  if (error) throw error;
-}
-
-export async function fetchContinueWatching(userId, limit = 10) {
-  const { data, error } = await supabase
-    .from('watch_history')
-    .select(
-      'progress_seconds, completed, updated_at, episodes(*, titles(*))'
-    )
-    .eq('user_id', userId)
-    .eq('completed', false)
-    .order('updated_at', { ascending: false })
-    .limit(limit);
-
-  if (error) throw error;
-  return data || [];
-}
-
-export async function fetchWatchedEpisodeIds(userId, titleId) {
-  const { data, error } = await supabase
-    .from('watch_history')
-    .select('episode_id, completed, episodes!inner(title_id)')
-    .eq('user_id', userId)
-    .eq('episodes.title_id', titleId)
-    .eq('completed', true);
-
-  if (error) throw error;
-
-  return new Set((data || []).map((r) => r.episode_id));
-}
-
-// ---- Friendships (إرسال ومعالجة مباشرة بـ User ID) -------------------------
+// ---- Friendships & Requests -----------------------------------------------
 
 export async function sendFriendRequestByCode(requesterId, targetUserId) {
-  // للتعامل مع الحالة إذا تم تمريرها ككائن أو كـ arguments
   let reqId = requesterId;
   let targetId = targetUserId;
 
@@ -308,13 +53,17 @@ export async function sendFriendRequestByCode(requesterId, targetUserId) {
     targetId = requesterId.targetUserId || requesterId.friendCode;
   }
 
-  if (!targetId || typeof targetId !== 'string') {
-    throw new Error('يرجى كتابة User ID الخاص بالمستخدم.');
+  if (!targetId || typeof targetId !== 'string' || !targetId.trim()) {
+    throw new Error('يرجى إدخال User ID الخاص بالمستخدم.');
   }
 
   const cleanTargetId = targetId.trim();
 
-  // التأكد من وجود المستخدم في قاعدة البيانات عبر id
+  if (cleanTargetId === reqId) {
+    throw new Error('لا يمكنك إرسال طلب صداقة لنفسك.');
+  }
+
+  // التأكد من وجود المستخدم بالـ ID المباشر
   const { data: target, error: findErr } = await supabase
     .from('profiles')
     .select('id')
@@ -322,20 +71,15 @@ export async function sendFriendRequestByCode(requesterId, targetUserId) {
     .maybeSingle();
 
   if (findErr) throw findErr;
+  if (!target) throw new Error('لم يتم العثور على مستخدم بهذا الـ ID.');
 
-  if (!target) {
-    throw new Error('لم يتم العثور على مستخدم بهذا الـ ID.');
-  }
-
-  if (target.id === reqId) {
-    throw new Error('لا يمكنك إرسال طلب صداقة لنفسك.');
-  }
-
-  const { error } = await supabase.from('friendships').insert({
-    requester_id: reqId,
-    addressee_id: target.id,
-    status: 'pending',
-  });
+  const { error } = await supabase
+    .from('friendships')
+    .insert({
+      requester_id: reqId,
+      addressee_id: target.id,
+      status: 'pending',
+    });
 
   if (error) {
     if (error.code === '23505') {
@@ -348,9 +92,23 @@ export async function sendFriendRequestByCode(requesterId, targetUserId) {
 }
 
 export async function respondToFriendRequest(friendshipId, status) {
+  if (status === 'rejected') {
+    // حذف الصف عند الرفض لكي يتمكن المستخدم من إعادة الإرسال لاحقاً بدون مشاكل الـ Unique Constraint
+    const { error } = await supabase
+      .from('friendships')
+      .delete()
+      .eq('id', friendshipId);
+
+    if (error) throw error;
+    return;
+  }
+
   const { error } = await supabase
     .from('friendships')
-    .update({ status })
+    .update({
+      status,
+      responded_at: new Date().toISOString(),
+    })
     .eq('id', friendshipId);
 
   if (error) throw error;
@@ -381,7 +139,25 @@ export async function fetchPendingRequests(userId) {
   return data || [];
 }
 
-// ---- Messages / chat --------------------------------------------------
+export function subscribeToFriendRequests(userId, onChange) {
+  const channel = supabase
+    .channel(`friend-requests:${userId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'friendships',
+        filter: `addressee_id=eq.${userId}`,
+      },
+      onChange
+    )
+    .subscribe();
+
+  return () => supabase.removeChannel(channel);
+}
+
+// ---- Messages & Chat ------------------------------------------------------
 
 export async function fetchMessages(userId, friendId, limit = 100) {
   const { data, error } = await supabase
@@ -420,87 +196,10 @@ export async function sendMessage({
   return data;
 }
 
-// ---- Chat Media -----------------------------------------------------------
-
-function getFileExtension(file) {
-  const originalName = file?.name || '';
-  const originalExtension = originalName.includes('.')
-    ? originalName.split('.').pop().toLowerCase()
-    : '';
-
-  if (originalExtension) return originalExtension;
-
-  const mime = file?.type || '';
-
-  if (mime.includes('jpeg')) return 'jpg';
-  if (mime.includes('png')) return 'png';
-  if (mime.includes('webp')) return 'webp';
-  if (mime.includes('gif')) return 'gif';
-  if (mime.includes('mp4')) return 'mp4';
-  if (mime.includes('mpeg')) return 'mp3';
-  if (mime.includes('wav')) return 'wav';
-  if (mime.includes('ogg')) return 'ogg';
-  if (mime.includes('webm')) return 'webm';
-
-  return 'bin';
-}
-
-export async function uploadChatMedia({ userId, file, kind = 'image' }) {
-  if (!userId) throw new Error('You must be signed in.');
-  if (!file) throw new Error('No file selected.');
-
-  const maxImageSize = 15 * 1024 * 1024;
-  const maxAudioSize = 25 * 1024 * 1024;
-
-  if (kind === 'image' && file.size > maxImageSize) {
-    throw new Error('Image is too large. Maximum size is 15 MB.');
-  }
-
-  if (kind === 'voice' && file.size > maxAudioSize) {
-    throw new Error('Voice message is too large. Maximum size is 25 MB.');
-  }
-
-  const extension = getFileExtension(file);
-  const filePath = `${userId}/${kind}-${Date.now()}-${Math.random()
-    .toString(36)
-    .slice(2, 10)}.${extension}`;
-
-  const { error: uploadError } = await supabase.storage
-    .from('chat-media')
-    .upload(filePath, file, {
-      cacheControl: '3600',
-      upsert: false,
-      contentType: file.type || undefined,
-    });
-
-  if (uploadError) throw uploadError;
-
-  const {
-    data: { publicUrl },
-  } = supabase.storage.from('chat-media').getPublicUrl(filePath);
-
-  return {
-    path: filePath,
-    url: publicUrl,
-    kind,
-  };
-}
-
-export function getChatMediaUrl(path) {
-  if (!path) return '';
-
-  const {
-    data: { publicUrl },
-  } = supabase.storage.from('chat-media').getPublicUrl(path);
-
-  return publicUrl;
-}
-
-// ---- Messages Realtime ----------------------------------------------------
-
 export function subscribeToMessages(userId, friendId, onMessage) {
+  const roomKey = [userId, friendId].sort().join(':');
   const channel = supabase
-    .channel(`messages:${[userId, friendId].sort().join(':')}`)
+    .channel(`messages:${roomKey}`)
     .on(
       'postgres_changes',
       {
@@ -522,68 +221,27 @@ export function subscribeToMessages(userId, friendId, onMessage) {
   return () => supabase.removeChannel(channel);
 }
 
-// ---- Watch Party ------------------------------------------------------
+// ---- Chat Media Storage ---------------------------------------------------
 
-export async function createWatchParty({ hostId, titleId, episodeId }) {
-  const { data, error } = await supabase
-    .from('watch_parties')
-    .insert({
-      host_id: hostId,
-      title_id: titleId,
-      episode_id: episodeId,
-      status: 'pending',
-    })
-    .select()
-    .single();
+export async function uploadChatMedia({ userId, file, kind = 'image' }) {
+  if (!userId) throw new Error('يرجى تسجيل الدخول أولاً.');
+  if (!file) throw new Error('لم يتم اختيار أي ملف.');
 
-  if (error) throw error;
+  const extension = file.name?.split('.').pop() || (kind === 'image' ? 'jpg' : 'webm');
+  const filePath = `${userId}/${kind}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${extension}`;
 
-  await supabase.from('watch_party_members').insert({
-    party_id: data.id,
-    user_id: hostId,
-  });
+  const { error: uploadError } = await supabase.storage
+    .from('chat-media')
+    .upload(filePath, file, {
+      cacheControl: '3600',
+      upsert: false,
+    });
 
-  return data;
-}
+  if (uploadError) throw uploadError;
 
-export async function joinWatchParty(partyId, userId) {
-  const { error } = await supabase.from('watch_party_members').insert({
-    party_id: partyId,
-    user_id: userId,
-  });
+  const { data: { publicUrl } } = supabase.storage
+    .from('chat-media')
+    .getPublicUrl(filePath);
 
-  if (error && error.code !== '23505') throw error;
-}
-
-export async function updatePartyPlayback(partyId, playbackPosition, status) {
-  const patch = {
-    playback_position: Math.floor(playbackPosition),
-  };
-
-  if (status) patch.status = status;
-
-  const { error } = await supabase
-    .from('watch_parties')
-    .update(patch)
-    .eq('id', partyId);
-
-  if (error) throw error;
-}
-
-export function subscribeToParty(partyId, onUpdate) {
-  const channel = supabase
-    .channel(`party:${partyId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'watch_parties',
-        filter: `id=eq.${partyId}`,
-      },
-      (payload) => onUpdate(payload.new)
-    )
-    .subscribe();
-
-  return () => supabase.removeChannel(channel);
+  return { url: publicUrl, path: filePath };
 }
