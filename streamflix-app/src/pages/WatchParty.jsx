@@ -1,16 +1,6 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
-
-import {
-  useNavigate,
-  useParams,
-} from 'react-router-dom';
-
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-
 import { supabase } from '../lib/supabaseClient';
 
 import {
@@ -23,6 +13,8 @@ import {
   uploadChatMedia,
 } from '../lib/api';
 
+import './WatchParty.css';
+
 export default function WatchParty() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -34,233 +26,66 @@ export default function WatchParty() {
 
   const [members, setMembers] = useState([]);
   const [profiles, setProfiles] = useState({});
-
   const [messages, setMessages] = useState([]);
 
-  const [messageText, setMessageText] =
-    useState('');
+  const [messageText, setMessageText] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [leaving, setLeaving] = useState(false);
+  const [sending, setSending] = useState(false);
 
-  const [loading, setLoading] =
-    useState(true);
+  const [recording, setRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [uploadingVoice, setUploadingVoice] = useState(false);
 
-  const [error, setError] =
-    useState('');
-
-  const [leaving, setLeaving] =
-    useState(false);
-
-  const [sending, setSending] =
-    useState(false);
-
-  const [recording, setRecording] =
-    useState(false);
-
-  const [recordingTime, setRecordingTime] =
-    useState(0);
-
-  const [uploadingVoice, setUploadingVoice] =
-    useState(false);
-
-  const messagesEndRef =
-    useRef(null);
-
-  const mediaRecorderRef =
-    useRef(null);
-
-  const mediaStreamRef =
-    useRef(null);
-
-  const voiceChunksRef =
-    useRef([]);
-
-  const recordingTimerRef =
-    useRef(null);
-
-  /*
-   * ========================================
-   * LOAD PARTY
-   * ========================================
-   */
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function openParty() {
-      if (!id || !user?.id) return;
-
-      try {
-        setLoading(true);
-        setError('');
-
-        const partyData =
-          await getWatchParty(id);
-
-        if (!partyData) {
-          throw new Error(
-            'غرفة المشاهدة غير موجودة'
-          );
-        }
-
-        /*
-         * Invitation-only protection.
-         */
-
-        await joinWatchParty(
-          id,
-          user.id
-        );
-
-        if (cancelled) return;
-
-        setParty(partyData);
-
-        /*
-         * Load title.
-         */
-
-        if (partyData.title_id) {
-          try {
-            const titleData =
-              await fetchTitleById(
-                partyData.title_id
-              );
-
-            if (!cancelled) {
-              setTitle(titleData);
-            }
-
-            /*
-             * Load current episode.
-             */
-
-            if (partyData.episode_id) {
-              try {
-                const episodes =
-                  await fetchEpisodes(
-                    partyData.title_id
-                  );
-
-                const found =
-                  (episodes || []).find(
-                    (item) =>
-                      item.id ===
-                      partyData.episode_id
-                  );
-
-                if (!cancelled) {
-                  setEpisode(
-                    found || null
-                  );
-                }
-              } catch (episodeError) {
-                console.error(
-                  'Episode loading error:',
-                  episodeError
-                );
-              }
-            }
-          } catch (titleError) {
-            console.error(
-              'Title loading error:',
-              titleError
-            );
-          }
-        }
-
-        /*
-         * Load room data.
-         */
-
-        await Promise.all([
-          loadMembers(
-            partyData.id
-          ),
-          loadMessages(
-            partyData.id
-          ),
-        ]);
-      } catch (err) {
-        if (!cancelled) {
-          setError(
-            err?.message ||
-              'لا تملك صلاحية الدخول إلى هذه الغرفة'
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    openParty();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [id, user?.id]);
-
-  /*
-   * ========================================
-   * LOAD MEMBERS
-   * ========================================
-   */
+  const messagesEndRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const mediaStreamRef = useRef(null);
+  const voiceChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
 
   async function loadMembers(partyId) {
     try {
-      const { data, error: membersError } =
-        await supabase
-          .from('watch_party_members')
-          .select('*')
-          .eq('party_id', partyId)
-          .order('joined_at', {
-            ascending: true,
-          });
+      const { data, error: membersError } = await supabase
+        .from('watch_party_members')
+        .select('*')
+        .eq('party_id', partyId)
+        .order('joined_at', {
+          ascending: true,
+        });
 
-      if (membersError) {
-        throw membersError;
-      }
+      if (membersError) throw membersError;
 
       const list = data || [];
-
       setMembers(list);
 
       const userIds = [
         ...new Set(
           list
-            .map(
-              (item) =>
-                item.user_id
-            )
+            .map((item) => item.user_id)
             .filter(Boolean)
         ),
       ];
 
       if (!userIds.length) return;
 
-      const { data: profileData } =
-        await supabase
-          .from('profiles')
-          .select(
-            'id, username, display_name, avatar_url'
-          )
-          .in('id', userIds);
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select(
+          'id, username, display_name, avatar_url'
+        )
+        .in('id', userIds);
 
       const profileMap = {};
 
-      (profileData || []).forEach(
-        (profile) => {
-          profileMap[profile.id] =
-            profile;
-        }
-      );
+      (profileData || []).forEach((profile) => {
+        profileMap[profile.id] = profile;
+      });
 
-      setProfiles(
-        (current) => ({
-          ...current,
-          ...profileMap,
-        })
-      );
+      setProfiles((current) => ({
+        ...current,
+        ...profileMap,
+      }));
     } catch (err) {
       console.error(
         'Members loading error:',
@@ -268,12 +93,6 @@ export default function WatchParty() {
       );
     }
   }
-
-  /*
-   * ========================================
-   * LOAD PARTY CHAT
-   * ========================================
-   */
 
   async function loadMessages(partyId) {
     try {
@@ -294,10 +113,6 @@ export default function WatchParty() {
       const list = data || [];
 
       setMessages(list);
-
-      /*
-       * Load sender profiles.
-       */
 
       const senderIds = [
         ...new Set(
@@ -343,11 +158,138 @@ export default function WatchParty() {
     }
   }
 
-  /*
-   * ========================================
-   * REALTIME PARTY
-   * ========================================
-   */
+  async function loadProfile(userId) {
+    if (!userId) return;
+
+    if (profiles[userId]) return;
+
+    try {
+      const { data } =
+        await supabase
+          .from('profiles')
+          .select(
+            'id, username, display_name, avatar_url'
+          )
+          .eq('id', userId)
+          .maybeSingle();
+
+      if (data) {
+        setProfiles(
+          (current) => ({
+            ...current,
+            [userId]: data,
+          })
+        );
+      }
+    } catch (err) {
+      console.error(
+        'Profile loading error:',
+        err
+      );
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function openParty() {
+      if (!id || !user?.id) return;
+
+      try {
+        setLoading(true);
+        setError('');
+
+        const partyData =
+          await getWatchParty(id);
+
+        if (!partyData) {
+          throw new Error(
+            'غرفة المشاهدة غير موجودة'
+          );
+        }
+
+        await joinWatchParty(
+          id,
+          user.id
+        );
+
+        if (cancelled) return;
+
+        setParty(partyData);
+
+        if (partyData.title_id) {
+          try {
+            const titleData =
+              await fetchTitleById(
+                partyData.title_id
+              );
+
+            if (!cancelled) {
+              setTitle(titleData);
+            }
+
+            if (partyData.episode_id) {
+              try {
+                const episodes =
+                  await fetchEpisodes(
+                    partyData.title_id
+                  );
+
+                const found =
+                  (episodes || []).find(
+                    (item) =>
+                      item.id ===
+                      partyData.episode_id
+                  );
+
+                if (!cancelled) {
+                  setEpisode(
+                    found || null
+                  );
+                }
+              } catch (episodeError) {
+                console.error(
+                  'Episode loading error:',
+                  episodeError
+                );
+              }
+            }
+          } catch (titleError) {
+            console.error(
+              'Title loading error:',
+              titleError
+            );
+          }
+        }
+
+        await Promise.all([
+          loadMembers(
+            partyData.id
+          ),
+          loadMessages(
+            partyData.id
+          ),
+        ]);
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err?.message ||
+              'لا تملك صلاحية الدخول إلى هذه الغرفة'
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    openParty();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, user?.id]);
 
   useEffect(() => {
     if (!id) return;
@@ -387,12 +329,6 @@ export default function WatchParty() {
       }
     };
   }, [id]);
-
-  /*
-   * ========================================
-   * REALTIME MEMBERS + CHAT
-   * ========================================
-   */
 
   useEffect(() => {
     if (!id) return;
@@ -456,13 +392,9 @@ export default function WatchParty() {
               }
             );
 
-            if (
+            await loadProfile(
               newMessage.sender_id
-            ) {
-              await loadProfile(
-                newMessage.sender_id
-              );
-            }
+            );
           }
         )
         .subscribe();
@@ -478,60 +410,11 @@ export default function WatchParty() {
     };
   }, [id]);
 
-  /*
-   * ========================================
-   * LOAD ONE PROFILE
-   * ========================================
-   */
-
-  async function loadProfile(userId) {
-    if (!userId) return;
-
-    if (profiles[userId]) return;
-
-    try {
-      const { data } =
-        await supabase
-          .from('profiles')
-          .select(
-            'id, username, display_name, avatar_url'
-          )
-          .eq('id', userId)
-          .maybeSingle();
-
-      if (data) {
-        setProfiles(
-          (current) => ({
-            ...current,
-            [userId]: data,
-          })
-        );
-      }
-    } catch (err) {
-      console.error(
-        'Profile loading error:',
-        err
-      );
-    }
-  }
-
-  /*
-   * ========================================
-   * SCROLL CHAT
-   * ========================================
-   */
-
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
       behavior: 'smooth',
     });
   }, [messages]);
-
-  /*
-   * ========================================
-   * SEND TEXT
-   * ========================================
-   */
 
   async function sendTextMessage(
     event
@@ -608,12 +491,6 @@ export default function WatchParty() {
       setSending(false);
     }
   }
-
-  /*
-   * ========================================
-   * VOICE RECORDING
-   * ========================================
-   */
 
   async function startRecording() {
     if (
@@ -733,12 +610,17 @@ export default function WatchParty() {
               }
             );
 
+          /*
+           * IMPORTANT:
+           * uploadChatMedia uses an object.
+           */
+
           const uploaded =
-            await uploadChatMedia(
-              user.id,
-              voiceFile,
-              'voice'
-            );
+            await uploadChatMedia({
+              userId: user.id,
+              file: voiceFile,
+              kind: 'voice',
+            });
 
           if (!uploaded) {
             throw new Error(
@@ -820,6 +702,7 @@ export default function WatchParty() {
           setUploadingVoice(
             false
           );
+
           setRecordingTime(0);
 
           if (
@@ -877,12 +760,6 @@ export default function WatchParty() {
     }
   }
 
-  /*
-   * ========================================
-   * STOP RECORDING
-   * ========================================
-   */
-
   function stopRecording() {
     if (
       !mediaRecorderRef.current ||
@@ -919,12 +796,6 @@ export default function WatchParty() {
     }
   }
 
-  /*
-   * ========================================
-   * CLEAN RECORDING
-   * ========================================
-   */
-
   useEffect(() => {
     return () => {
       if (
@@ -943,7 +814,7 @@ export default function WatchParty() {
         try {
           mediaRecorderRef.current.stop();
         } catch {
-          // Ignore cleanup error.
+          // cleanup
         }
       }
 
@@ -959,12 +830,6 @@ export default function WatchParty() {
       }
     };
   }, []);
-
-  /*
-   * ========================================
-   * FORMAT TIME
-   * ========================================
-   */
 
   function formatTime(seconds) {
     const value =
@@ -983,12 +848,6 @@ export default function WatchParty() {
     ).padStart(2, '0')}`;
   }
 
-  /*
-   * ========================================
-   * PROFILE NAME
-   * ========================================
-   */
-
   function getProfileName(
     userId
   ) {
@@ -1005,12 +864,6 @@ export default function WatchParty() {
       'مستخدم'
     );
   }
-
-  /*
-   * ========================================
-   * EXIT PARTY
-   * ========================================
-   */
 
   async function exitParty() {
     if (leaving) return;
@@ -1034,84 +887,22 @@ export default function WatchParty() {
     }
   }
 
-  /*
-   * ========================================
-   * KEYBOARD
-   * ========================================
-   */
-
-  function handleMessageKeyDown(
-    event
-  ) {
-    if (
-      event.key === 'Enter' &&
-      !event.shiftKey
-    ) {
-      event.preventDefault();
-      sendTextMessage(event);
-    }
-  }
-
-  /*
-   * ========================================
-   * LOADING
-   * ========================================
-   */
-
   if (loading) {
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: 'var(--bg)',
-          color: 'var(--muted)',
-          padding: '30px',
-          textAlign: 'center',
-        }}
-      >
+      <div className="watch-party-loading">
         جاري فتح غرفة المشاهدة...
       </div>
     );
   }
 
-  /*
-   * ========================================
-   * ERROR
-   * ========================================
-   */
-
   if (!party || error) {
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '15px',
-          padding: '30px',
-          background: 'var(--bg)',
-          color: 'var(--text)',
-          textAlign: 'center',
-        }}
-      >
-        <div
-          style={{
-            fontSize: '48px',
-          }}
-        >
+      <div className="watch-party-error-page">
+        <div className="watch-party-error-icon">
           🔒
         </div>
 
-        <h2
-          style={{
-            margin: 0,
-          }}
-        >
+        <h2>
           {error ||
             'غرفة المشاهدة غير موجودة'}
         </h2>
@@ -1121,27 +912,12 @@ export default function WatchParty() {
           onClick={() =>
             navigate('/friends')
           }
-          style={{
-            border: 'none',
-            background: 'var(--gold)',
-            color: '#111',
-            padding: '11px 20px',
-            borderRadius: '10px',
-            cursor: 'pointer',
-            fontWeight: 800,
-          }}
         >
           العودة للأصدقاء
         </button>
       </div>
     );
   }
-
-  /*
-   * ========================================
-   * PLAYER DATA
-   * ========================================
-   */
 
   const contentType =
     title?.type === 'series' ||
@@ -1184,255 +960,66 @@ export default function WatchParty() {
     '';
 
   const isHost =
-    !!party &&
-    !!user?.id &&
-    party.host_id === user.id;
-
-  /*
-   * ========================================
-   * RENDER
-   * ========================================
-   */
+    party.host_id === user?.id;
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background:
-          'var(--bg)',
-        color:
-          'var(--text)',
-        padding:
-          '20px 12px 35px',
-      }}
-    >
-      <div
-        style={{
-          maxWidth:
-            '1250px',
-          margin:
-            '0 auto',
-        }}
-      >
-        {/* ==================================
-            HEADER
-        ================================== */}
+    <div className="watch-party-page">
+      <div className="watch-party-container">
 
-        <div
-          style={{
-            display:
-              'flex',
-            justifyContent:
-              'space-between',
-            alignItems:
-              'center',
-            gap:
-              '15px',
-            marginBottom:
-              '18px',
-            flexWrap:
-              'wrap',
-          }}
-        >
-          <div
-            style={{
-              minWidth: 0,
-            }}
-          >
-            <div
-              style={{
-                color:
-                  'var(--gold)',
-                fontSize:
-                  '11px',
-                fontWeight:
-                  900,
-                letterSpacing:
-                  '1.5px',
-                marginBottom:
-                  '5px',
-              }}
-            >
+        <header className="watch-party-top">
+          <div className="watch-party-heading">
+            <div className="watch-party-kicker">
               PRIVATE WATCH PARTY
             </div>
 
-            <h1
-              style={{
-                margin: 0,
-                fontSize:
-                  'clamp(21px, 4vw, 30px)',
-                overflow:
-                  'hidden',
-                textOverflow:
-                  'ellipsis',
-              }}
-            >
+            <h1>
               {titleName}
             </h1>
 
-            {contentType ===
-              'tv' &&
+            {contentType === 'tv' &&
               episode && (
-                <div
-                  style={{
-                    color:
-                      'var(--muted)',
-                    fontSize:
-                      '12px',
-                    marginTop:
-                      '5px',
-                  }}
-                >
-                  الموسم{' '}
-                  {season}
+                <span>
+                  الموسم {season}
                   {' • '}
-                  الحلقة{' '}
-                  {episodeNumber}
-                </div>
+                  الحلقة {episodeNumber}
+                </span>
               )}
 
-            <div
-              style={{
-                color:
-                  'var(--muted)',
-                fontSize:
-                  '12px',
-                marginTop:
-                  '6px',
-              }}
-            >
+            <span className="watch-party-role">
               {isHost
                 ? '👑 أنت المضيف'
                 : '👥 أنت مشارك في الغرفة'}
-            </div>
+            </span>
           </div>
 
           <button
+            className="watch-party-exit"
             type="button"
             disabled={leaving}
-            onClick={
-              exitParty
-            }
-            style={{
-              border:
-                '1px solid var(--border)',
-              background:
-                'var(--panel)',
-              color:
-                'var(--text)',
-              padding:
-                '10px 17px',
-              borderRadius:
-                '10px',
-              cursor:
-                leaving
-                  ? 'default'
-                  : 'pointer',
-              opacity:
-                leaving
-                  ? 0.6
-                  : 1,
-              fontWeight:
-                700,
-            }}
+            onClick={exitParty}
           >
             {leaving
               ? '...'
               : '🚪 خروج'}
           </button>
-        </div>
+        </header>
 
-        {/* ==================================
-            MAIN GRID
-        ================================== */}
+        <main className="watch-party-layout">
 
-        <div
-          style={{
-            display:
-              'grid',
-            gridTemplateColumns:
-              'minmax(0, 1fr) 330px',
-            gap:
-              '15px',
-            alignItems:
-              'start',
-          }}
-        >
-          {/* ==================================
-              LEFT
-          ================================== */}
+          <section className="watch-party-main">
 
-          <div
-            style={{
-              minWidth:
-                0,
-            }}
-          >
-            {/* PLAYER */}
-
-            <div
-              style={{
-                background:
-                  '#000',
-                borderRadius:
-                  '14px',
-                overflow:
-                  'hidden',
-                border:
-                  '1px solid var(--border)',
-                boxShadow:
-                  '0 10px 35px rgba(0,0,0,.25)',
-              }}
-            >
+            <div className="watch-party-player">
               {tmdbId ? (
                 <iframe
-                  src={
-                    playerUrl
-                  }
+                  src={playerUrl}
                   title="StreamFlix Watch Party"
-                  style={{
-                    width:
-                      '100%',
-                    height:
-                      'min(65vh, 700px)',
-                    minHeight:
-                      '420px',
-                    border:
-                      'none',
-                    display:
-                      'block',
-                    background:
-                      '#000',
-                  }}
                   allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
                   allowFullScreen
                   referrerPolicy="no-referrer"
                 />
               ) : (
-                <div
-                  style={{
-                    height:
-                      '420px',
-                    display:
-                      'flex',
-                    flexDirection:
-                      'column',
-                    alignItems:
-                      'center',
-                    justifyContent:
-                      'center',
-                    gap:
-                      '10px',
-                    color:
-                      '#777',
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize:
-                        '40px',
-                    }}
-                  >
+                <div className="watch-party-no-player">
+                  <div>
                     🎬
                   </div>
 
@@ -1441,32 +1028,7 @@ export default function WatchParty() {
               )}
             </div>
 
-            {/* PARTY STATUS */}
-
-            <div
-              style={{
-                marginTop:
-                  '12px',
-                padding:
-                  '14px',
-                background:
-                  'var(--panel)',
-                border:
-                  '1px solid var(--border)',
-                borderRadius:
-                  '13px',
-                display:
-                  'flex',
-                alignItems:
-                  'center',
-                justifyContent:
-                  'space-between',
-                gap:
-                  '12px',
-                flexWrap:
-                  'wrap',
-              }}
-            >
+            <div className="watch-party-sync">
               <div>
                 <strong>
                   {party.status ===
@@ -1478,140 +1040,40 @@ export default function WatchParty() {
                       : '🟡 الغرفة جاهزة'}
                 </strong>
 
-                <div
-                  style={{
-                    color:
-                      'var(--muted)',
-                    fontSize:
-                      '11px',
-                    marginTop:
-                      '5px',
-                  }}
-                >
+                <span>
                   مشاهدة خاصة بين أعضاء
                   الغرفة
-                </div>
+                </span>
               </div>
 
-              <div
-                style={{
-                  display:
-                    'flex',
-                  alignItems:
-                    'center',
-                  gap:
-                    '7px',
-                  fontSize:
-                    '12px',
-                  color:
-                    'var(--muted)',
-                }}
-              >
-                <span>
-                  👥
-                </span>
-
-                <strong
-                  style={{
-                    color:
-                      'var(--text)',
-                  }}
-                >
+              <div className="watch-party-count">
+                👥{' '}
+                <b>
                   {members.length}
-                </strong>
-
-                <span>
-                  داخل الغرفة
-                </span>
+                </b>{' '}
+                داخل الغرفة
               </div>
             </div>
 
-            {/* MOVIE INFO */}
+            <div className="watch-party-movie-card">
 
-            <div
-              style={{
-                marginTop:
-                  '12px',
-                padding:
-                  '14px',
-                background:
-                  'var(--panel)',
-                border:
-                  '1px solid var(--border)',
-                borderRadius:
-                  '13px',
-                display:
-                  'flex',
-                gap:
-                  '12px',
-              }}
-            >
               {poster ? (
                 <img
                   src={poster}
                   alt={titleName}
-                  style={{
-                    width:
-                      '55px',
-                    height:
-                      '78px',
-                    objectFit:
-                      'cover',
-                    borderRadius:
-                      '8px',
-                    flexShrink:
-                      0,
-                  }}
                 />
               ) : (
-                <div
-                  style={{
-                    width:
-                      '55px',
-                    height:
-                      '78px',
-                    borderRadius:
-                      '8px',
-                    background:
-                      'var(--panel-raised)',
-                    display:
-                      'flex',
-                    alignItems:
-                      'center',
-                    justifyContent:
-                      'center',
-                    fontSize:
-                      '25px',
-                    flexShrink:
-                      0,
-                  }}
-                >
+                <div className="watch-party-poster-placeholder">
                   🎬
                 </div>
               )}
 
-              <div
-                style={{
-                  minWidth:
-                    0,
-                }}
-              >
+              <div>
                 <strong>
                   {titleName}
                 </strong>
 
-                <div
-                  style={{
-                    marginTop:
-                      '5px',
-                    color:
-                      'var(--muted)',
-                    fontSize:
-                      '12px',
-                    lineHeight:
-                      1.6,
-                  }}
-                >
+                <p>
                   {contentType ===
                   'tv'
                     ? `مسلسل • الموسم ${season} • الحلقة ${episodeNumber}`
@@ -1620,103 +1082,36 @@ export default function WatchParty() {
                   <br />
 
                   الغرفة خاصة بالدعوات فقط.
-                </div>
+                </p>
               </div>
             </div>
-          </div>
+          </section>
 
-          {/* ==================================
-              RIGHT SIDEBAR
-          ================================== */}
+          <aside className="watch-party-sidebar">
 
-          <aside
-            style={{
-              position:
-                'sticky',
-              top:
-                '15px',
-              minWidth:
-                0,
-            }}
-          >
-            {/* MEMBERS */}
+            <section className="watch-party-panel watch-party-members">
 
-            <div
-              style={{
-                background:
-                  'var(--panel)',
-                border:
-                  '1px solid var(--border)',
-                borderRadius:
-                  '14px',
-                overflow:
-                  'hidden',
-                marginBottom:
-                  '12px',
-              }}
-            >
-              <div
-                style={{
-                  padding:
-                    '13px 14px',
-                  borderBottom:
-                    '1px solid var(--border)',
-                  fontWeight:
-                    800,
-                  display:
-                    'flex',
-                  alignItems:
-                    'center',
-                  justifyContent:
-                    'space-between',
-                }}
-              >
-                <span>
+              <div className="watch-party-panel-title">
+                <b>
                   👥 أعضاء الغرفة
-                </span>
+                </b>
 
-                <span
-                  style={{
-                    color:
-                      'var(--gold)',
-                    fontSize:
-                      '12px',
-                  }}
-                >
+                <span>
                   {members.length}
                 </span>
               </div>
 
-              <div
-                style={{
-                  padding:
-                    '9px',
-                  maxHeight:
-                    '170px',
-                  overflowY:
-                    'auto',
-                }}
-              >
+              <div className="watch-party-member-list">
+
                 {members.length ===
                 0 ? (
-                  <div
-                    style={{
-                      padding:
-                        '12px',
-                      color:
-                        'var(--muted)',
-                      fontSize:
-                        '12px',
-                      textAlign:
-                        'center',
-                    }}
-                  >
+                  <div className="watch-party-empty">
                     لا يوجد أعضاء
                   </div>
                 ) : (
                   members.map(
                     (member) => {
-                      const memberProfile =
+                      const profile =
                         profiles[
                           member.user_id
                         ];
@@ -1726,118 +1121,47 @@ export default function WatchParty() {
                           member.user_id
                         );
 
-                      const avatar =
-                        memberProfile?.avatar_url;
-
-                      const memberIsHost =
+                      const host =
                         member.user_id ===
                         party.host_id;
 
                       return (
                         <div
+                          className="watch-party-member"
                           key={
                             member.id ||
                             member.user_id
                           }
-                          style={{
-                            display:
-                              'flex',
-                            alignItems:
-                              'center',
-                            gap:
-                              '9px',
-                            padding:
-                              '8px',
-                            borderRadius:
-                              '9px',
-                          }}
                         >
-                          {avatar ? (
+                          {profile?.avatar_url ? (
                             <img
                               src={
-                                avatar
+                                profile.avatar_url
                               }
-                              alt={
-                                name
-                              }
-                              style={{
-                                width:
-                                  '34px',
-                                height:
-                                  '34px',
-                                borderRadius:
-                                  '50%',
-                                objectFit:
-                                  'cover',
-                              }}
+                              alt={name}
                             />
                           ) : (
-                            <div
-                              style={{
-                                width:
-                                  '34px',
-                                height:
-                                  '34px',
-                                borderRadius:
-                                  '50%',
-                                background:
-                                  'var(--panel-raised)',
-                                display:
-                                  'flex',
-                                alignItems:
-                                  'center',
-                                justifyContent:
-                                  'center',
-                                fontSize:
-                                  '15px',
-                                flexShrink:
-                                  0,
-                              }}
-                            >
+                            <div className="watch-party-avatar">
                               👤
                             </div>
                           )}
 
-                          <div
-                            style={{
-                              minWidth:
-                                0,
-                              flex: 1,
-                            }}
-                          >
-                            <div
-                              style={{
-                                fontSize:
-                                  '12px',
-                                fontWeight:
-                                  700,
-                                overflow:
-                                  'hidden',
-                                textOverflow:
-                                  'ellipsis',
-                                whiteSpace:
-                                  'nowrap',
-                              }}
-                            >
+                          <div className="watch-party-member-info">
+                            <b>
                               {name}
-                            </div>
+                            </b>
 
-                            <div
-                              style={{
-                                color:
-                                  memberIsHost
-                                    ? 'var(--gold)'
-                                    : 'var(--muted)',
-                                fontSize:
-                                  '10px',
-                                marginTop:
-                                  '2px',
-                              }}
+                            <span
+                              className={
+                                host
+                                  ? 'host'
+                                  : ''
+                              }
                             >
-                              {memberIsHost
+                              {host
                                 ? '👑 المضيف'
                                 : '🟢 داخل الغرفة'}
-                            </div>
+                            </span>
                           </div>
                         </div>
                       );
@@ -1845,151 +1169,41 @@ export default function WatchParty() {
                   )
                 )}
               </div>
-            </div>
+            </section>
 
-            {/* CHAT */}
+            <section className="watch-party-panel watch-party-chat">
 
-            <div
-              style={{
-                background:
-                  'var(--panel)',
-                border:
-                  '1px solid var(--border)',
-                borderRadius:
-                  '14px',
-                overflow:
-                  'hidden',
-                display:
-                  'flex',
-                flexDirection:
-                  'column',
-                height:
-                  'calc(100vh - 265px)',
-                minHeight:
-                  '480px',
-                maxHeight:
-                  '720px',
-              }}
-            >
-              {/* CHAT HEADER */}
+              <div className="watch-party-chat-header">
 
-              <div
-                style={{
-                  padding:
-                    '13px 14px',
-                  borderBottom:
-                    '1px solid var(--border)',
-                  display:
-                    'flex',
-                  alignItems:
-                    'center',
-                  gap:
-                    '9px',
-                }}
-              >
-                <div
-                  style={{
-                    width:
-                      '35px',
-                    height:
-                      '35px',
-                    borderRadius:
-                      '10px',
-                    background:
-                      'var(--panel-raised)',
-                    display:
-                      'flex',
-                    alignItems:
-                      'center',
-                    justifyContent:
-                      'center',
-                  }}
-                >
+                <div className="watch-party-chat-icon">
                   💬
                 </div>
 
                 <div>
-                  <strong
-                    style={{
-                      fontSize:
-                        '13px',
-                    }}
-                  >
+                  <b>
                     Party Chat
-                  </strong>
+                  </b>
 
-                  <div
-                    style={{
-                      fontSize:
-                        '10px',
-                      color:
-                        'var(--muted)',
-                      marginTop:
-                        '2px',
-                    }}
-                  >
+                  <span>
                     دردشة خاصة أثناء المشاهدة
-                  </div>
+                  </span>
                 </div>
               </div>
 
-              {/* MESSAGES */}
+              <div className="watch-party-messages">
 
-              <div
-                style={{
-                  flex:
-                    1,
-                  overflowY:
-                    'auto',
-                  padding:
-                    '12px',
-                }}
-              >
                 {messages.length ===
                 0 ? (
-                  <div
-                    style={{
-                      minHeight:
-                        '100%',
-                      display:
-                        'flex',
-                      flexDirection:
-                        'column',
-                      alignItems:
-                        'center',
-                      justifyContent:
-                        'center',
-                      color:
-                        'var(--muted)',
-                      textAlign:
-                        'center',
-                      padding:
-                        '25px',
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize:
-                          '35px',
-                        marginBottom:
-                          '8px',
-                      }}
-                    >
+                  <div className="watch-party-chat-empty">
+                    <div>
                       🍿
                     </div>
 
-                    <strong>
+                    <b>
                       بداية المشاهدة
-                    </strong>
+                    </b>
 
-                    <span
-                      style={{
-                        fontSize:
-                          '11px',
-                        marginTop:
-                          '5px',
-                      }}
-                    >
+                    <span>
                       اكتب أول رسالة وابدأو التقسيرة 😎
                     </span>
                   </div>
@@ -2000,15 +1214,15 @@ export default function WatchParty() {
                         message.sender_id ===
                         user?.id;
 
-                      const name =
-                        getProfileName(
-                          message.sender_id
-                        );
-
                       const profile =
                         profiles[
                           message.sender_id
                         ];
+
+                      const name =
+                        getProfileName(
+                          message.sender_id
+                        );
 
                       const time =
                         message.created_at
@@ -2030,101 +1244,36 @@ export default function WatchParty() {
                           key={
                             message.id
                           }
-                          style={{
-                            display:
-                              'flex',
-                            justifyContent:
-                              own
-                                ? 'flex-end'
-                                : 'flex-start',
-                            marginBottom:
-                              '10px',
-                          }}
+                          className={`watch-party-message-row ${
+                            own
+                              ? 'own'
+                              : ''
+                          }`}
                         >
-                          <div
-                            style={{
-                              maxWidth:
-                                '88%',
-                            }}
-                          >
+                          <div className="watch-party-message-wrap">
+
                             {!own && (
-                              <div
-                                style={{
-                                  fontSize:
-                                    '10px',
-                                  color:
-                                    'var(--gold)',
-                                  fontWeight:
-                                    700,
-                                  marginBottom:
-                                    '3px',
-                                  paddingInline:
-                                    '5px',
-                                }}
-                              >
+                              <div className="watch-party-sender">
                                 {name}
                               </div>
                             )}
 
                             <div
-                              style={{
-                                background:
-                                  own
-                                    ? 'var(--gold)'
-                                    : 'var(--panel-raised)',
-                                color:
-                                  own
-                                    ? '#111'
-                                    : 'var(--text)',
-                                borderRadius:
-                                  own
-                                    ? '13px 13px 4px 13px'
-                                    : '13px 13px 13px 4px',
-                                padding:
-                                  '9px 10px',
-                                border:
-                                  own
-                                    ? 'none'
-                                    : '1px solid var(--border)',
-                              }}
+                              className={`watch-party-bubble ${
+                                own
+                                  ? 'own'
+                                  : ''
+                              }`}
                             >
+
                               {message.kind ===
                               'voice' ? (
-                                <div
-                                  style={{
-                                    minWidth:
-                                      '190px',
-                                  }}
-                                >
-                                  <div
-                                    style={{
-                                      display:
-                                        'flex',
-                                      alignItems:
-                                        'center',
-                                      gap:
-                                        '7px',
-                                      marginBottom:
-                                        '5px',
-                                      fontSize:
-                                        '11px',
-                                      fontWeight:
-                                        700,
-                                    }}
-                                  >
+                                <>
+                                  <div className="watch-party-voice-label">
                                     🎙️ رسالة صوتية
 
-                                    {message
-                                      .metadata
-                                      ?.duration ? (
-                                      <span
-                                        style={{
-                                          opacity:
-                                            0.7,
-                                          fontWeight:
-                                            500,
-                                        }}
-                                      >
+                                    {message.metadata?.duration ? (
+                                      <small>
                                         {formatTime(
                                           Number(
                                             message
@@ -2132,7 +1281,7 @@ export default function WatchParty() {
                                               .duration
                                           )
                                         )}
-                                      </span>
+                                      </small>
                                     ) : null}
                                   </div>
 
@@ -2142,29 +1291,10 @@ export default function WatchParty() {
                                     src={
                                       message.content
                                     }
-                                    style={{
-                                      width:
-                                        '100%',
-                                      maxWidth:
-                                        '250px',
-                                      height:
-                                        '38px',
-                                    }}
                                   />
-                                </div>
+                                </>
                               ) : (
-                                <div
-                                  style={{
-                                    fontSize:
-                                      '13px',
-                                    lineHeight:
-                                      1.55,
-                                    whiteSpace:
-                                      'pre-wrap',
-                                    overflowWrap:
-                                      'anywhere',
-                                  }}
-                                >
+                                <div className="watch-party-text">
                                   {
                                     message.content
                                   }
@@ -2172,22 +1302,7 @@ export default function WatchParty() {
                               )}
                             </div>
 
-                            <div
-                              style={{
-                                fontSize:
-                                  '9px',
-                                color:
-                                  'var(--muted)',
-                                marginTop:
-                                  '3px',
-                                textAlign:
-                                  own
-                                    ? 'right'
-                                    : 'left',
-                                paddingInline:
-                                  '5px',
-                              }}
-                            >
+                            <div className="watch-party-message-meta">
                               {time}
 
                               {profile?.username
@@ -2208,54 +1323,17 @@ export default function WatchParty() {
                 />
               </div>
 
-              {/* RECORDING BAR */}
-
               {(recording ||
                 uploadingVoice) && (
-                <div
-                  style={{
-                    padding:
-                      '9px 10px',
-                    borderTop:
-                      '1px solid var(--border)',
-                    background:
-                      'var(--panel-raised)',
-                    display:
-                      'flex',
-                    alignItems:
-                      'center',
-                    justifyContent:
-                      'space-between',
-                    gap:
-                      '10px',
-                  }}
-                >
-                  <div
-                    style={{
-                      display:
-                        'flex',
-                      alignItems:
-                        'center',
-                      gap:
-                        '8px',
-                      fontSize:
-                        '11px',
-                    }}
-                  >
-                    <span>
-                      {recording
-                        ? '🔴'
-                        : '⏳'}
-                    </span>
+                <div className="watch-party-recording-bar">
 
-                    <strong>
-                      {recording
-                        ? `تسجيل ${formatTime(
-                            recordingTime
-                          )}`
-                        : 'جاري رفع الصوت...'}
-                    </strong>
-                  </div>
+                  <b>
+                    {recording
+                      ? `🔴 تسجيل ${formatTime(
+                          recordingTime
+                        )}`
+                      : '⏳ جاري رفع الصوت...'}
+                  </b>
 
                   {recording && (
                     <button
@@ -2263,24 +1341,6 @@ export default function WatchParty() {
                       onClick={
                         stopRecording
                       }
-                      style={{
-                        border:
-                          'none',
-                        background:
-                          '#d33',
-                        color:
-                          '#fff',
-                        borderRadius:
-                          '8px',
-                        padding:
-                          '7px 10px',
-                        cursor:
-                          'pointer',
-                        fontWeight:
-                          800,
-                        fontSize:
-                          '11px',
-                      }}
                     >
                       ⏹ إيقاف
                     </button>
@@ -2288,27 +1348,16 @@ export default function WatchParty() {
                 </div>
               )}
 
-              {/* INPUT */}
-
               <form
+                className="watch-party-input"
                 onSubmit={
                   sendTextMessage
                 }
-                style={{
-                  padding:
-                    '10px',
-                  borderTop:
-                    '1px solid var(--border)',
-                  display:
-                    'flex',
-                  alignItems:
-                    'flex-end',
-                  gap:
-                    '7px',
-                }}
               >
+
                 <button
                   type="button"
+                  className="watch-party-icon-btn"
                   disabled={
                     recording ||
                     uploadingVoice
@@ -2317,34 +1366,6 @@ export default function WatchParty() {
                     startRecording
                   }
                   title="تسجيل رسالة صوتية"
-                  style={{
-                    width:
-                      '40px',
-                    height:
-                      '40px',
-                    flexShrink:
-                      0,
-                    border:
-                      '1px solid var(--border)',
-                    background:
-                      'var(--panel-raised)',
-                    color:
-                      'var(--text)',
-                    borderRadius:
-                      '10px',
-                    cursor:
-                      recording ||
-                      uploadingVoice
-                        ? 'default'
-                        : 'pointer',
-                    opacity:
-                      recording ||
-                      uploadingVoice
-                        ? 0.5
-                        : 1,
-                    fontSize:
-                      '17px',
-                  }}
                 >
                   🎙️
                 </button>
@@ -2358,9 +1379,18 @@ export default function WatchParty() {
                       event.target.value
                     )
                   }
-                  onKeyDown={
-                    handleMessageKeyDown
-                  }
+                  onKeyDown={(event) => {
+                    if (
+                      event.key ===
+                        'Enter' &&
+                      !event.shiftKey
+                    ) {
+                      event.preventDefault();
+                      sendTextMessage(
+                        event
+                      );
+                    }
+                  }}
                   disabled={
                     sending ||
                     recording ||
@@ -2368,129 +1398,31 @@ export default function WatchParty() {
                   }
                   placeholder="اكتب رسالة..."
                   rows={1}
-                  style={{
-                    flex:
-                      1,
-                    minWidth:
-                      0,
-                    resize:
-                      'none',
-                    minHeight:
-                      '40px',
-                    maxHeight:
-                      '100px',
-                    border:
-                      '1px solid var(--border)',
-                    background:
-                      'var(--panel-raised)',
-                    color:
-                      'var(--text)',
-                    borderRadius:
-                      '10px',
-                    padding:
-                      '10px 11px',
-                    outline:
-                      'none',
-                    fontFamily:
-                      'inherit',
-                    fontSize:
-                      '12px',
-                  }}
                 />
 
                 <button
                   type="submit"
+                  className="watch-party-send-btn"
                   disabled={
                     sending ||
                     recording ||
                     uploadingVoice ||
                     !messageText.trim()
                   }
-                  style={{
-                    width:
-                      '40px',
-                    height:
-                      '40px',
-                    flexShrink:
-                      0,
-                    border:
-                      'none',
-                    background:
-                      'var(--gold)',
-                    color:
-                      '#111',
-                    borderRadius:
-                      '10px',
-                    cursor:
-                      sending ||
-                      recording ||
-                      uploadingVoice ||
-                      !messageText.trim()
-                        ? 'default'
-                        : 'pointer',
-                    opacity:
-                      sending ||
-                      recording ||
-                      uploadingVoice ||
-                      !messageText.trim()
-                        ? 0.5
-                        : 1,
-                    fontSize:
-                      '16px',
-                    fontWeight:
-                      900,
-                  }}
                 >
                   ➤
                 </button>
               </form>
-            </div>
+            </section>
           </aside>
-        </div>
+        </main>
 
-        {/* ==================================
-            MOBILE NOTE
-        ================================== */}
-
-        <div
-          style={{
-            marginTop:
-              '12px',
-            color:
-              'var(--muted)',
-            fontSize:
-              '10px',
-            lineHeight:
-              1.7,
-            textAlign:
-              'center',
-          }}
-        >
+        <div className="watch-party-note">
           🔒 هذه الغرفة خاصة بالأعضاء المدعوين فقط.
           <br />
           💬 الدردشة والرسائل الصوتية خاصة بغرفة المشاهدة.
         </div>
       </div>
-
-      {/* ====================================
-          RESPONSIVE STYLE
-      ==================================== */}
-
-      <style>
-        {`
-          @media (max-width: 850px) {
-            .watch-party-mobile-fix {
-              display: block;
-            }
-          }
-
-          @media (max-width: 850px) {
-            body {
-              overflow-x: hidden;
-            }
-          }
-        `}
-      </style>
     </div>
   );
 }
