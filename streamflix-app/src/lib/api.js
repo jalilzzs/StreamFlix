@@ -759,8 +759,8 @@ export async function createWatchPartyInvites({
   const rows = uniqueFriendIds.map(
     (friendId) => ({
       party_id: partyId,
-      inviter_id: hostId,
-      invitee_id: friendId,
+      sender_id: hostId,
+      receiver_id: friendId,
       status: 'pending',
     })
   );
@@ -802,8 +802,6 @@ export async function createWatchPartyWithInvites({
       invites,
     };
   } catch (error) {
-    // If invitations fail, close the newly created party
-    // instead of leaving an unusable room behind.
     try {
       await supabase
         .from('watch_parties')
@@ -869,9 +867,9 @@ export async function fetchWatchPartyInvites(
   const { data, error } = await supabase
     .from('watch_party_invites')
     .select(
-      '*, party:party_id(*), inviter:inviter_id(*), invitee:invitee_id(*)'
+      '*, party:party_id(*), sender:sender_id(*), receiver:receiver_id(*)'
     )
-    .eq('invitee_id', userId)
+    .eq('receiver_id', userId)
     .order('created_at', {
       ascending: false,
     });
@@ -893,7 +891,7 @@ export async function getWatchPartyInvite(
     .from('watch_party_invites')
     .select('*')
     .eq('party_id', partyId)
-    .eq('invitee_id', userId)
+    .eq('receiver_id', userId)
     .maybeSingle();
 
   if (error) throw error;
@@ -926,7 +924,7 @@ export async function acceptWatchPartyInvite(
       .select('*')
       .eq('id', inviteId)
       .eq('party_id', partyId)
-      .eq('invitee_id', userId)
+      .eq('receiver_id', userId)
       .maybeSingle();
 
   if (inviteError) throw inviteError;
@@ -991,7 +989,7 @@ export async function acceptWatchPartyInvite(
           new Date().toISOString(),
       })
       .eq('id', inviteId)
-      .eq('invitee_id', userId);
+      .eq('receiver_id', userId);
 
   if (updateError) throw updateError;
 
@@ -1028,7 +1026,7 @@ export async function declineWatchPartyInvite(
         new Date().toISOString(),
     })
     .eq('id', inviteId)
-    .eq('invitee_id', userId)
+    .eq('receiver_id', userId)
     .select()
     .maybeSingle();
 
@@ -1077,7 +1075,7 @@ export async function joinWatchParty(
         .from('watch_party_invites')
         .select('id, status')
         .eq('party_id', partyId)
-        .eq('invitee_id', userId)
+        .eq('receiver_id', userId)
         .maybeSingle();
 
     if (inviteError) throw inviteError;
@@ -1153,6 +1151,7 @@ export async function leaveWatchParty(
       .from('watch_parties')
       .update({
         status: 'ended',
+        closed_at: new Date().toISOString(),
       })
       .eq('id', partyId);
 
@@ -1178,6 +1177,7 @@ export async function leaveWatchParty(
       .from('watch_parties')
       .update({
         status: 'ended',
+        closed_at: new Date().toISOString(),
       })
       .eq('id', partyId);
 
@@ -1293,7 +1293,7 @@ export function subscribeToWatchPartyInvites(
         event: '*',
         schema: 'public',
         table: 'watch_party_invites',
-        filter: `invitee_id=eq.${userId}`,
+        filter: `receiver_id=eq.${userId}`,
       },
       async (payload) => {
         try {
@@ -1306,7 +1306,7 @@ export function subscribeToWatchPartyInvites(
             await supabase
               .from('watch_party_invites')
               .select(
-                '*, party:party_id(*), inviter:inviter_id(*)'
+                '*, party:party_id(*), sender:sender_id(*)'
               )
               .eq('id', row.id)
               .maybeSingle();
