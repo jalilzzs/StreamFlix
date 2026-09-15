@@ -1275,6 +1275,136 @@ export function subscribeToPartyMembers(
     supabase.removeChannel(channel);
 }
 
+// ==========================================================================
+// WATCH PARTY PRESENCE
+// ==========================================================================
+//
+// This is what makes people inside the same Watch Party see each other
+// in real time.
+//
+// It uses Supabase Realtime Presence, so no extra database table is needed.
+// Every connected user tracks:
+//   - user_id
+//   - display_name
+//   - avatar_url
+//   - joined_at
+//
+// onPresence receives an array of currently connected members.
+//
+
+export function subscribeToPartyPresence({
+  partyId,
+  userId,
+  profile = {},
+  onPresence,
+}) {
+  if (!partyId || !userId) return () => {};
+
+  const channel = supabase.channel(
+    `watch-party-presence:${partyId}`,
+    {
+      config: {
+        presence: {
+          key: userId,
+        },
+      },
+    }
+  );
+
+  const getPresenceUsers = () => {
+    const state = channel.presenceState();
+
+    const users = [];
+
+    Object.entries(state || {}).forEach(
+      ([key, entries]) => {
+        const latest =
+          entries?.[entries.length - 1];
+
+        if (!latest) return;
+
+        users.push({
+          user_id:
+            latest.user_id || key,
+          display_name:
+            latest.display_name ||
+            'User',
+          avatar_url:
+            latest.avatar_url || null,
+          joined_at:
+            latest.joined_at || null,
+          online: true,
+        });
+      }
+    );
+
+    return users;
+  };
+
+  channel
+    .on(
+      'presence',
+      {
+        event: 'sync',
+      },
+      () => {
+        onPresence?.(
+          getPresenceUsers()
+        );
+      }
+    )
+    .on(
+      'presence',
+      {
+        event: 'join',
+      },
+      () => {
+        onPresence?.(
+          getPresenceUsers()
+        );
+      }
+    )
+    .on(
+      'presence',
+      {
+        event: 'leave',
+      },
+      () => {
+        onPresence?.(
+          getPresenceUsers()
+        );
+      }
+    )
+    .subscribe(async (status) => {
+      if (status !== 'SUBSCRIBED') return;
+
+      const { error } =
+        await channel.track({
+          user_id: userId,
+          display_name:
+            profile?.display_name ||
+            'User',
+          avatar_url:
+            profile?.avatar_url ||
+            null,
+          joined_at:
+            new Date().toISOString(),
+        });
+
+      if (error) {
+        console.error(
+          'Watch Party Presence error:',
+          error
+        );
+      }
+    });
+
+  return () => {
+    channel.untrack().catch(() => {});
+    supabase.removeChannel(channel);
+  };
+}
+
 // ---- Party Invitations Realtime -----------------------------------------
 
 export function subscribeToWatchPartyInvites(
