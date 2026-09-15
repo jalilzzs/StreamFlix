@@ -110,10 +110,7 @@ export default function App() {
         <Route path="/about" element={<StaticPage title={t('settings_about')} body={t('empty_about')} />} />
         <Route path="/import" element={<Import />} />
         <Route path="/admin" element={<Admin />} />
-        <Route
-  path="/watch-party/:id"
-  element={<WatchParty />}
-/>
+        <Route path="/watch-party/:id"element={<WatchParty />}/>
         <Route path="*" element={<StaticPage title="404" body="Page not found." />} />
       </Routes>
 
