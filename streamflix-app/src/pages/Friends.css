@@ -1,181 +1,632 @@
-/* ==========================================
-   STREAMFLIX - FRIENDS & CHAT SYSTEM
-========================================== */
+/* =========================================================
+   STREAMFLIX — FRIENDS & CHAT
+   Modern Glass / Dark UI
+========================================================= */
 
 .friends-app {
+  --friends-bg: var(--bg, #0a0e14);
+  --friends-panel: var(--panel, #12161f);
+  --friends-panel-raised: var(--panel-raised, #181d28);
+  --friends-gold: var(--gold, #e4c88a);
+  --friends-gold-dim: var(--gold-dim, #b79a5e);
+  --friends-text: var(--text, #f5f3ee);
+  --friends-muted: var(--muted, #8b93a3);
+
   height: calc(100vh - 71px);
   max-height: calc(100dvh - 71px);
+  min-height: 0;
+
   overflow: hidden;
-  background: var(--bg, #0b0c10);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  color: #ffffff;
+  background:
+    radial-gradient(
+      circle at 80% 10%,
+      rgba(228, 200, 138, 0.06),
+      transparent 30%
+    ),
+    var(--friends-bg);
+
+  color: var(--friends-text);
+
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
 }
+
+/* =========================================================
+   MAIN GRID
+========================================================= */
 
 .app-grid {
   display: grid;
-  grid-template-columns: 320px 1fr;
-  height: 100%;
+  grid-template-columns: 330px minmax(0, 1fr);
+
   width: 100%;
-  background: var(--bg, #0b0c10);
+  height: 100%;
+  min-height: 0;
+
+  background: var(--friends-bg);
 }
 
-/* =========================
-   SIDEBAR (FRIENDS LIST)
-========================= */
+/* =========================================================
+   FRIENDS SIDEBAR
+========================================================= */
 
 .friends-col {
-  border-inline-end: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   flex-direction: column;
+
   height: 100%;
+  min-height: 0;
+
   overflow: hidden;
-  background: linear-gradient(180deg, #14151c 0%, #0b0c10 100%);
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.025),
+      transparent 35%
+    ),
+    var(--friends-panel);
+
+  border-inline-end:
+    1px solid rgba(255, 255, 255, 0.07);
 }
 
+/* =========================================================
+   HEADER
+========================================================= */
+
 .friends-head {
-  padding: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+
+  padding: 20px 18px 15px;
+
+  border-bottom:
+    1px solid rgba(255, 255, 255, 0.07);
+}
+
+.friends-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 12px;
+}
+
+.eyebrow {
+  display: block;
+
+  margin-bottom: 4px;
+
+  color: var(--friends-gold);
+
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+
+  opacity: 0.8;
 }
 
 .friends-head h2 {
-  font-size: 18px;
   margin: 0;
-  font-weight: 700;
+
+  font-size: 21px;
+  line-height: 1.15;
+  font-weight: 800;
 }
 
 .friends-subtitle {
+  display: block;
+
+  margin-top: 5px;
+
+  color: var(--friends-muted);
+
   font-size: 11px;
-  color: #9ca3af;
 }
+
+.friends-count {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 32px;
+  height: 32px;
+
+  border-radius: 50%;
+
+  background:
+    rgba(228, 200, 138, 0.1);
+
+  border:
+    1px solid rgba(228, 200, 138, 0.18);
+
+  color: var(--friends-gold);
+
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* =========================================================
+   ADD FRIEND
+========================================================= */
 
 .add-friend-row {
   display: flex;
-  gap: 8px;
-  margin-top: 12px;
+
+  gap: 7px;
+
+  margin-top: 17px;
 }
 
 .add-friend-row input {
   flex: 1;
   min-width: 0;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  padding: 9px 12px;
-  color: #ffffff;
-  font-size: 13px;
+
+  height: 40px;
+
+  padding: 0 12px;
+
+  background:
+    rgba(255, 255, 255, 0.045);
+
+  border:
+    1px solid rgba(255, 255, 255, 0.09);
+
+  border-radius: 11px;
+
   outline: none;
+
+  color: var(--friends-text);
+
+  font-size: 12px;
+
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.add-friend-row input::placeholder {
+  color: #707887;
 }
 
 .add-friend-row input:focus {
-  border-color: #ffbe3c;
+  background:
+    rgba(255, 255, 255, 0.065);
+
+  border-color:
+    rgba(228, 200, 138, 0.45);
+
+  box-shadow:
+    0 0 0 3px rgba(228, 200, 138, 0.07);
 }
 
 .add-friend-row button {
-  background: linear-gradient(135deg, #ffbe3c, #d69a24);
-  color: #111;
-  border: none;
-  border-radius: 10px;
+  flex-shrink: 0;
+
+  height: 40px;
+
   padding: 0 14px;
-  font-weight: 700;
+
+  border: none;
+  border-radius: 11px;
+
+  background:
+    linear-gradient(
+      135deg,
+      #ead197,
+      #c6a45d
+    );
+
+  color: #17130a;
+
+  font-size: 12px;
+  font-weight: 800;
+
   cursor: pointer;
+
+  transition:
+    transform 0.2s ease,
+    filter 0.2s ease;
+}
+
+.add-friend-row button:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.add-friend-row button:active {
+  transform: translateY(0);
 }
 
 .my-uid {
-  font-size: 11px;
-  color: #9ca3af;
-  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+
+  margin-top: 9px;
+
+  color: var(--friends-muted);
+
+  font-size: 10px;
+
+  overflow: hidden;
 }
 
 .my-uid span {
-  color: #ffbe3c;
-  font-family: monospace;
+  min-width: 0;
+
+  color: var(--friends-gold);
+
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
+
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* PENDING LIST */
+/* =========================================================
+   ALERTS
+========================================================= */
 
-.pending-list {
-  padding: 10px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 190, 60, 0.03);
+.error-banner,
+.success-banner {
+  margin-top: 10px;
+
+  padding: 9px 11px;
+
+  border-radius: 9px;
+
+  font-size: 11px;
+  line-height: 1.45;
 }
 
-.pending-item {
+.error-banner {
+  color: #ffb4b4;
+
+  background:
+    rgba(193, 59, 59, 0.11);
+
+  border:
+    1px solid rgba(193, 59, 59, 0.28);
+}
+
+.success-banner {
+  color: #9ef0ad;
+
+  background:
+    rgba(65, 180, 88, 0.09);
+
+  border:
+    1px solid rgba(65, 180, 88, 0.2);
+}
+
+/* =========================================================
+   PENDING REQUESTS
+========================================================= */
+
+.pending-block {
+  flex-shrink: 0;
+
+  padding: 11px 12px;
+
+  background:
+    rgba(228, 200, 138, 0.035);
+
+  border-bottom:
+    1px solid rgba(255, 255, 255, 0.065);
+}
+
+.pending-heading {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  font-size: 12px;
+  justify-content: space-between;
+
+  margin-bottom: 8px;
+}
+
+.pending-title {
+  color: var(--friends-gold);
+
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.pending-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  min-width: 20px;
+  height: 20px;
+
+  padding: 0 5px;
+
+  border-radius: 10px;
+
+  background:
+    rgba(228, 200, 138, 0.12);
+
+  color: var(--friends-gold);
+
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.pending-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 8px;
+
+  min-height: 42px;
+
+  padding: 5px 6px;
+
+  border-radius: 9px;
+
+  background:
+    rgba(255, 255, 255, 0.025);
+}
+
+.pending-user {
+  display: flex;
+  align-items: center;
+
+  min-width: 0;
+
+  gap: 8px;
+
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.pending-user > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pending-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 29px;
+  height: 29px;
+
+  flex-shrink: 0;
+
+  border-radius: 50%;
+
+  background:
+    linear-gradient(
+      135deg,
+      #292d39,
+      #1b1f29
+    );
+
+  border:
+    1px solid rgba(255, 255, 255, 0.08);
+
+  color: var(--friends-gold);
+
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .pending-actions {
   display: flex;
-  gap: 6px;
+  gap: 5px;
 }
 
 .pending-actions button {
-  background: #ffbe3c;
-  border: none;
-  border-radius: 6px;
-  padding: 4px 8px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-/* FRIENDS LIST items */
-
-.friend-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px;
-}
-
-.friend-item {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  color: #ffffff;
-  text-align: left;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.friend-item:hover {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.friend-item.active {
-  background: rgba(255, 190, 60, 0.12);
-  border-color: rgba(255, 190, 60, 0.25);
-}
-
-.fav {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  background-size: cover;
-  background-position: center;
-  background-color: #262938;
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 700;
-  flex-shrink: 0;
+
+  width: 27px;
+  height: 27px;
+
+  border-radius: 8px;
+
+  border: none;
+
+  font-size: 13px;
+  font-weight: 800;
+
+  cursor: pointer;
+
+  transition:
+    transform 0.15s ease,
+    filter 0.15s ease;
 }
 
-.dot.online {
+.pending-actions button:hover {
+  transform: scale(1.06);
+  filter: brightness(1.08);
+}
+
+.accept-btn {
+  background: #35a853;
+  color: white;
+}
+
+.reject-btn {
+  background:
+    rgba(255, 255, 255, 0.08);
+
+  color: #ff8f8f;
+
+  border:
+    1px solid rgba(255, 255, 255, 0.07) !important;
+}
+
+/* =========================================================
+   FRIEND LIST
+========================================================= */
+
+.friend-list {
+  flex: 1;
+  min-height: 0;
+
+  overflow-y: auto;
+
+  padding: 9px;
+
+  scrollbar-width: thin;
+  scrollbar-color:
+    rgba(255, 255, 255, 0.13)
+    transparent;
+}
+
+.friend-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.friend-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.friend-list::-webkit-scrollbar-thumb {
+  background:
+    rgba(255, 255, 255, 0.12);
+
+  border-radius: 10px;
+}
+
+.friend-item {
+  position: relative;
+
+  width: 100%;
+
+  display: flex;
+  align-items: center;
+
+  gap: 11px;
+
+  padding: 10px;
+
+  margin-bottom: 3px;
+
+  border: 1px solid transparent;
+  border-radius: 13px;
+
+  background: transparent;
+
+  color: var(--friends-text);
+
+  text-align: left;
+
+  cursor: pointer;
+
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.friend-item:hover {
+  background:
+    rgba(255, 255, 255, 0.045);
+
+  transform: translateX(2px);
+}
+
+.friend-item.active {
+  background:
+    linear-gradient(
+      90deg,
+      rgba(228, 200, 138, 0.12),
+      rgba(228, 200, 138, 0.035)
+    );
+
+  border-color:
+    rgba(228, 200, 138, 0.16);
+}
+
+.friend-item.active::before {
+  content: "";
+
   position: absolute;
+
+  left: 0;
+  top: 11px;
+  bottom: 11px;
+
+  width: 2px;
+
+  border-radius: 4px;
+
+  background: var(--friends-gold);
+}
+
+.fav,
+.chat-avatar {
+  position: relative;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  flex-shrink: 0;
+
+  background:
+    linear-gradient(
+      135deg,
+      #2b303d,
+      #181c25
+    );
+
+  background-size: cover;
+  background-position: center;
+
+  border:
+    1px solid rgba(255, 255, 255, 0.09);
+
+  color: var(--friends-gold);
+
+  font-weight: 800;
+}
+
+.fav {
+  width: 43px;
+  height: 43px;
+
+  border-radius: 50%;
+
+  font-size: 14px;
+}
+
+.online-dot {
+  position: absolute;
+
+  right: -1px;
   bottom: 0;
-  right: 0;
+
   width: 10px;
   height: 10px;
-  background: #4caf50;
+
   border-radius: 50%;
-  border: 2px solid #0b0c10;
+
+  background: #45c75a;
+
+  border:
+    2px solid var(--friends-panel);
 }
 
 .finfo {
@@ -184,302 +635,115 @@
 }
 
 .fname {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
+
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .flast {
-  font-size: 11px;
-  color: #9ca3af;
-  margin-top: 2px;
+  margin-top: 3px;
+
+  color: var(--friends-muted);
+
+  font-size: 10px;
+
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .friend-arrow {
-  color: #4b5563;
+  flex-shrink: 0;
+
+  color: #555d6d;
+
+  font-size: 21px;
+  line-height: 1;
 }
 
-/* =========================
+/* =========================================================
+   EMPTY FRIENDS
+========================================================= */
+
+.friends-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  padding: 60px 22px;
+
+  text-align: center;
+
+  color: var(--friends-muted);
+}
+
+.friends-empty .empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 54px;
+  height: 54px;
+
+  margin-bottom: 13px;
+
+  border-radius: 50%;
+
+  background:
+    rgba(228, 200, 138, 0.06);
+
+  border:
+    1px solid rgba(228, 200, 138, 0.1);
+
+  color: var(--friends-gold);
+
+  font-size: 25px;
+}
+
+.friends-empty strong {
+  color: var(--friends-text);
+
+  font-size: 13px;
+}
+
+.friends-empty span {
+  max-width: 220px;
+
+  margin-top: 7px;
+
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+/* =========================================================
    CHAT COLUMN
-========================= */
+========================================================= */
 
 .chat-col {
   display: flex;
   flex-direction: column;
+
+  min-width: 0;
+  min-height: 0;
+
   height: 100%;
   overflow: hidden;
-  background: #0b0c10;
+
+  background:
+    radial-gradient(
+      circle at 70% 15%,
+      rgba(228, 200, 138, 0.035),
+      transparent 32%
+    ),
+    var(--friends-bg);
 }
+
+/* =========================================================
+   EMPTY CHAT
+========================================================= */
 
 .chat-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: #9ca3af;
-  text-align: center;
-  padding: 20px;
-}
-
-.chat-empty-orb {
-  font-size: 40px;
-  margin-bottom: 10px;
-}
-
-.chat-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 18px;
-  background: rgba(20, 21, 28, 0.8);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  flex-shrink: 0;
-}
-
-.chat-back-btn {
-  display: none;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #ffbe3c;
-  font-size: 20px;
-  border-radius: 10px;
-  width: 36px;
-  height: 36px;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-.chat-head-name {
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.chat-head-status {
-  font-size: 11px;
-  color: #4caf50;
-}
-
-.wp-btn {
-  margin-inline-start: auto;
-  background: rgba(255, 190, 60, 0.1);
-  border: 1px solid rgba(255, 190, 60, 0.3);
-  color: #ffbe3c;
-  padding: 7px 14px;
-  border-radius: 10px;
-  font-weight: 700;
-  font-size: 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/* =========================
-   MESSAGES AREA
-========================= */
-
-.messages {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.msg-row {
-  display: flex;
-  max-width: 78%;
-}
-
-.msg-row.mine {
-  align-self: flex-end;
-}
-
-.msg-row.theirs {
-  align-self: flex-start;
-}
-
-.bubble {
-  padding: 10px 14px;
-  border-radius: 16px;
-  font-size: 13.5px;
-  line-height: 1.4;
-  word-break: break-word;
-}
-
-.msg-row.mine .bubble {
-  background: #2a2415;
-  border: 1px solid rgba(255, 190, 60, 0.25);
-  color: #ffffff;
-  border-bottom-right-radius: 4px;
-}
-
-.msg-row.theirs .bubble {
-  background: #181a24;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #ffffff;
-  border-bottom-left-radius: 4px;
-}
-
-.img-bubble img {
-  max-width: 100%;
-  max-height: 250px;
-  border-radius: 10px;
-  display: block;
-  object-fit: cover;
-}
-
-.msg-time {
-  font-size: 9px;
-  color: #6b7280;
-  margin-top: 4px;
-  display: block;
-}
-
-/* =========================
-   COMPOSER
-========================= */
-
-.composer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  background: #14151c;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  position: relative;
-  flex-shrink: 0;
-}
-
-.composer-field {
-  flex: 1;
-}
-
-.composer-field input {
-  width: 100%;
-  height: 40px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  padding: 0 14px;
-  color: #ffffff;
-  outline: none;
-  font-size: 14px;
-}
-
-.send-btn, .action-icon-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  border: none;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: all 0.2s ease;
-}
-
-.action-icon-btn {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #ffbe3c;
-  font-size: 16px;
-}
-
-.action-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.action-icon-btn.recording {
-  background: #ef4444;
-  color: #fff;
-  animation: pulse 1.5s infinite;
-}
-
-.send-btn {
-  background: #ffbe3c;
-  color: #111;
-  font-size: 15px;
-}
-
-.send-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-@keyframes pulse {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.05); }
-  100% { transform: scale(1); }
-}
-
-.recording-state, .uploading-state {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  color: #ffbe3c;
-  padding: 0 8px;
-}
-
-.recording-dot {
-  width: 10px;
-  height: 10px;
-  background: #ef4444;
-  border-radius: 50%;
-  animation: pulse 1s infinite;
-}
-
-/* =========================
-   RESPONSIVE (MOBILE FIX)
-========================= */
-
-@media (max-width: 768px) {
-  .friends-app {
-    height: calc(100vh - 60px);
-    max-height: calc(100dvh - 60px);
-  }
-
-  .app-grid {
-    grid-template-columns: 100%;
-    position: relative;
-  }
-
-  /* قائمة الأصدقاء فقط بدون شات */
-  .friends-col {
-    width: 100%;
-    display: flex;
-  }
-
-  .chat-col {
-    display: none;
-    width: 100%;
-  }
-
-  /* الشات فقط عند اختيار صديق */
-  .friends-app.has-active-chat .friends-col {
-    display: none;
-  }
-
-  .friends-app.has-active-chat .chat-col {
-    display: flex;
-  }
-
-  .chat-back-btn {
-    display: flex;
-  }
-
-  .wp-btn-text {
-    display: none;
-  }
-  
-  .wp-btn {
-    padding: 7px 10px;
-  }
-}
+  flex
