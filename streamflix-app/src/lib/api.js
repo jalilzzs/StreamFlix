@@ -54,7 +54,7 @@ export async function updateProfile(userId, patch) {
   return data;
 }
 
-// ---- Titles (تم التعديل لدعم 24 عنصر بالصفحة وتصفح جميع الأفلام والمسلسلات) ----
+// ---- Titles ---------------------------------------------------------------
 
 export async function fetchTitles({
   type,
@@ -68,18 +68,26 @@ export async function fetchTitles({
 } = {}) {
   let query = supabase.from('titles').select('*', { count: 'exact' });
 
-  // تصفية حسب النوع (أفلام / مسلسلات) مع إمكانية عرض الكل
-  if (type && type !== 'all') query = query.eq('type', type);
-  
-  // تصفية حسب التصنيف
-  if (genre && genre !== 'all') query = query.contains('genres', [genre]);
-  
-  // تصفية حسب السنة والتقييم والبحث
-  if (year) query = query.eq('release_year', year);
-  if (minRating) query = query.gte('rating_avg', minRating);
-  if (search) query = query.ilike('name', `%${search}%`);
+  if (type && type !== 'all') {
+    query = query.eq('type', type);
+  }
 
-  // الترتيب
+  if (genre && genre !== 'all') {
+    query = query.contains('genres', [genre]);
+  }
+
+  if (year) {
+    query = query.eq('release_year', year);
+  }
+
+  if (minRating) {
+    query = query.gte('rating_avg', minRating);
+  }
+
+  if (search) {
+    query = query.ilike('name', `%${search}%`);
+  }
+
   if (sortBy === 'rating') {
     query = query.order('rating_avg', { ascending: false });
   } else if (sortBy === 'year') {
@@ -88,9 +96,9 @@ export async function fetchTitles({
     query = query.order('created_at', { ascending: false });
   }
 
-  // التقسيم على صفحات (Pagination - 24 عنصر لكل صفحة)
   const from = (page - 1) * limit;
   const to = from + limit - 1;
+
   query = query.range(from, to);
 
   const { data, count, error } = await query;
@@ -99,6 +107,7 @@ export async function fetchTitles({
 
   const result = data || [];
   result.count = count || 0;
+
   return result;
 }
 
@@ -122,6 +131,7 @@ export async function fetchEpisodes(titleId) {
     .order('episode_number', { ascending: true });
 
   if (error) throw error;
+
   return data || [];
 }
 
@@ -143,10 +153,11 @@ export async function fetchRecommendations(
   const { data, error } = await query;
 
   if (error) throw error;
+
   return data || [];
 }
 
-// ---- Ratings ----------------------------------------------------------
+// ---- Ratings --------------------------------------------------------------
 
 export async function rateTitle(userId, titleId, score) {
   const { error } = await supabase
@@ -192,10 +203,11 @@ export async function getUserRating(userId, titleId) {
     .maybeSingle();
 
   if (error) throw error;
+
   return data?.score || 0;
 }
 
-// ---- Watchlist ----------------------------------------------------------
+// ---- Watchlist ------------------------------------------------------------
 
 export async function addToWatchlist(userId, titleId) {
   const { error } = await supabase
@@ -205,7 +217,9 @@ export async function addToWatchlist(userId, titleId) {
       title_id: titleId,
     });
 
-  if (error && error.code !== '23505') throw error;
+  if (error && error.code !== '23505') {
+    throw error;
+  }
 }
 
 export async function removeFromWatchlist(userId, titleId) {
@@ -227,6 +241,7 @@ export async function isInWatchlist(userId, titleId) {
     .maybeSingle();
 
   if (error) throw error;
+
   return !!data;
 }
 
@@ -282,6 +297,7 @@ export async function fetchContinueWatching(userId, limit = 10) {
     .limit(limit);
 
   if (error) throw error;
+
   return data || [];
 }
 
@@ -381,10 +397,83 @@ export async function fetchPendingRequests(userId) {
     .eq('status', 'pending');
 
   if (error) throw error;
+
   return data || [];
 }
 
-// ---- Messages / chat --------------------------------------------------
+// ---- Friend Requests Realtime --------------------------------------------
+
+export function subscribeToFriendRequests(
+  userId,
+  onRequest
+) {
+  if (!userId) {
+    return () => {};
+  }
+
+  const channel = supabase
+    .channel(`friend-requests:${userId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'friendships',
+        filter: `addressee_id=eq.${userId}`,
+      },
+      async (payload) => {
+        try {
+          const friendship = payload.new || payload.old;
+
+          if (!friendship) return;
+
+          // نجيب الطلبات الجديدة/المحدثة باش Friends.jsx
+          // يقدر يعرض البيانات الكاملة للمستخدم الطالب
+          if (
+            payload.eventType === 'INSERT' ||
+            payload.eventType === 'UPDATE'
+          ) {
+            const { data, error } = await supabase
+              .from('friendships')
+              .select(
+                '*, requester:requester_id(*)'
+              )
+              .eq('id', friendship.id)
+              .maybeSingle();
+
+            if (error) {
+              console.error(
+                'Error loading friend request:',
+                error
+              );
+              return;
+            }
+
+            if (data) {
+              onRequest?.(data);
+            }
+          } else if (payload.eventType === 'DELETE') {
+            onRequest?.({
+              ...friendship,
+              deleted: true,
+            });
+          }
+        } catch (error) {
+          console.error(
+            'Friend request realtime error:',
+            error
+          );
+        }
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
+
+// ---- Messages / chat ------------------------------------------------------
 
 export async function fetchMessages(
   userId,
@@ -401,6 +490,7 @@ export async function fetchMessages(
     .limit(limit);
 
   if (error) throw error;
+
   return data || [];
 }
 
@@ -424,6 +514,7 @@ export async function sendMessage({
     .single();
 
   if (error) throw error;
+
   return data;
 }
 
@@ -431,6 +522,7 @@ export async function sendMessage({
 
 function getFileExtension(file) {
   const originalName = file?.name || '';
+
   const originalExtension = originalName.includes('.')
     ? originalName.split('.').pop().toLowerCase()
     : '';
@@ -471,11 +563,15 @@ export async function uploadChatMedia({
   const maxAudioSize = 25 * 1024 * 1024;
 
   if (kind === 'image' && file.size > maxImageSize) {
-    throw new Error('Image is too large. Maximum size is 15 MB.');
+    throw new Error(
+      'Image is too large. Maximum size is 15 MB.'
+    );
   }
 
   if (kind === 'voice' && file.size > maxAudioSize) {
-    throw new Error('Voice message is too large. Maximum size is 25 MB.');
+    throw new Error(
+      'Voice message is too large. Maximum size is 25 MB.'
+    );
   }
 
   const extension = getFileExtension(file);
@@ -521,7 +617,7 @@ export function getChatMediaUrl(path) {
   return publicUrl;
 }
 
-// ---- Messages Realtime ----------------------------------------------------
+// ---- Messages Realtime ---------------------------------------------------
 
 export function subscribeToMessages(
   userId,
@@ -559,7 +655,7 @@ export function subscribeToMessages(
     supabase.removeChannel(channel);
 }
 
-// ---- Watch Party ------------------------------------------------------
+// ---- Watch Party ----------------------------------------------------------
 
 export async function createWatchParty({
   hostId,
@@ -600,7 +696,9 @@ export async function joinWatchParty(
       user_id: userId,
     });
 
-  if (error && error.code !== '23505') throw error;
+  if (error && error.code !== '23505') {
+    throw error;
+  }
 }
 
 export async function updatePartyPlayback(
