@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
   fetchFriends,
@@ -13,7 +14,7 @@ export default function VideoPlayer({
   episodeId = null,
 }) {
   const { user } = useAuth();
-
+  const navigate = useNavigate(); 
   const [selectedServer, setSelectedServer] = useState(0);
 
   const [shareOpen, setShareOpen] = useState(false);
@@ -246,6 +247,7 @@ export default function VideoPlayer({
 
       setSelectedFriends([]);
       setShareOpen(false);
+      navigate(`/watch-party/${party.id}`);
     } catch (err) {
       console.error(
         'Watch Party creation error:',
