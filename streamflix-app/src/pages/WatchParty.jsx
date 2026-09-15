@@ -44,7 +44,13 @@ export default function WatchParty() {
   const voiceChunksRef = useRef([]);
   const recordingTimerRef = useRef(null);
 
+  // =========================================================================
+  // LOAD MEMBERS
+  // =========================================================================
+
   async function loadMembers(partyId) {
+    if (!partyId) return;
+
     try {
       const { data, error: membersError } = await supabase
         .from('watch_party_members')
@@ -54,9 +60,12 @@ export default function WatchParty() {
           ascending: true,
         });
 
-      if (membersError) throw membersError;
+      if (membersError) {
+        throw membersError;
+      }
 
       const list = data || [];
+
       setMembers(list);
 
       const userIds = [
@@ -67,14 +76,25 @@ export default function WatchParty() {
         ),
       ];
 
-      if (!userIds.length) return;
+      if (!userIds.length) {
+        return;
+      }
 
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select(
-          'id, username, display_name, avatar_url'
-        )
-        .in('id', userIds);
+      const { data: profileData, error: profileError } =
+        await supabase
+          .from('profiles')
+          .select(
+            'id, username, display_name, avatar_url'
+          )
+          .in('id', userIds);
+
+      if (profileError) {
+        console.error(
+          'Profiles loading error:',
+          profileError
+        );
+        return;
+      }
 
       const profileMap = {};
 
@@ -94,7 +114,13 @@ export default function WatchParty() {
     }
   }
 
+  // =========================================================================
+  // LOAD MESSAGES
+  // =========================================================================
+
   async function loadMessages(partyId) {
+    if (!partyId) return;
+
     try {
       const { data, error: messagesError } =
         await supabase
@@ -117,17 +143,16 @@ export default function WatchParty() {
       const senderIds = [
         ...new Set(
           list
-            .map(
-              (item) =>
-                item.sender_id
-            )
+            .map((item) => item.sender_id)
             .filter(Boolean)
         ),
       ];
 
-      if (!senderIds.length) return;
+      if (!senderIds.length) {
+        return;
+      }
 
-      const { data: profileData } =
+      const { data: profileData, error: profileError } =
         await supabase
           .from('profiles')
           .select(
@@ -135,21 +160,24 @@ export default function WatchParty() {
           )
           .in('id', senderIds);
 
+      if (profileError) {
+        console.error(
+          'Message profiles loading error:',
+          profileError
+        );
+        return;
+      }
+
       const profileMap = {};
 
-      (profileData || []).forEach(
-        (profile) => {
-          profileMap[profile.id] =
-            profile;
-        }
-      );
+      (profileData || []).forEach((profile) => {
+        profileMap[profile.id] = profile;
+      });
 
-      setProfiles(
-        (current) => ({
-          ...current,
-          ...profileMap,
-        })
-      );
+      setProfiles((current) => ({
+        ...current,
+        ...profileMap,
+      }));
     } catch (err) {
       console.error(
         'Party messages loading error:',
@@ -158,13 +186,19 @@ export default function WatchParty() {
     }
   }
 
+  // =========================================================================
+  // LOAD PROFILE
+  // =========================================================================
+
   async function loadProfile(userId) {
     if (!userId) return;
 
-    if (profiles[userId]) return;
+    if (profiles[userId]) {
+      return;
+    }
 
     try {
-      const { data } =
+      const { data, error: profileError } =
         await supabase
           .from('profiles')
           .select(
@@ -173,13 +207,19 @@ export default function WatchParty() {
           .eq('id', userId)
           .maybeSingle();
 
-      if (data) {
-        setProfiles(
-          (current) => ({
-            ...current,
-            [userId]: data,
-          })
+      if (profileError) {
+        console.error(
+          'Profile loading error:',
+          profileError
         );
+        return;
+      }
+
+      if (data) {
+        setProfiles((current) => ({
+          ...current,
+          [userId]: data,
+        }));
       }
     } catch (err) {
       console.error(
@@ -189,18 +229,23 @@ export default function WatchParty() {
     }
   }
 
+  // =========================================================================
+  // OPEN PARTY
+  // =========================================================================
+
   useEffect(() => {
     let cancelled = false;
 
     async function openParty() {
-      if (!id || !user?.id) return;
+      if (!id || !user?.id) {
+        return;
+      }
 
       try {
         setLoading(true);
         setError('');
 
-        const partyData =
-          await getWatchParty(id);
+        const partyData = await getWatchParty(id);
 
         if (!partyData) {
           throw new Error(
@@ -213,7 +258,15 @@ export default function WatchParty() {
           user.id
         );
 
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
+
+        /*
+         * مهم:
+         * بعد الانضمام مباشرة نعيد جلب الأعضاء.
+         * هذا يخلي المستخدم الجديد يظهر فوراً عند فتح الغرفة.
+         */
 
         setParty(partyData);
 
@@ -263,12 +316,8 @@ export default function WatchParty() {
         }
 
         await Promise.all([
-          loadMembers(
-            partyData.id
-          ),
-          loadMessages(
-            partyData.id
-          ),
+          loadMembers(id),
+          loadMessages(id),
         ]);
       } catch (err) {
         if (!cancelled) {
@@ -291,6 +340,10 @@ export default function WatchParty() {
     };
   }, [id, user?.id]);
 
+  // =========================================================================
+  // PARTY REALTIME
+  // =========================================================================
+
   useEffect(() => {
     if (!id) return;
 
@@ -298,14 +351,14 @@ export default function WatchParty() {
       subscribeToParty(
         id,
         async (updatedParty) => {
-          if (!updatedParty) return;
+          if (!updatedParty) {
+            return;
+          }
 
-          setParty(
-            (current) => ({
-              ...(current || {}),
-              ...updatedParty,
-            })
-          );
+          setParty((current) => ({
+            ...(current || {}),
+            ...updatedParty,
+          }));
 
           if (
             updatedParty.status ===
@@ -314,8 +367,12 @@ export default function WatchParty() {
             setError(
               'المضيف أنهى غرفة المشاهدة'
             );
+            return;
           }
 
+          /*
+           * كلما تغيرت الغرفة نعيد جلب الأعضاء.
+           */
           await loadMembers(id);
         }
       );
@@ -330,74 +387,117 @@ export default function WatchParty() {
     };
   }, [id]);
 
+  // =========================================================================
+  // MEMBERS + CHAT REALTIME
+  // =========================================================================
+
   useEffect(() => {
-    if (!id) return;
+    if (!id) {
+      return;
+    }
+
+    // -----------------------------------------------------------------------
+    // MEMBERS CHANNEL
+    // -----------------------------------------------------------------------
 
     const membersChannel =
       supabase
         .channel(
-          `watch-party-members-${id}`
+          `watch-party-members:${id}:${user?.id || 'guest'}`
         )
         .on(
           'postgres_changes',
           {
             event: '*',
             schema: 'public',
-            table:
-              'watch_party_members',
-            filter:
-              `party_id=eq.${id}`,
+            table: 'watch_party_members',
+            filter: `party_id=eq.${id}`,
           },
-          () => {
-            loadMembers(id);
+          async (payload) => {
+            console.log(
+              'Watch Party member realtime:',
+              payload
+            );
+
+            /*
+             * مباشرة بعد INSERT / DELETE / UPDATE
+             * نعيد تحميل القائمة من Supabase.
+             */
+            await loadMembers(id);
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          console.log(
+            'Members realtime status:',
+            status
+          );
+
+          /*
+           * إذا اتصل الـRealtime بنجاح،
+           * نعمل sync مرة أخرى للقائمة.
+           */
+          if (status === 'SUBSCRIBED') {
+            loadMembers(id);
+          }
+        });
+
+    // -----------------------------------------------------------------------
+    // CHAT CHANNEL
+    // -----------------------------------------------------------------------
 
     const messagesChannel =
       supabase
         .channel(
-          `watch-party-messages-${id}`
+          `watch-party-messages:${id}:${user?.id || 'guest'}`
         )
         .on(
           'postgres_changes',
           {
             event: 'INSERT',
             schema: 'public',
-            table:
-              'watch_party_messages',
-            filter:
-              `party_id=eq.${id}`,
+            table: 'watch_party_messages',
+            filter: `party_id=eq.${id}`,
           },
           async (payload) => {
             const newMessage =
               payload.new;
 
-            setMessages(
-              (current) => {
-                if (
-                  current.some(
-                    (item) =>
-                      item.id ===
-                      newMessage.id
-                  )
-                ) {
-                  return current;
-                }
+            if (!newMessage?.id) {
+              return;
+            }
 
-                return [
-                  ...current,
-                  newMessage,
-                ];
+            setMessages((current) => {
+              if (
+                current.some(
+                  (item) =>
+                    item.id ===
+                    newMessage.id
+                )
+              ) {
+                return current;
               }
-            );
+
+              return [
+                ...current,
+                newMessage,
+              ];
+            });
 
             await loadProfile(
               newMessage.sender_id
             );
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          console.log(
+            'Messages realtime status:',
+            status
+          );
+
+          if (status === 'SUBSCRIBED') {
+            loadMessages(id);
+          }
+        });
 
     return () => {
       supabase.removeChannel(
@@ -408,7 +508,11 @@ export default function WatchParty() {
         messagesChannel
       );
     };
-  }, [id]);
+  }, [id, user?.id]);
+
+  // =========================================================================
+  // AUTO SCROLL CHAT
+  // =========================================================================
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
@@ -416,9 +520,11 @@ export default function WatchParty() {
     });
   }, [messages]);
 
-  async function sendTextMessage(
-    event
-  ) {
+  // =========================================================================
+  // SEND TEXT MESSAGE
+  // =========================================================================
+
+  async function sendTextMessage(event) {
     event?.preventDefault();
 
     const text =
@@ -435,12 +541,11 @@ export default function WatchParty() {
 
     try {
       setSending(true);
+      setError('');
 
       const { data, error: sendError } =
         await supabase
-          .from(
-            'watch_party_messages'
-          )
+          .from('watch_party_messages')
           .insert({
             party_id: id,
             sender_id: user.id,
@@ -455,25 +560,27 @@ export default function WatchParty() {
         throw sendError;
       }
 
+      /*
+       * نضيف الرسالة محلياً مباشرة.
+       * وإذا وصلت Realtime مرة ثانية،
+       * الكود يمنع التكرار عن طريق ID.
+       */
       if (data) {
-        setMessages(
-          (current) => {
-            if (
-              current.some(
-                (item) =>
-                  item.id ===
-                  data.id
-              )
-            ) {
-              return current;
-            }
-
-            return [
-              ...current,
-              data,
-            ];
+        setMessages((current) => {
+          if (
+            current.some(
+              (item) =>
+                item.id === data.id
+            )
+          ) {
+            return current;
           }
-        );
+
+          return [
+            ...current,
+            data,
+          ];
+        });
       }
 
       setMessageText('');
@@ -491,6 +598,10 @@ export default function WatchParty() {
       setSending(false);
     }
   }
+
+  // =========================================================================
+  // START VOICE RECORDING
+  // =========================================================================
 
   async function startRecording() {
     if (
@@ -610,11 +721,6 @@ export default function WatchParty() {
               }
             );
 
-          /*
-           * IMPORTANT:
-           * uploadChatMedia uses an object.
-           */
-
           const uploaded =
             await uploadChatMedia({
               userId: user.id,
@@ -646,47 +752,40 @@ export default function WatchParty() {
 
           const {
             data,
-            error:
-              messageError,
-          } =
-            await supabase
-              .from(
-                'watch_party_messages'
-              )
-              .insert({
-                party_id: id,
-                sender_id: user.id,
-                kind: 'voice',
-                content:
-                  voiceUrl,
-                metadata,
-              })
-              .select('*')
-              .single();
+            error: messageError,
+          } = await supabase
+            .from('watch_party_messages')
+            .insert({
+              party_id: id,
+              sender_id: user.id,
+              kind: 'voice',
+              content: voiceUrl,
+              metadata,
+            })
+            .select('*')
+            .single();
 
           if (messageError) {
             throw messageError;
           }
 
           if (data) {
-            setMessages(
-              (current) => {
-                if (
-                  current.some(
-                    (item) =>
-                      item.id ===
-                      data.id
-                  )
-                ) {
-                  return current;
-                }
-
-                return [
-                  ...current,
-                  data,
-                ];
+            setMessages((current) => {
+              if (
+                current.some(
+                  (item) =>
+                    item.id ===
+                    data.id
+                )
+              ) {
+                return current;
               }
-            );
+
+              return [
+                ...current,
+                data,
+              ];
+            });
           }
         } catch (err) {
           console.error(
@@ -699,10 +798,7 @@ export default function WatchParty() {
               'تعذر إرسال الرسالة الصوتية'
           );
         } finally {
-          setUploadingVoice(
-            false
-          );
-
+          setUploadingVoice(false);
           setRecordingTime(0);
 
           if (
@@ -760,6 +856,10 @@ export default function WatchParty() {
     }
   }
 
+  // =========================================================================
+  // STOP RECORDING
+  // =========================================================================
+
   function stopRecording() {
     if (
       !mediaRecorderRef.current ||
@@ -796,6 +896,10 @@ export default function WatchParty() {
     }
   }
 
+  // =========================================================================
+  // CLEANUP
+  // =========================================================================
+
   useEffect(() => {
     return () => {
       if (
@@ -831,6 +935,10 @@ export default function WatchParty() {
     };
   }, []);
 
+  // =========================================================================
+  // HELPERS
+  // =========================================================================
+
   function formatTime(seconds) {
     const value =
       Number(seconds) || 0;
@@ -848,9 +956,7 @@ export default function WatchParty() {
     ).padStart(2, '0')}`;
   }
 
-  function getProfileName(
-    userId
-  ) {
+  function getProfileName(userId) {
     const profile =
       profiles[userId];
 
@@ -865,8 +971,14 @@ export default function WatchParty() {
     );
   }
 
+  // =========================================================================
+  // EXIT PARTY
+  // =========================================================================
+
   async function exitParty() {
-    if (leaving) return;
+    if (leaving) {
+      return;
+    }
 
     try {
       setLeaving(true);
@@ -887,6 +999,10 @@ export default function WatchParty() {
     }
   }
 
+  // =========================================================================
+  // LOADING
+  // =========================================================================
+
   if (loading) {
     return (
       <div className="watch-party-loading">
@@ -894,6 +1010,10 @@ export default function WatchParty() {
       </div>
     );
   }
+
+  // =========================================================================
+  // ERROR
+  // =========================================================================
 
   if (!party || error) {
     return (
@@ -918,6 +1038,10 @@ export default function WatchParty() {
       </div>
     );
   }
+
+  // =========================================================================
+  // PLAYER DATA
+  // =========================================================================
 
   const contentType =
     title?.type === 'series' ||
@@ -962,12 +1086,17 @@ export default function WatchParty() {
   const isHost =
     party.host_id === user?.id;
 
+  // =========================================================================
+  // UI
+  // =========================================================================
+
   return (
     <div className="watch-party-page">
       <div className="watch-party-container">
 
         <header className="watch-party-top">
           <div className="watch-party-heading">
+
             <div className="watch-party-kicker">
               PRIVATE WATCH PARTY
             </div>
@@ -1029,6 +1158,7 @@ export default function WatchParty() {
             </div>
 
             <div className="watch-party-sync">
+
               <div>
                 <strong>
                   {party.status ===
@@ -1089,6 +1219,8 @@ export default function WatchParty() {
 
           <aside className="watch-party-sidebar">
 
+            {/* MEMBERS */}
+
             <section className="watch-party-panel watch-party-members">
 
               <div className="watch-party-panel-title">
@@ -1133,6 +1265,7 @@ export default function WatchParty() {
                             member.user_id
                           }
                         >
+
                           {profile?.avatar_url ? (
                             <img
                               src={
@@ -1147,6 +1280,7 @@ export default function WatchParty() {
                           )}
 
                           <div className="watch-party-member-info">
+
                             <b>
                               {name}
                             </b>
@@ -1162,14 +1296,18 @@ export default function WatchParty() {
                                 ? '👑 المضيف'
                                 : '🟢 داخل الغرفة'}
                             </span>
+
                           </div>
                         </div>
                       );
                     }
                   )
                 )}
+
               </div>
             </section>
+
+            {/* CHAT */}
 
             <section className="watch-party-panel watch-party-chat">
 
@@ -1188,6 +1326,7 @@ export default function WatchParty() {
                     دردشة خاصة أثناء المشاهدة
                   </span>
                 </div>
+
               </div>
 
               <div className="watch-party-messages">
@@ -1195,6 +1334,7 @@ export default function WatchParty() {
                 {messages.length ===
                 0 ? (
                   <div className="watch-party-chat-empty">
+
                     <div>
                       🍿
                     </div>
@@ -1206,6 +1346,7 @@ export default function WatchParty() {
                     <span>
                       اكتب أول رسالة وابدأو التقسيرة 😎
                     </span>
+
                   </div>
                 ) : (
                   messages.map(
@@ -1250,6 +1391,7 @@ export default function WatchParty() {
                               : ''
                           }`}
                         >
+
                           <div className="watch-party-message-wrap">
 
                             {!own && (
@@ -1270,6 +1412,7 @@ export default function WatchParty() {
                               'voice' ? (
                                 <>
                                   <div className="watch-party-voice-label">
+
                                     🎙️ رسالة صوتية
 
                                     {message.metadata?.duration ? (
@@ -1283,6 +1426,7 @@ export default function WatchParty() {
                                         )}
                                       </small>
                                     ) : null}
+
                                   </div>
 
                                   <audio
@@ -1300,16 +1444,21 @@ export default function WatchParty() {
                                   }
                                 </div>
                               )}
+
                             </div>
 
                             <div className="watch-party-message-meta">
+
                               {time}
 
                               {profile?.username
                                 ? ` • @${profile.username}`
                                 : ''}
+
                             </div>
+
                           </div>
+
                         </div>
                       );
                     }
@@ -1321,6 +1470,7 @@ export default function WatchParty() {
                     messagesEndRef
                   }
                 />
+
               </div>
 
               {(recording ||
@@ -1345,6 +1495,7 @@ export default function WatchParty() {
                       ⏹ إيقاف
                     </button>
                   )}
+
                 </div>
               )}
 
@@ -1386,6 +1537,7 @@ export default function WatchParty() {
                       !event.shiftKey
                     ) {
                       event.preventDefault();
+
                       sendTextMessage(
                         event
                       );
@@ -1412,9 +1564,13 @@ export default function WatchParty() {
                 >
                   ➤
                 </button>
+
               </form>
+
             </section>
+
           </aside>
+
         </main>
 
         <div className="watch-party-note">
@@ -1422,6 +1578,7 @@ export default function WatchParty() {
           <br />
           💬 الدردشة والرسائل الصوتية خاصة بغرفة المشاهدة.
         </div>
+
       </div>
     </div>
   );
