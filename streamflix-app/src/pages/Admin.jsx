@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 
-const ADMIN_PIN = '2026';
+const ADMIN_PIN = '0508302024';
 
 export default function Admin() {
   const navigate = useNavigate();
@@ -11,29 +11,29 @@ export default function Admin() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState('stats');
 
-  const [message, setMessage] = useState({
-    text: '',
-    type: ''
-  });
-
+  const [message, setMessage] = useState({ text: '', type: '' });
   const [loading, setLoading] = useState(false);
 
   const [stats, setStats] = useState({
     totalTitles: 0,
     totalUsers: 0,
     bannedUsers: 0,
-    hiddenTitles: 0,
-    premiumUsers: 0,
     vipUsers: 0,
+    verifiedUsers: 0,
     officialUsers: 0,
-    owners: 0
+    ownerUsers: 0,
+    hiddenTitles: 0,
   });
 
   const [settings, setSettings] = useState({
     maintenance_mode: false,
     diagnostics_enabled: false,
     announcement_bar: '',
-    vip_features_enabled: true
+    vip_exclusive_content: true,
+    vip_features_enabled: true,
+    vip_media_messages: true,
+    vip_voice_messages: true,
+    vip_watch_party: true,
   });
 
   const [users, setUsers] = useState([]);
@@ -45,7 +45,7 @@ export default function Admin() {
   const [systemLogs, setSystemLogs] = useState([]);
 
   // =========================================================
-  // PIN
+  // LOGIN
   // =========================================================
 
   const handlePinSubmit = (e) => {
@@ -53,16 +53,12 @@ export default function Admin() {
 
     if (pinInput === ADMIN_PIN) {
       setIsAuthenticated(true);
-      setMessage({
-        text: '',
-        type: ''
-      });
-
+      setMessage({ text: '', type: '' });
       fetchData();
     } else {
       setMessage({
         text: '❌ رمز الـ PIN غير صحيح!',
-        type: 'error'
+        type: 'error',
       });
     }
   };
@@ -74,9 +70,9 @@ export default function Admin() {
   const addLog = (text) => {
     const time = new Date().toLocaleTimeString('ar-DZ');
 
-    setSystemLogs(prev => [
+    setSystemLogs((prev) => [
       `[${time}] ${text}`,
-      ...prev.slice(0, 19)
+      ...prev.slice(0, 49),
     ]);
   };
 
@@ -88,16 +84,12 @@ export default function Admin() {
     setLoading(true);
 
     try {
-      // -------------------------
-      // SETTINGS
-      // -------------------------
+      // ---------------- SETTINGS ----------------
 
-      const {
-        data: settingsData,
-        error: settingsError
-      } = await supabase
-        .from('site_settings')
-        .select('*');
+      const { data: settingsData, error: settingsError } =
+        await supabase
+          .from('site_settings')
+          .select('*');
 
       if (settingsError) {
         throw settingsError;
@@ -105,134 +97,149 @@ export default function Admin() {
 
       const config = {};
 
-      (settingsData || []).forEach(item => {
-        config[item.key] = item.value;
+      (settingsData || []).forEach((item) => {
+        let value = item.value;
+
+        if (
+          typeof value === 'string' &&
+          (value === 'true' || value === 'false')
+        ) {
+          value = value === 'true';
+        }
+
+        if (
+          typeof value === 'string' &&
+          value.startsWith('"') &&
+          value.endsWith('"')
+        ) {
+          try {
+            value = JSON.parse(value);
+          } catch {
+            // ignore
+          }
+        }
+
+        config[item.key] = value;
       });
 
       setSettings({
-        maintenance_mode:
-          config.maintenance_mode === 'true',
-
-        diagnostics_enabled:
-          config.diagnostics_enabled === 'true',
-
+        maintenance_mode: config.maintenance_mode === true,
+        diagnostics_enabled: config.diagnostics_enabled === true,
         announcement_bar:
-          config.announcement_bar || '',
+          typeof config.announcement_bar === 'string'
+            ? config.announcement_bar
+            : '',
+
+        vip_exclusive_content:
+          config.vip_exclusive_content !== false,
 
         vip_features_enabled:
-          config.vip_features_enabled !== 'false'
+          config.vip_features_enabled !== false,
+
+        vip_media_messages:
+          config.vip_media_messages !== false,
+
+        vip_voice_messages:
+          config.vip_voice_messages !== false,
+
+        vip_watch_party:
+          config.vip_watch_party !== false,
       });
 
+      // ---------------- USERS ----------------
 
-      // -------------------------
-      // USERS
-      // -------------------------
-
-      const {
-        data: usersData,
-        error: usersError
-      } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', {
-          ascending: false
-        });
+      const { data: usersData, error: usersError } =
+        await supabase
+          .from('profiles')
+          .select(`
+            id,
+            user_code,
+            display_name,
+            username,
+            avatar_url,
+            is_premium,
+            is_vip,
+            is_banned,
+            role,
+            verification_badge,
+            official_badge,
+            owner_badge,
+            premium_plan,
+            badge_type,
+            badge_manual,
+            created_at,
+            updated_at
+          `)
+          .order('created_at', {
+            ascending: false,
+          });
 
       if (usersError) {
         throw usersError;
       }
 
-      const loadedUsers = usersData || [];
+      setUsers(usersData || []);
 
-      setUsers(loadedUsers);
+      // ---------------- TITLES ----------------
 
-
-      // -------------------------
-      // TITLES
-      // -------------------------
-
-      const {
-        data: titlesData,
-        error: titlesError
-      } = await supabase
-        .from('titles')
-        .select('*')
-        .order('id', {
-          ascending: false
-        })
-        .limit(100);
+      const { data: titlesData, error: titlesError } =
+        await supabase
+          .from('titles')
+          .select('*')
+          .order('id', {
+            ascending: false,
+          })
+          .limit(100);
 
       if (titlesError) {
         throw titlesError;
       }
 
-      const loadedTitles = titlesData || [];
+      setTitles(titlesData || []);
 
-      setTitles(loadedTitles);
+      // ---------------- STATS ----------------
 
-
-      // -------------------------
-      // STATS
-      // -------------------------
+      const allUsers = usersData || [];
+      const allTitles = titlesData || [];
 
       setStats({
-        totalTitles: loadedTitles.length,
+        totalTitles: allTitles.length,
 
-        totalUsers: loadedUsers.length,
+        totalUsers: allUsers.length,
 
-        bannedUsers:
-          loadedUsers.filter(
-            u => u.is_banned
-          ).length,
+        bannedUsers: allUsers.filter(
+          (u) => u.is_banned
+        ).length,
 
-        hiddenTitles:
-          loadedTitles.filter(
-            t => t.is_hidden
-          ).length,
+        vipUsers: allUsers.filter(
+          (u) => u.is_vip || u.is_premium
+        ).length,
 
-        premiumUsers:
-          loadedUsers.filter(
-            u => u.is_premium
-          ).length,
+        verifiedUsers: allUsers.filter(
+          (u) => u.verification_badge
+        ).length,
 
-        vipUsers:
-          loadedUsers.filter(
-            u =>
-              u.manual_badge === 'vip' ||
-              (
-                u.is_premium &&
-                u.premium_plan === 'monthly'
-              )
-          ).length,
+        officialUsers: allUsers.filter(
+          (u) => u.official_badge
+        ).length,
 
-        officialUsers:
-          loadedUsers.filter(
-            u =>
-              u.manual_badge === 'official' ||
-              (
-                u.is_premium &&
-                u.premium_plan === 'yearly'
-              )
-          ).length,
+        ownerUsers: allUsers.filter(
+          (u) => u.owner_badge
+        ).length,
 
-        owners:
-          loadedUsers.filter(
-            u =>
-              u.is_owner === true ||
-              u.manual_badge === 'owner'
-          ).length
+        hiddenTitles: allTitles.filter(
+          (t) => t.is_hidden
+        ).length,
       });
 
       addLog('تم جلب وتحديث بيانات لوحة التحكم بنجاح');
-
     } catch (err) {
-      console.error('فشل جلب البيانات:', err);
+      console.error(err);
 
       setMessage({
         text: `فشل جلب البيانات: ${err.message}`,
-        type: 'error'
+        type: 'error',
       });
-
     } finally {
       setLoading(false);
     }
@@ -242,122 +249,275 @@ export default function Admin() {
   // SETTINGS
   // =========================================================
 
-  const toggleSetting = async (
-    key,
-    currentValue
-  ) => {
-
-    const newValue = !currentValue;
-
+  const saveSetting = async (key, value) => {
     try {
-
-      const {
-        error
-      } = await supabase
+      const { error } = await supabase
         .from('site_settings')
-        .upsert({
-          key,
-          value: newValue.toString()
-        });
+        .upsert(
+          {
+            key,
+            value,
+            updated_at: new Date().toISOString(),
+          },
+          {
+            onConflict: 'key',
+          }
+        );
 
       if (error) {
         throw error;
       }
 
-      setSettings(prev => ({
+      setSettings((prev) => ({
         ...prev,
-        [key]: newValue
+        [key]: value,
       }));
 
-      let label = key;
-
-      if (key === 'maintenance_mode') {
-        label = 'وضع الصيانة';
-      }
-
-      if (key === 'diagnostics_enabled') {
-        label = 'لوحة التشخيص';
-      }
-
-      if (key === 'vip_features_enabled') {
-        label = 'ميزات VIP';
-      }
-
       setMessage({
-        text:
-          `تم ${newValue ? 'تفعيل' : 'تعطيل'} ${label} بنجاح ✅`,
-        type: 'success'
+        text: 'تم حفظ الإعداد بنجاح ✅',
+        type: 'success',
       });
 
-      addLog(
-        `${newValue ? 'تفعيل' : 'تعطيل'} ${label}`
-      );
-
+      addLog(`تغيير إعداد ${key} إلى ${String(value)}`);
     } catch (err) {
-
       setMessage({
         text: `خطأ: ${err.message}`,
-        type: 'error'
+        type: 'error',
       });
     }
   };
 
+  const toggleSetting = async (key) => {
+    const newValue = !settings[key];
+
+    await saveSetting(key, newValue);
+  };
 
   const saveAnnouncement = async () => {
+    await saveSetting(
+      'announcement_bar',
+      settings.announcement_bar
+    );
+  };
 
+  // =========================================================
+  // VIP
+  // =========================================================
+
+  const setUserVIP = async (
+    userId,
+    currentUser,
+    plan
+  ) => {
     try {
+      const isVip = plan !== 'none';
 
-      const {
-        error
-      } = await supabase
-        .from('site_settings')
-        .upsert({
-          key: 'announcement_bar',
-          value: settings.announcement_bar
-        });
+      let premiumPlan = plan;
+
+      if (!isVip) {
+        premiumPlan = 'none';
+      }
+
+      let badgeType = currentUser.badge_type || 'none';
+
+      // إذا البادج مش يدوي، نخليه حسب الاشتراك
+      if (!currentUser.badge_manual) {
+        if (plan === 'year') {
+          badgeType = 'official';
+        } else if (plan === 'month') {
+          badgeType = 'premium';
+        } else {
+          badgeType = 'none';
+        }
+      }
+
+      const updateData = {
+        is_vip: isVip,
+        is_premium: isVip,
+        premium_plan: premiumPlan,
+        badge_type: badgeType,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('profiles')
+        .update(updateData)
+        .eq('id', userId);
 
       if (error) {
         throw error;
       }
 
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === userId
+            ? {
+                ...u,
+                ...updateData,
+              }
+            : u
+        )
+      );
+
+      setStats((prev) => ({
+        ...prev,
+        vipUsers:
+          prev.vipUsers +
+          (isVip
+            ? currentUser.is_vip ||
+              currentUser.is_premium
+              ? 0
+              : 1
+            : currentUser.is_vip ||
+              currentUser.is_premium
+            ? -1
+            : 0),
+      }));
+
+      let planText = 'إلغاء VIP';
+
+      if (plan === 'month') {
+        planText = 'VIP شهر';
+      }
+
+      if (plan === 'year') {
+        planText = 'VIP عام';
+      }
+
+      if (plan === 'manual') {
+        planText = 'VIP يدوي';
+      }
+
       setMessage({
-        text: 'تم حفظ الشريط الإعلاني بنجاح ✅',
-        type: 'success'
+        text: `تم تغيير اشتراك المستخدم إلى ${planText} ⭐`,
+        type: 'success',
       });
 
       addLog(
-        `تحديث الشريط الإعلاني`
+        `تغيير VIP للمستخدم ${currentUser.user_code || userId} → ${planText}`
       );
-
     } catch (err) {
-
       setMessage({
-        text: `خطأ: ${err.message}`,
-        type: 'error'
+        text: `خطأ في VIP: ${err.message}`,
+        type: 'error',
       });
     }
   };
 
+  // =========================================================
+  // BADGES
+  // =========================================================
+
+  const toggleBadge = async (
+    userId,
+    field,
+    currentValue,
+    badgeName
+  ) => {
+    try {
+      const newValue = !currentValue;
+
+      const updateData = {
+        [field]: newValue,
+        badge_manual: true,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('profiles')
+        .update(updateData)
+        .eq('id', userId);
+
+      if (error) {
+        throw error;
+      }
+
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === userId
+            ? {
+                ...u,
+                ...updateData,
+              }
+            : u
+        )
+      );
+
+      setMessage({
+        text: `${newValue ? 'تم إعطاء' : 'تم نزع'} ${badgeName} للمستخدم ${newValue ? '🏅' : '❌'}`,
+        type: 'success',
+      });
+
+      addLog(
+        `${newValue ? 'إعطاء' : 'نزع'} ${badgeName} للمستخدم ${userId}`
+      );
+    } catch (err) {
+      setMessage({
+        text: `خطأ في البادج: ${err.message}`,
+        type: 'error',
+      });
+    }
+  };
+
+  const clearManualBadge = async (userId) => {
+    try {
+      const updateData = {
+        badge_manual: false,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('profiles')
+        .update(updateData)
+        .eq('id', userId);
+
+      if (error) {
+        throw error;
+      }
+
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === userId
+            ? {
+                ...u,
+                ...updateData,
+              }
+            : u
+        )
+      );
+
+      setMessage({
+        text: 'تم إلغاء التحكم اليدوي بالبادج 🔄',
+        type: 'success',
+      });
+
+      addLog(
+        `إلغاء البادج اليدوي للمستخدم ${userId}`
+      );
+    } catch (err) {
+      setMessage({
+        text: `خطأ: ${err.message}`,
+        type: 'error',
+      });
+    }
+  };
 
   // =========================================================
-  // BAN USER
+  // BAN
   // =========================================================
 
   const toggleUserBan = async (
     userId,
     isBanned
   ) => {
-
     try {
-
       const newValue = !isBanned;
 
-      const {
-        error
-      } = await supabase
+      const { error } = await supabase
         .from('profiles')
         .update({
-          is_banned: newValue
+          is_banned: newValue,
+          updated_at: new Date().toISOString(),
         })
         .eq('id', userId);
 
@@ -365,201 +525,41 @@ export default function Admin() {
         throw error;
       }
 
-      setUsers(prev =>
-        prev.map(u =>
+      setUsers((prev) =>
+        prev.map((u) =>
           u.id === userId
             ? {
                 ...u,
-                is_banned: newValue
+                is_banned: newValue,
               }
             : u
         )
       );
 
-      const actionText =
-        newValue
-          ? 'حظر'
-          : 'فك حظر';
+      setStats((prev) => ({
+        ...prev,
+        bannedUsers:
+          prev.bannedUsers +
+          (newValue ? 1 : -1),
+      }));
 
       setMessage({
-        text:
-          `تم ${actionText} المستخدم بنجاح ${newValue ? '🔒' : '🔓'}`,
-        type: 'success'
+        text: `تم ${newValue ? 'حظر' : 'فك حظر'} المستخدم بنجاح ${
+          newValue ? '🚫' : '🔓'
+        }`,
+        type: 'success',
       });
 
       addLog(
-        `تم ${actionText} المستخدم: ${userId}`
+        `${newValue ? 'حظر' : 'فك حظر'} المستخدم ${userId}`
       );
-
     } catch (err) {
-
       setMessage({
         text: `خطأ: ${err.message}`,
-        type: 'error'
+        type: 'error',
       });
     }
   };
-
-
-  // =========================================================
-  // PREMIUM
-  // =========================================================
-
-  const togglePremium = async (
-    userId,
-    isPremium,
-    plan = 'monthly'
-  ) => {
-
-    try {
-
-      const newPremium = !isPremium;
-
-      const updateData = {
-        is_premium: newPremium
-      };
-
-      if (newPremium) {
-
-        updateData.premium_plan = plan;
-
-        const expires = new Date();
-
-        if (plan === 'yearly') {
-          expires.setFullYear(
-            expires.getFullYear() + 1
-          );
-        } else {
-          expires.setMonth(
-            expires.getMonth() + 1
-          );
-        }
-
-        updateData.premium_expires_at =
-          expires.toISOString();
-
-      } else {
-
-        updateData.premium_plan = 'none';
-
-        updateData.premium_expires_at = null;
-      }
-
-      const {
-        error
-      } = await supabase
-        .from('profiles')
-        .update(updateData)
-        .eq('id', userId);
-
-      if (error) {
-        throw error;
-      }
-
-      setUsers(prev =>
-        prev.map(u =>
-          u.id === userId
-            ? {
-                ...u,
-                ...updateData
-              }
-            : u
-        )
-      );
-
-      setMessage({
-        text:
-          newPremium
-            ? `تم تفعيل Premium ${plan === 'yearly' ? 'السنوي 🔵' : 'الشهري ⭐'} بنجاح`
-            : 'تم إلغاء Premium بنجاح',
-        type: 'success'
-      });
-
-      addLog(
-        `${newPremium ? 'تفعيل' : 'إلغاء'} Premium للمستخدم ${userId}`
-      );
-
-    } catch (err) {
-
-      setMessage({
-        text: `خطأ: ${err.message}`,
-        type: 'error'
-      });
-    }
-  };
-
-
-  // =========================================================
-  // MANUAL BADGE
-  // =========================================================
-
-  const setManualBadge = async (
-    userId,
-    badge
-  ) => {
-
-    try {
-
-      const updateData = {
-        manual_badge: badge,
-        is_owner:
-          badge === 'owner'
-            ? true
-            : undefined
-      };
-
-      if (badge !== 'owner') {
-        updateData.is_owner = false;
-      }
-
-      const {
-        error
-      } = await supabase
-        .from('profiles')
-        .update(updateData)
-        .eq('id', userId);
-
-      if (error) {
-        throw error;
-      }
-
-      setUsers(prev =>
-        prev.map(u =>
-          u.id === userId
-            ? {
-                ...u,
-                ...updateData
-              }
-            : u
-        )
-      );
-
-      const names = {
-        none: 'بدون Badge',
-        vip: 'VIP ⭐',
-        official: 'Official 🔵',
-        owner: 'Owner 👑'
-      };
-
-      setMessage({
-        text:
-          `تم تعيين ${names[badge]} للمستخدم بنجاح ✅`,
-        type: 'success'
-      });
-
-      addLog(
-        `تغيير Badge للمستخدم ${userId} إلى ${names[badge]}`
-      );
-
-    } catch (err) {
-
-      setMessage({
-        text: `خطأ: ${err.message}`,
-        type: 'error'
-      });
-    }
-  };
-
 
   // =========================================================
   // CONTENT
@@ -569,17 +569,13 @@ export default function Admin() {
     titleId,
     isHidden
   ) => {
-
     try {
-
       const newValue = !isHidden;
 
-      const {
-        error
-      } = await supabase
+      const { error } = await supabase
         .from('titles')
         .update({
-          is_hidden: newValue
+          is_hidden: newValue,
         })
         .eq('id', titleId);
 
@@ -587,48 +583,42 @@ export default function Admin() {
         throw error;
       }
 
-      setTitles(prev =>
-        prev.map(t =>
+      setTitles((prev) =>
+        prev.map((t) =>
           t.id === titleId
             ? {
                 ...t,
-                is_hidden: newValue
+                is_hidden: newValue,
               }
             : t
         )
       );
 
       setMessage({
-        text:
-          `تم ${newValue ? 'إخفاء' : 'إظهار'} العنوان 👁️`,
-        type: 'success'
+        text: `تم ${
+          newValue ? 'إخفاء' : 'إظهار'
+        } العنوان 👁️`,
+        type: 'success',
       });
-
     } catch (err) {
-
       setMessage({
         text: `خطأ: ${err.message}`,
-        type: 'error'
+        type: 'error',
       });
     }
   };
-
 
   const toggleTitlePremium = async (
     titleId,
     isPremium
   ) => {
-
     try {
-
       const newValue = !isPremium;
 
-      const {
-        error
-      } = await supabase
+      const { error } = await supabase
         .from('titles')
         .update({
-          is_premium: newValue
+          is_premium: newValue,
         })
         .eq('id', titleId);
 
@@ -636,38 +626,35 @@ export default function Admin() {
         throw error;
       }
 
-      setTitles(prev =>
-        prev.map(t =>
+      setTitles((prev) =>
+        prev.map((t) =>
           t.id === titleId
             ? {
                 ...t,
-                is_premium: newValue
+                is_premium: newValue,
               }
             : t
         )
       );
 
       setMessage({
-        text:
-          `تم تغيير حالة VIP للعنوان 🌟`,
-        type: 'success'
+        text: `تم تغيير حالة المحتوى إلى ${
+          newValue ? 'VIP 🌟' : 'عادي'
+        }`,
+        type: 'success',
       });
-
     } catch (err) {
-
       setMessage({
         text: `خطأ: ${err.message}`,
-        type: 'error'
+        type: 'error',
       });
     }
   };
-
 
   const deleteTitle = async (
     titleId,
     titleName
   ) => {
-
     if (
       !window.confirm(
         `هل أنت متأكد من حذف "${titleName}" نهائياً؟`
@@ -677,10 +664,7 @@ export default function Admin() {
     }
 
     try {
-
-      const {
-        error
-      } = await supabase
+      const { error } = await supabase
         .from('titles')
         .delete()
         .eq('id', titleId);
@@ -689,144 +673,75 @@ export default function Admin() {
         throw error;
       }
 
-      setTitles(prev =>
-        prev.filter(
-          t => t.id !== titleId
-        )
+      setTitles((prev) =>
+        prev.filter((t) => t.id !== titleId)
       );
 
+      setStats((prev) => ({
+        ...prev,
+        totalTitles: Math.max(
+          0,
+          prev.totalTitles - 1
+        ),
+      }));
+
       setMessage({
-        text:
-          `تم حذف "${titleName}" بنجاح 🗑️`,
-        type: 'success'
+        text: `تم حذف "${titleName}" بنجاح 🗑️`,
+        type: 'success',
       });
 
-      addLog(
-        `حذف العنوان: ${titleName}`
-      );
-
+      addLog(`حذف العنوان: ${titleName}`);
     } catch (err) {
-
       setMessage({
-        text:
-          `خطأ في الحذف: ${err.message}`,
-        type: 'error'
+        text: `خطأ في الحذف: ${err.message}`,
+        type: 'error',
       });
     }
   };
-
 
   // =========================================================
   // FILTERS
   // =========================================================
 
-  const filteredUsers =
-    users.filter(u => {
+  const searchValue =
+    userSearch.toLowerCase();
 
-      const query =
-        userSearch.toLowerCase();
+  const filteredUsers = users.filter((u) => {
+    return (
+      (u.username || '')
+        .toLowerCase()
+        .includes(searchValue) ||
+      (u.display_name || '')
+        .toLowerCase()
+        .includes(searchValue) ||
+      (u.user_code || '')
+        .toLowerCase()
+        .includes(searchValue) ||
+      (u.id || '')
+        .toLowerCase()
+        .includes(searchValue)
+    );
+  });
 
-      return (
-        (u.email || '')
-          .toLowerCase()
-          .includes(query) ||
+  const titleSearchValue =
+    titleSearch.toLowerCase();
 
-        (u.username || '')
-          .toLowerCase()
-          .includes(query) ||
-
-        (u.id || '')
-          .includes(userSearch)
-      );
-    });
-
-
-  const filteredTitles =
-    titles.filter(t => {
-
-      const query =
-        titleSearch.toLowerCase();
-
-      return (
-        (t.name || '')
-          .toLowerCase()
-          .includes(query) ||
-
-        String(t.tmdb_id || '')
-          .includes(titleSearch)
-      );
-    });
-
-
-  // =========================================================
-  // BADGE DISPLAY
-  // =========================================================
-
-  const getBadge = (user) => {
-
-    if (
-      user.is_owner === true ||
-      user.manual_badge === 'owner'
-    ) {
-      return {
-        label: 'OWNER 👑',
-        background: '#8e44ad',
-        color: '#fff'
-      };
-    }
-
-    if (
-      user.manual_badge === 'official'
-    ) {
-      return {
-        label: 'OFFICIAL 🔵',
-        background: '#1976d2',
-        color: '#fff'
-      };
-    }
-
-    if (
-      user.manual_badge === 'vip'
-    ) {
-      return {
-        label: 'VIP ⭐',
-        background: '#ffc107',
-        color: '#000'
-      };
-    }
-
-    if (
-      user.is_premium &&
-      user.premium_plan === 'yearly'
-    ) {
-      return {
-        label: 'OFFICIAL 🔵',
-        background: '#1976d2',
-        color: '#fff'
-      };
-    }
-
-    if (
-      user.is_premium &&
-      user.premium_plan === 'monthly'
-    ) {
-      return {
-        label: 'VIP ⭐',
-        background: '#ffc107',
-        color: '#000'
-      };
-    }
-
-    return null;
-  };
-
+  const filteredTitles = titles.filter((t) => {
+    return (
+      (t.name || '')
+        .toLowerCase()
+        .includes(titleSearchValue) ||
+      String(t.tmdb_id || '')
+        .toLowerCase()
+        .includes(titleSearchValue)
+    );
+  });
 
   // =========================================================
   // LOGIN SCREEN
   // =========================================================
 
   if (!isAuthenticated) {
-
     return (
       <div
         style={{
@@ -836,12 +751,12 @@ export default function Admin() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontFamily: 'system-ui, sans-serif',
+          fontFamily:
+            'system-ui, sans-serif',
           direction: 'rtl',
-          padding: '20px'
+          padding: '20px',
         }}
       >
-
         <form
           onSubmit={handlePinSubmit}
           style={{
@@ -853,14 +768,13 @@ export default function Admin() {
             width: '100%',
             maxWidth: '380px',
             boxShadow:
-              '0 10px 30px rgba(0,0,0,0.5)'
+              '0 10px 30px rgba(0,0,0,0.5)',
           }}
         >
-
           <div
             style={{
               fontSize: '40px',
-              marginBottom: '10px'
+              marginBottom: '10px',
             }}
           >
             🔐
@@ -870,7 +784,7 @@ export default function Admin() {
             style={{
               fontSize: '22px',
               marginBottom: '8px',
-              color: '#e50914'
+              color: '#e50914',
             }}
           >
             لوحة تحكم StreamFlix
@@ -880,7 +794,7 @@ export default function Admin() {
             style={{
               color: '#888',
               fontSize: '13px',
-              marginBottom: '25px'
+              marginBottom: '25px',
             }}
           >
             أدخل رمز PIN المسؤول
@@ -891,7 +805,7 @@ export default function Admin() {
             maxLength={6}
             placeholder="****"
             value={pinInput}
-            onChange={e =>
+            onChange={(e) =>
               setPinInput(e.target.value)
             }
             style={{
@@ -906,7 +820,7 @@ export default function Admin() {
               fontSize: '24px',
               letterSpacing: '6px',
               marginBottom: '20px',
-              outline: 'none'
+              outline: 'none',
             }}
           />
 
@@ -921,7 +835,7 @@ export default function Admin() {
               borderRadius: '10px',
               fontWeight: 'bold',
               fontSize: '15px',
-              cursor: 'pointer'
+              cursor: 'pointer',
             }}
           >
             فتح اللوحة
@@ -932,22 +846,19 @@ export default function Admin() {
               style={{
                 color: '#ff4d4d',
                 marginTop: '15px',
-                fontSize: '13px'
+                fontSize: '13px',
               }}
             >
               {message.text}
             </p>
           )}
-
         </form>
-
       </div>
     );
   }
 
-
   // =========================================================
-  // ADMIN
+  // MAIN ADMIN
   // =========================================================
 
   return (
@@ -958,17 +869,16 @@ export default function Admin() {
         minHeight: '100vh',
         padding: '25px',
         direction: 'rtl',
-        fontFamily: 'system-ui, sans-serif'
+        fontFamily:
+          'system-ui, sans-serif',
       }}
     >
-
       <div
         style={{
           maxWidth: '1250px',
-          margin: '0 auto'
+          margin: '0 auto',
         }}
       >
-
         {/* HEADER */}
 
         <div
@@ -980,18 +890,16 @@ export default function Admin() {
             borderBottom: '1px solid #222',
             paddingBottom: '15px',
             gap: '15px',
-            flexWrap: 'wrap'
+            flexWrap: 'wrap',
           }}
         >
-
           <div>
-
             <h1
               style={{
                 color: '#e50914',
                 fontSize: '26px',
                 margin: 0,
-                fontWeight: '800'
+                fontWeight: '800',
               }}
             >
               ⚡ لوحة تحكم StreamFlix
@@ -1000,22 +908,20 @@ export default function Admin() {
             <span
               style={{
                 fontSize: '12px',
-                color: '#666'
+                color: '#666',
               }}
             >
-              إدارة المستخدمين · Premium · Badges · المحتوى
+              إدارة المستخدمين والـVIP والبادجات والمحتوى
             </span>
-
           </div>
 
           <div
             style={{
               display: 'flex',
               gap: '10px',
-              flexWrap: 'wrap'
+              flexWrap: 'wrap',
             }}
           >
-
             <button
               onClick={() =>
                 navigate('/import')
@@ -1027,10 +933,10 @@ export default function Admin() {
                 padding: '9px 16px',
                 borderRadius: '8px',
                 cursor: 'pointer',
-                fontWeight: 'bold'
+                fontWeight: 'bold',
               }}
             >
-              📥 صفحة الاستيراد
+              📥 الاستيراد
             </button>
 
             <button
@@ -1043,7 +949,7 @@ export default function Admin() {
                 border: '1px solid #333',
                 padding: '9px 16px',
                 borderRadius: '8px',
-                cursor: 'pointer'
+                cursor: 'pointer',
               }}
             >
               🏠 الموقع
@@ -1056,20 +962,18 @@ export default function Admin() {
               style={{
                 background: '#2a1212',
                 color: '#ff5555',
-                border: '1px solid #441a1a',
+                border:
+                  '1px solid #441a1a',
                 padding: '9px 16px',
                 borderRadius: '8px',
                 cursor: 'pointer',
-                fontWeight: 'bold'
+                fontWeight: 'bold',
               }}
             >
               🔒 قفل
             </button>
-
           </div>
-
         </div>
-
 
         {/* TABS */}
 
@@ -1079,45 +983,43 @@ export default function Admin() {
             gap: '10px',
             marginBottom: '25px',
             overflowX: 'auto',
-            paddingBottom: '5px'
+            paddingBottom: '5px',
           }}
         >
-
           {[
             {
               id: 'stats',
-              label: '📊 الإحصائيات'
+              label: '📊 الإحصائيات',
             },
             {
               id: 'settings',
-              label: '⚙️ الإعدادات'
+              label: '⚙️ إعدادات VIP',
             },
             {
               id: 'users',
-              label: '👥 المستخدمين'
+              label: '👥 المستخدمين والبادجات',
             },
             {
               id: 'content',
-              label: '🎬 المحتوى'
+              label: '🎬 المحتوى',
             },
             {
               id: 'logs',
-              label: '📋 السجلات'
-            }
-          ].map(tab => (
-
+              label: '📋 السجلات',
+            },
+          ].map((tab) => (
             <button
               key={tab.id}
               onClick={() => {
                 setActiveTab(tab.id);
-
                 setMessage({
                   text: '',
-                  type: ''
+                  type: '',
                 });
               }}
               style={{
-                padding: '12px 20px',
+                padding:
+                  '12px 20px',
                 background:
                   activeTab === tab.id
                     ? '#e50914'
@@ -1131,21 +1033,17 @@ export default function Admin() {
                 borderRadius: '10px',
                 cursor: 'pointer',
                 fontWeight: 'bold',
-                whiteSpace: 'nowrap'
+                whiteSpace: 'nowrap',
               }}
             >
               {tab.label}
             </button>
-
           ))}
-
         </div>
-
 
         {/* MESSAGE */}
 
         {message.text && (
-
           <div
             style={{
               background:
@@ -1165,85 +1063,95 @@ export default function Admin() {
                   ? '#4a1e1e'
                   : '#1e4a28',
               textAlign: 'center',
-              fontWeight: 'bold'
+              fontWeight: 'bold',
             }}
           >
             {message.text}
           </div>
-
         )}
 
-
-        {/* ===================================================
+        {/* =====================================================
             STATS
-        =================================================== */}
+        ===================================================== */}
 
         {activeTab === 'stats' && (
-
           <div>
-
             <div
               style={{
                 display: 'grid',
                 gridTemplateColumns:
                   'repeat(auto-fit,minmax(180px,1fr))',
                 gap: '15px',
-                marginBottom: '25px'
               }}
             >
-
               {[
                 [
+                  '🎬',
                   stats.totalTitles,
-                  '🎬 إجمالي المحتوى'
+                  'الأفلام والمسلسلات',
                 ],
                 [
+                  '👥',
                   stats.totalUsers,
-                  '👥 المستخدمين'
+                  'المستخدمين',
                 ],
                 [
-                  stats.premiumUsers,
-                  '💎 Premium'
-                ],
-                [
+                  '⭐',
                   stats.vipUsers,
-                  '⭐ VIP'
+                  'VIP',
                 ],
                 [
-                  stats.officialUsers,
-                  '🔵 Official'
-                ],
-                [
-                  stats.owners,
-                  '👑 Owners'
-                ],
-                [
+                  '🚫',
                   stats.bannedUsers,
-                  '🚫 محظورين'
+                  'محظورين',
                 ],
                 [
+                  '✓',
+                  stats.verifiedUsers,
+                  'Verified',
+                ],
+                [
+                  '🔵',
+                  stats.officialUsers,
+                  'Official',
+                ],
+                [
+                  '👑',
+                  stats.ownerUsers,
+                  'Owner',
+                ],
+                [
+                  '🙈',
                   stats.hiddenTitles,
-                  '🙈 محتوى مخفي'
-                ]
+                  'محتوى مخفي',
+                ],
               ].map(
-                ([number, label], index) => (
-
+                ([icon, number, label]) => (
                   <div
-                    key={index}
+                    key={label}
                     style={{
-                      background: '#141414',
+                      background:
+                        '#141414',
                       padding: '20px',
                       borderRadius: '12px',
-                      border: '1px solid #282828',
-                      textAlign: 'center'
+                      border:
+                        '1px solid #282828',
+                      textAlign: 'center',
                     }}
                   >
-
                     <div
                       style={{
                         fontSize: '30px',
+                        marginBottom: '5px',
+                      }}
+                    >
+                      {icon}
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: '28px',
                         fontWeight: 'bold',
-                        color: '#e50914'
                       }}
                     >
                       {number}
@@ -1252,40 +1160,36 @@ export default function Admin() {
                     <div
                       style={{
                         color: '#888',
-                        fontSize: '13px',
-                        marginTop: '5px'
+                        fontSize: '12px',
                       }}
                     >
                       {label}
                     </div>
-
                   </div>
-
                 )
               )}
-
             </div>
-
 
             <div
               style={{
+                marginTop: '20px',
                 background: '#141414',
                 padding: '20px',
                 borderRadius: '12px',
-                border: '1px solid #282828',
+                border:
+                  '1px solid #282828',
                 display: 'flex',
-                justifyContent: 'space-between',
+                justifyContent:
+                  'space-between',
                 alignItems: 'center',
                 gap: '15px',
-                flexWrap: 'wrap'
+                flexWrap: 'wrap',
               }}
             >
-
               <div>
-
                 <h3
                   style={{
-                    margin: '0 0 5px'
+                    margin: '0 0 5px',
                   }}
                 >
                   🔄 تحديث البيانات
@@ -1295,194 +1199,198 @@ export default function Admin() {
                   style={{
                     margin: 0,
                     color: '#888',
-                    fontSize: '13px'
+                    fontSize: '13px',
                   }}
                 >
                   إعادة جلب البيانات من Supabase
                 </p>
-
               </div>
 
               <button
                 onClick={fetchData}
                 disabled={loading}
                 style={{
-                  padding: '10px 20px',
+                  padding:
+                    '10px 20px',
                   background: '#222',
                   color: '#fff',
-                  border: '1px solid #444',
+                  border:
+                    '1px solid #444',
                   borderRadius: '8px',
                   cursor: 'pointer',
-                  fontWeight: 'bold'
+                  fontWeight: 'bold',
                 }}
               >
                 {loading
-                  ? '⏳ جاري التحديث...'
+                  ? '⏳ جاري...'
                   : '🔄 تحديث الآن'}
               </button>
-
             </div>
-
           </div>
-
         )}
 
-
-        {/* ===================================================
+        {/* =====================================================
             SETTINGS
-        =================================================== */}
+        ===================================================== */}
 
         {activeTab === 'settings' && (
-
           <div
             style={{
               display: 'grid',
-              gap: '20px'
+              gap: '15px',
             }}
           >
-
-            {/* MAINTENANCE */}
-
             <div
-              style={cardStyle}
+              style={{
+                background: '#181208',
+                padding: '20px',
+                borderRadius: '12px',
+                border:
+                  '1px solid #4a3610',
+              }}
             >
+              <h2
+                style={{
+                  marginTop: 0,
+                  color: '#ffc107',
+                }}
+              >
+                ⭐ نظام VIP
+              </h2>
 
-              <div>
-
-                <h3
-                  style={{
-                    margin: '0 0 5px',
-                    color: '#ff4d4d'
-                  }}
-                >
-                  🚧 وضع الصيانة
-                </h3>
-
-                <p
-                  style={descStyle}
-                >
-                  إيقاف الموقع مؤقتاً وإظهار شاشة الصيانة.
-                </p>
-
-              </div>
-
-              <ToggleButton
-                active={
-                  settings.maintenance_mode
-                }
-                onClick={() =>
-                  toggleSetting(
-                    'maintenance_mode',
-                    settings.maintenance_mode
-                  )
-                }
-                activeText="🚨 مفعل"
-                inactiveText="⚪ معطل"
-              />
-
+              <p
+                style={{
+                  color: '#888',
+                  fontSize: '13px',
+                }}
+              >
+                من هنا تتحكم في الميزات التي تحتاج VIP.
+                إذا عطلت ميزة، المستخدم العادي لن يستطيع
+                استعمالها وستظهر له ⭐.
+              </p>
             </div>
 
-
-            {/* DIAGNOSTICS */}
-
-            <div
-              style={cardStyle}
-            >
-
-              <div>
-
-                <h3
+            {[
+              [
+                'vip_features_enabled',
+                '⭐ نظام ميزات VIP',
+                'تفعيل أو تعطيل نظام الميزات المدفوعة بالكامل',
+              ],
+              [
+                'vip_exclusive_content',
+                '🎬 محتوى VIP',
+                'السماح بجعل الأفلام والمسلسلات حصرية لـVIP',
+              ],
+              [
+                'vip_media_messages',
+                '📷 إرسال الصور والملفات',
+                'ميزة إرسال الصور والملفات في الرسائل',
+              ],
+              [
+                'vip_voice_messages',
+                '🎙️ الرسائل الصوتية',
+                'ميزة إرسال Voice Messages',
+              ],
+              [
+                'vip_watch_party',
+                '🎥 Watch Party',
+                'ميزة المشاهدة الجماعية مع الأصدقاء',
+              ],
+              [
+                'maintenance_mode',
+                '🚧 وضع الصيانة',
+                'إيقاف الموقع مؤقتاً',
+              ],
+              [
+                'diagnostics_enabled',
+                '🛠️ Diagnostics',
+                'إظهار معلومات التشخيص',
+              ],
+            ].map(
+              ([key, title, description]) => (
+                <div
+                  key={key}
                   style={{
-                    margin: '0 0 5px',
-                    color: '#28a745'
+                    background:
+                      '#141414',
+                    padding: '20px',
+                    borderRadius: '12px',
+                    border:
+                      '1px solid #282828',
+                    display: 'flex',
+                    justifyContent:
+                      'space-between',
+                    alignItems: 'center',
+                    gap: '20px',
+                    flexWrap: 'wrap',
                   }}
                 >
-                  💻 Diagnostics
-                </h3>
+                  <div>
+                    <h3
+                      style={{
+                        margin:
+                          '0 0 5px',
+                      }}
+                    >
+                      {title}
+                    </h3>
 
-                <p
-                  style={descStyle}
-                >
-                  إظهار أدوات التشخيص وتتبع الأخطاء.
-                </p>
+                    <p
+                      style={{
+                        margin: 0,
+                        color: '#777',
+                        fontSize:
+                          '12px',
+                      }}
+                    >
+                      {description}
+                    </p>
+                  </div>
 
-              </div>
-
-              <ToggleButton
-                active={
-                  settings.diagnostics_enabled
-                }
-                onClick={() =>
-                  toggleSetting(
-                    'diagnostics_enabled',
-                    settings.diagnostics_enabled
-                  )
-                }
-                activeText="🟢 مفعلة"
-                inactiveText="⚪ معطلة"
-              />
-
-            </div>
-
-
-            {/* VIP FEATURES */}
-
-            <div
-              style={cardStyle}
-            >
-
-              <div>
-
-                <h3
-                  style={{
-                    margin: '0 0 5px',
-                    color: '#ffc107'
-                  }}
-                >
-                  ⭐ ميزات VIP
-                </h3>
-
-                <p
-                  style={descStyle}
-                >
-                  عند تعطيلها، جميع ميزات VIP تصبح مقفولة وتظهر
-                  علامة ⭐ للمستخدمين العاديين.
-                </p>
-
-              </div>
-
-              <ToggleButton
-                active={
-                  settings.vip_features_enabled
-                }
-                onClick={() =>
-                  toggleSetting(
-                    'vip_features_enabled',
-                    settings.vip_features_enabled
-                  )
-                }
-                activeText="⭐ مفعلة"
-                inactiveText="🔒 معطلة"
-              />
-
-            </div>
-
-
-            {/* ANNOUNCEMENT */}
+                  <button
+                    onClick={() =>
+                      toggleSetting(key)
+                    }
+                    style={{
+                      minWidth:
+                        '120px',
+                      padding:
+                        '11px 18px',
+                      background:
+                        settings[key]
+                          ? '#28a745'
+                          : '#333',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius:
+                        '8px',
+                      cursor:
+                        'pointer',
+                      fontWeight:
+                        'bold',
+                    }}
+                  >
+                    {settings[key]
+                      ? '🟢 مفعلة'
+                      : '⚪ معطلة'}
+                  </button>
+                </div>
+              )
+            )}
 
             <div
               style={{
-                background: '#141414',
+                background:
+                  '#141414',
                 padding: '20px',
                 borderRadius: '12px',
-                border: '1px solid #282828'
+                border:
+                  '1px solid #282828',
               }}
             >
-
               <h3
                 style={{
-                  margin: '0 0 10px',
-                  color: '#0066cc'
+                  marginTop: 0,
                 }}
               >
                 📢 الشريط الإعلاني
@@ -1492,32 +1400,32 @@ export default function Admin() {
                 style={{
                   display: 'flex',
                   gap: '10px',
-                  flexWrap: 'wrap'
                 }}
               >
-
                 <input
-                  type="text"
-                  placeholder="اكتب الإعلان..."
                   value={
                     settings.announcement_bar
                   }
-                  onChange={e =>
-                    setSettings({
-                      ...settings,
-                      announcement_bar:
-                        e.target.value
-                    })
+                  onChange={(e) =>
+                    setSettings(
+                      (prev) => ({
+                        ...prev,
+                        announcement_bar:
+                          e.target.value,
+                      })
+                    )
                   }
+                  placeholder="اكتب الإعلان..."
                   style={{
                     flex: 1,
-                    minWidth: '200px',
                     padding: '12px',
-                    borderRadius: '8px',
-                    border: '1px solid #333',
-                    background: '#222',
+                    borderRadius:
+                      '8px',
+                    border:
+                      '1px solid #333',
+                    background:
+                      '#222',
                     color: '#fff',
-                    outline: 'none'
                   }}
                 />
 
@@ -1526,313 +1434,421 @@ export default function Admin() {
                     saveAnnouncement
                   }
                   style={{
-                    padding: '12px 24px',
-                    background: '#0066cc',
+                    padding:
+                      '12px 20px',
+                    background:
+                      '#0066cc',
                     color: '#fff',
                     border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontWeight: 'bold'
+                    borderRadius:
+                      '8px',
+                    cursor:
+                      'pointer',
+                    fontWeight:
+                      'bold',
                   }}
                 >
                   حفظ
                 </button>
-
               </div>
-
             </div>
-
           </div>
-
         )}
 
-
-        {/* ===================================================
+        {/* =====================================================
             USERS
-        =================================================== */}
+        ===================================================== */}
 
         {activeTab === 'users' && (
-
           <div
             style={{
               background: '#141414',
               padding: '20px',
               borderRadius: '12px',
-              border: '1px solid #282828'
+              border:
+                '1px solid #282828',
             }}
           >
-
             <div
               style={{
                 display: 'flex',
-                justifyContent: 'space-between',
+                justifyContent:
+                  'space-between',
                 alignItems: 'center',
                 marginBottom: '20px',
+                gap: '10px',
                 flexWrap: 'wrap',
-                gap: '10px'
               }}
             >
+              <div>
+                <h3
+                  style={{
+                    margin: 0,
+                  }}
+                >
+                  👥 المستخدمين
+                </h3>
 
-              <h3
-                style={{
-                  margin: 0
-                }}
-              >
-                👥 إدارة المستخدمين ({filteredUsers.length})
-              </h3>
+                <span
+                  style={{
+                    color: '#666',
+                    fontSize: '12px',
+                  }}
+                >
+                  {filteredUsers.length} مستخدم
+                </span>
+              </div>
 
               <input
                 type="text"
-                placeholder="🔎 بحث بالإيميل أو الاسم أو ID..."
+                placeholder="🔎 username / الاسم / الكود / ID"
                 value={userSearch}
-                onChange={e =>
-                  setUserSearch(e.target.value)
+                onChange={(e) =>
+                  setUserSearch(
+                    e.target.value
+                  )
                 }
                 style={{
-                  padding: '10px 15px',
-                  borderRadius: '8px',
-                  border: '1px solid #333',
-                  background: '#222',
+                  padding:
+                    '10px 15px',
+                  borderRadius:
+                    '8px',
+                  border:
+                    '1px solid #333',
+                  background:
+                    '#222',
                   color: '#fff',
-                  outline: 'none',
-                  width: '280px',
-                  maxWidth: '100%'
+                  outline:
+                    'none',
+                  width:
+                    '300px',
+                  maxWidth:
+                    '100%',
+                  boxSizing:
+                    'border-box',
                 }}
               />
-
             </div>
-
 
             <div
               style={{
                 display: 'grid',
-                gap: '14px'
+                gap: '14px',
               }}
             >
-
-              {filteredUsers.length === 0 ? (
-
+              {filteredUsers.length ===
+              0 ? (
                 <div
                   style={{
-                    textAlign: 'center',
+                    textAlign:
+                      'center',
                     color: '#777',
-                    padding: '30px'
+                    padding:
+                      '30px',
                   }}
                 >
                   لا يوجد مستخدمين.
                 </div>
-
               ) : (
-
-                filteredUsers.map(user => {
-
-                  const badge =
-                    getBadge(user);
-
-                  return (
-
+                filteredUsers.map(
+                  (u) => (
                     <div
-                      key={user.id}
+                      key={u.id}
                       style={{
-                        background: '#1c1c1c',
-                        padding: '16px',
-                        borderRadius: '12px',
-                        border: '1px solid #282828'
+                        background:
+                          '#1c1c1c',
+                        padding:
+                          '16px',
+                        borderRadius:
+                          '12px',
+                        border:
+                          '1px solid #282828',
                       }}
                     >
-
                       {/* USER INFO */}
 
                       <div
                         style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          gap: '15px',
-                          flexWrap: 'wrap'
+                          display:
+                            'flex',
+                          justifyContent:
+                            'space-between',
+                          alignItems:
+                            'center',
+                          gap:
+                            '15px',
+                          flexWrap:
+                            'wrap',
                         }}
                       >
+                        <div
+                          style={{
+                            display:
+                              'flex',
+                            alignItems:
+                              'center',
+                            gap:
+                              '12px',
+                          }}
+                        >
+                          {u.avatar_url ? (
+                            <img
+                              src={
+                                u.avatar_url
+                              }
+                              alt=""
+                              style={{
+                                width:
+                                  '48px',
+                                height:
+                                  '48px',
+                                borderRadius:
+                                  '50%',
+                                objectFit:
+                                  'cover',
+                              }}
+                            />
+                          ) : (
+                            <div
+                              style={{
+                                width:
+                                  '48px',
+                                height:
+                                  '48px',
+                                borderRadius:
+                                  '50%',
+                                background:
+                                  '#333',
+                                display:
+                                  'flex',
+                                alignItems:
+                                  'center',
+                                justifyContent:
+                                  'center',
+                                fontSize:
+                                  '22px',
+                              }}
+                            >
+                              👤
+                            </div>
+                          )}
 
-                        <div>
-
-                          <div
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '7px',
-                              flexWrap: 'wrap',
-                              fontWeight: 'bold'
-                            }}
-                          >
-
-                            <span>
-                              {user.username ||
-                                user.email ||
+                          <div>
+                            <div
+                              style={{
+                                fontWeight:
+                                  'bold',
+                                fontSize:
+                                  '15px',
+                                display:
+                                  'flex',
+                                gap:
+                                  '6px',
+                                alignItems:
+                                  'center',
+                                flexWrap:
+                                  'wrap',
+                              }}
+                            >
+                              {u.display_name ||
+                                u.username ||
+                                u.user_code ||
                                 'مستخدم'}
-                            </span>
 
-                            {badge && (
+                              {u.verification_badge && (
+                                <span
+                                  title="Verified"
+                                  style={{
+                                    fontSize:
+                                      '14px',
+                                  }}
+                                >
+                                  ✓
+                                </span>
+                              )}
 
-                              <span
-                                style={{
-                                  background:
-                                    badge.background,
-                                  color:
-                                    badge.color,
-                                  padding:
-                                    '3px 8px',
-                                  borderRadius:
-                                    '5px',
-                                  fontSize:
-                                    '10px',
-                                  fontWeight:
-                                    '900'
-                                }}
-                              >
-                                {badge.label}
-                              </span>
+                              {u.official_badge && (
+                                <span
+                                  title="Official"
+                                  style={{
+                                    fontSize:
+                                      '14px',
+                                  }}
+                                >
+                                  🔵
+                                </span>
+                              )}
 
-                            )}
+                              {u.owner_badge && (
+                                <span
+                                  title="Owner"
+                                  style={{
+                                    fontSize:
+                                      '14px',
+                                  }}
+                                >
+                                  👑
+                                </span>
+                              )}
 
-                            {user.is_banned && (
+                              {(u.is_vip ||
+                                u.is_premium) && (
+                                <span
+                                  style={{
+                                    background:
+                                      '#ffc107',
+                                    color:
+                                      '#000',
+                                    padding:
+                                      '2px 7px',
+                                    borderRadius:
+                                      '5px',
+                                    fontSize:
+                                      '10px',
+                                    fontWeight:
+                                      'bold',
+                                  }}
+                                >
+                                  VIP ⭐
+                                </span>
+                              )}
 
-                              <span
-                                style={{
-                                  background:
-                                    '#d9534f',
-                                  color: '#fff',
-                                  padding:
-                                    '3px 8px',
-                                  borderRadius:
-                                    '5px',
-                                  fontSize:
-                                    '10px'
-                                }}
-                              >
-                                محظور 🚫
-                              </span>
+                              {u.is_banned && (
+                                <span
+                                  style={{
+                                    background:
+                                      '#d9534f',
+                                    color:
+                                      '#fff',
+                                    padding:
+                                      '2px 7px',
+                                    borderRadius:
+                                      '5px',
+                                    fontSize:
+                                      '10px',
+                                  }}
+                                >
+                                  🚫 محظور
+                                </span>
+                              )}
+                            </div>
 
-                            )}
-
+                            <div
+                              style={{
+                                fontSize:
+                                  '11px',
+                                color:
+                                  '#777',
+                                marginTop:
+                                  '4px',
+                              }}
+                            >
+                              @{u.username ||
+                                'no-username'}
+                              {' • '}
+                              {u.user_code ||
+                                'بدون كود'}
+                            </div>
                           </div>
-
-                          <div
-                            style={{
-                              color: '#777',
-                              fontSize: '11px',
-                              marginTop: '5px'
-                            }}
-                          >
-                            {user.email || ''}
-                          </div>
-
-                          <div
-                            style={{
-                              color: '#555',
-                              fontSize: '10px',
-                              marginTop: '3px'
-                            }}
-                          >
-                            ID: {user.id}
-                          </div>
-
-                          <div
-                            style={{
-                              color: '#888',
-                              fontSize: '11px',
-                              marginTop: '6px'
-                            }}
-                          >
-                            Premium:{' '}
-                            {user.is_premium
-                              ? user.premium_plan === 'yearly'
-                                ? 'سنوي 🔵'
-                                : 'شهري ⭐'
-                              : 'Free'}
-                          </div>
-
                         </div>
 
-
-                        {/* BUTTONS */}
+                        {/* BASIC ACTIONS */}
 
                         <div
                           style={{
-                            display: 'flex',
-                            gap: '8px',
-                            flexWrap: 'wrap',
-                            alignItems: 'flex-start'
+                            display:
+                              'flex',
+                            gap:
+                              '7px',
+                            flexWrap:
+                              'wrap',
                           }}
                         >
-
-                          {/* PREMIUM */}
-
                           <button
                             onClick={() =>
-                              togglePremium(
-                                user.id,
-                                user.is_premium,
-                                'monthly'
-                              )
-                            }
-                            style={{
-                              ...smallButton,
-                              background:
-                                user.is_premium
-                                  ? '#333'
-                                  : '#ffc107',
-                              color:
-                                user.is_premium
-                                  ? '#fff'
-                                  : '#000'
-                            }}
-                          >
-                            {user.is_premium
-                              ? 'إلغاء Premium'
-                              : 'VIP شهري ⭐'}
-                          </button>
-
-
-                          {!user.is_premium && (
-
-                            <button
-                              onClick={() =>
-                                togglePremium(
-                                  user.id,
-                                  false,
-                                  'yearly'
-                                )
-                              }
-                              style={{
-                                ...smallButton,
-                                background:
-                                  '#1976d2',
-                                color: '#fff'
-                              }}
-                            >
-                              VIP سنوي 🔵
-                            </button>
-
-                          )}
-
-
-                          {/* BADGE DROPDOWN */}
-
-                          <select
-                            value={
-                              user.manual_badge ||
-                              'none'
-                            }
-                            onChange={e =>
-                              setManualBadge(
-                                user.id,
-                                e.target.value
+                              toggleUserBan(
+                                u.id,
+                                u.is_banned
                               )
                             }
                             style={{
                               padding:
-                                '8px 10px',
+                                '8px 12px',
                               background:
-                                '#222',
+                                u.is_banned
+                                  ? '#28a745'
+                                  : '#d9534f',
+                              color:
+                                '#fff',
+                              border:
+                                'none',
+                              borderRadius:
+                                '6px',
+                              cursor:
+                                'pointer',
+                              fontSize:
+                                '11px',
+                              fontWeight:
+                                'bold',
+                            }}
+                          >
+                            {u.is_banned
+                              ? '🔓 فك الحظر'
+                              : '🚫 حظر'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* VIP */}
+
+                      <div
+                        style={{
+                          marginTop:
+                            '15px',
+                          paddingTop:
+                            '15px',
+                          borderTop:
+                            '1px solid #292929',
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize:
+                              '12px',
+                            color:
+                              '#ffc107',
+                            fontWeight:
+                              'bold',
+                            marginBottom:
+                              '8px',
+                          }}
+                        >
+                          ⭐ إدارة VIP
+                        </div>
+
+                        <div
+                          style={{
+                            display:
+                              'flex',
+                            gap:
+                              '7px',
+                            flexWrap:
+                              'wrap',
+                          }}
+                        >
+                          <button
+                            onClick={() =>
+                              setUserVIP(
+                                u.id,
+                                u,
+                                'none'
+                              )
+                            }
+                            style={{
+                              padding:
+                                '8px 12px',
+                              background:
+                                '#333',
                               color:
                                 '#fff',
                               border:
@@ -1842,451 +1858,708 @@ export default function Admin() {
                               cursor:
                                 'pointer',
                               fontSize:
-                                '12px'
+                                '11px',
                             }}
                           >
-
-                            <option value="none">
-                              بدون Badge
-                            </option>
-
-                            <option value="vip">
-                              ⭐ VIP Badge
-                            </option>
-
-                            <option value="official">
-                              🔵 Official Badge
-                            </option>
-
-                            <option value="owner">
-                              👑 Owner Badge
-                            </option>
-
-                          </select>
-
-
-                          {/* BAN */}
+                            ❌ إزالة VIP
+                          </button>
 
                           <button
                             onClick={() =>
-                              toggleUserBan(
-                                user.id,
-                                user.is_banned
+                              setUserVIP(
+                                u.id,
+                                u,
+                                'month'
                               )
                             }
                             style={{
-                              ...smallButton,
+                              padding:
+                                '8px 12px',
                               background:
-                                user.is_banned
-                                  ? '#28a745'
-                                  : '#d9534f',
-                              color: '#fff'
+                                '#ffc107',
+                              color:
+                                '#000',
+                              border:
+                                'none',
+                              borderRadius:
+                                '6px',
+                              cursor:
+                                'pointer',
+                              fontSize:
+                                '11px',
+                              fontWeight:
+                                'bold',
                             }}
                           >
-                            {user.is_banned
-                              ? 'فك الحظر 🔓'
-                              : 'حظر 🚫'}
+                            ⭐ VIP شهر
                           </button>
 
+                          <button
+                            onClick={() =>
+                              setUserVIP(
+                                u.id,
+                                u,
+                                'year'
+                              )
+                            }
+                            style={{
+                              padding:
+                                '8px 12px',
+                              background:
+                                '#ff9800',
+                              color:
+                                '#000',
+                              border:
+                                'none',
+                              borderRadius:
+                                '6px',
+                              cursor:
+                                'pointer',
+                              fontSize:
+                                '11px',
+                              fontWeight:
+                                'bold',
+                            }}
+                          >
+                            🏆 VIP عام
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              setUserVIP(
+                                u.id,
+                                u,
+                                'manual'
+                              )
+                            }
+                            style={{
+                              padding:
+                                '8px 12px',
+                              background:
+                                '#9c27b0',
+                              color:
+                                '#fff',
+                              border:
+                                'none',
+                              borderRadius:
+                                '6px',
+                              cursor:
+                                'pointer',
+                              fontSize:
+                                '11px',
+                              fontWeight:
+                                'bold',
+                            }}
+                          >
+                            🛠️ VIP يدوي
+                          </button>
                         </div>
 
+                        <div
+                          style={{
+                            marginTop:
+                              '8px',
+                            color:
+                              '#666',
+                            fontSize:
+                              '11px',
+                          }}
+                        >
+                          الخطة الحالية:{' '}
+                          <strong
+                            style={{
+                              color:
+                                '#aaa',
+                            }}
+                          >
+                            {u.premium_plan ||
+                              'none'}
+                          </strong>
+                        </div>
                       </div>
 
+                      {/* BADGES */}
+
+                      <div
+                        style={{
+                          marginTop:
+                            '15px',
+                          paddingTop:
+                            '15px',
+                          borderTop:
+                            '1px solid #292929',
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize:
+                              '12px',
+                            color:
+                              '#8ab4f8',
+                            fontWeight:
+                              'bold',
+                            marginBottom:
+                              '8px',
+                          }}
+                        >
+                          🏅 البادجات
+                        </div>
+
+                        <div
+                          style={{
+                            display:
+                              'flex',
+                            gap:
+                              '7px',
+                            flexWrap:
+                              'wrap',
+                          }}
+                        >
+                          <button
+                            onClick={() =>
+                              toggleBadge(
+                                u.id,
+                                'verification_badge',
+                                u.verification_badge,
+                                'Verification Badge'
+                              )
+                            }
+                            style={{
+                              padding:
+                                '8px 11px',
+                              background:
+                                u.verification_badge
+                                  ? '#155724'
+                                  : '#222',
+                              color:
+                                '#fff',
+                              border:
+                                '1px solid #444',
+                              borderRadius:
+                                '6px',
+                              cursor:
+                                'pointer',
+                              fontSize:
+                                '11px',
+                            }}
+                          >
+                            {u.verification_badge
+                              ? '✓ Verified ON'
+                              : '✓ Verified OFF'}
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              toggleBadge(
+                                u.id,
+                                'official_badge',
+                                u.official_badge,
+                                'Official Badge'
+                              )
+                            }
+                            style={{
+                              padding:
+                                '8px 11px',
+                              background:
+                                u.official_badge
+                                  ? '#123b69'
+                                  : '#222',
+                              color:
+                                '#fff',
+                              border:
+                                '1px solid #444',
+                              borderRadius:
+                                '6px',
+                              cursor:
+                                'pointer',
+                              fontSize:
+                                '11px',
+                            }}
+                          >
+                            {u.official_badge
+                              ? '🔵 Official ON'
+                              : '🔵 Official OFF'}
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              toggleBadge(
+                                u.id,
+                                'owner_badge',
+                                u.owner_badge,
+                                'Owner Badge'
+                              )
+                            }
+                            style={{
+                              padding:
+                                '8px 11px',
+                              background:
+                                u.owner_badge
+                                  ? '#4a3510'
+                                  : '#222',
+                              color:
+                                '#fff',
+                              border:
+                                '1px solid #444',
+                              borderRadius:
+                                '6px',
+                              cursor:
+                                'pointer',
+                              fontSize:
+                                '11px',
+                            }}
+                          >
+                            {u.owner_badge
+                              ? '👑 Owner ON'
+                              : '👑 Owner OFF'}
+                          </button>
+
+                          {u.badge_manual && (
+                            <button
+                              onClick={() =>
+                                clearManualBadge(
+                                  u.id
+                                )
+                              }
+                              style={{
+                                padding:
+                                  '8px 11px',
+                                background:
+                                  '#3b1b1b',
+                                color:
+                                  '#ff8a8a',
+                                border:
+                                  '1px solid #5a2929',
+                                borderRadius:
+                                  '6px',
+                                cursor:
+                                  'pointer',
+                                fontSize:
+                                  '11px',
+                              }}
+                            >
+                              🔄 إلغاء التحكم اليدوي
+                            </button>
+                          )}
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop:
+                              '8px',
+                            fontSize:
+                              '11px',
+                            color:
+                              '#666',
+                          }}
+                        >
+                          البادج الحالي:{' '}
+                          <strong
+                            style={{
+                              color:
+                                '#aaa',
+                            }}
+                          >
+                            {u.badge_type ||
+                              'none'}
+                          </strong>
+
+                          {u.badge_manual &&
+                            ' • يدوي ✋'}
+                        </div>
+                      </div>
                     </div>
-
-                  );
-                })
-
+                  )
+                )
               )}
-
             </div>
-
           </div>
-
         )}
 
-
-        {/* ===================================================
+        {/* =====================================================
             CONTENT
-        =================================================== */}
+        ===================================================== */}
 
         {activeTab === 'content' && (
-
           <div
             style={{
               background: '#141414',
               padding: '20px',
               borderRadius: '12px',
-              border: '1px solid #282828'
+              border:
+                '1px solid #282828',
             }}
           >
-
             <div
               style={{
                 display: 'flex',
-                justifyContent: 'space-between',
+                justifyContent:
+                  'space-between',
                 alignItems: 'center',
                 marginBottom: '20px',
                 gap: '10px',
-                flexWrap: 'wrap'
+                flexWrap: 'wrap',
               }}
             >
-
               <h3
                 style={{
-                  margin: 0
+                  margin: 0,
                 }}
               >
-                🎬 إدارة المحتوى ({filteredTitles.length})
+                🎬 إدارة المحتوى (
+                {filteredTitles.length})
               </h3>
 
               <input
                 type="text"
-                placeholder="🔎 بحث عن فيلم أو مسلسل..."
+                placeholder="🔎 اسم الفيلم / TMDB ID"
                 value={titleSearch}
-                onChange={e =>
-                  setTitleSearch(e.target.value)
+                onChange={(e) =>
+                  setTitleSearch(
+                    e.target.value
+                  )
                 }
                 style={{
-                  padding: '10px 15px',
-                  borderRadius: '8px',
-                  border: '1px solid #333',
-                  background: '#222',
-                  color: '#fff',
-                  outline: 'none',
-                  width: '280px',
-                  maxWidth: '100%'
+                  padding:
+                    '10px 15px',
+                  borderRadius:
+                    '8px',
+                  border:
+                    '1px solid #333',
+                  background:
+                    '#222',
+                  color:
+                    '#fff',
+                  outline:
+                    'none',
+                  width:
+                    '280px',
+                  maxWidth:
+                    '100%',
                 }}
               />
-
             </div>
-
 
             <div
               style={{
-                display: 'grid',
-                gap: '12px'
+                display:
+                  'grid',
+                gap:
+                  '12px',
               }}
             >
-
-              {filteredTitles.map(item => (
-
-                <div
-                  key={item.id}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    background: '#1c1c1c',
-                    padding: '12px 16px',
-                    borderRadius: '10px',
-                    border: '1px solid #282828',
-                    flexWrap: 'wrap',
-                    gap: '10px'
-                  }}
-                >
-
+              {filteredTitles.map(
+                (item) => (
                   <div
+                    key={item.id}
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px'
+                      display:
+                        'flex',
+                      justifyContent:
+                        'space-between',
+                      alignItems:
+                        'center',
+                      background:
+                        '#1c1c1c',
+                      padding:
+                        '12px 16px',
+                      borderRadius:
+                        '10px',
+                      border:
+                        '1px solid #282828',
+                      flexWrap:
+                        'wrap',
+                      gap:
+                        '10px',
                     }}
                   >
+                    <div
+                      style={{
+                        display:
+                          'flex',
+                        alignItems:
+                          'center',
+                        gap:
+                          '12px',
+                      }}
+                    >
+                      {item.poster_url ? (
+                        <img
+                          src={
+                            item.poster_url
+                          }
+                          alt=""
+                          style={{
+                            width:
+                              '40px',
+                            height:
+                              '55px',
+                            objectFit:
+                              'cover',
+                            borderRadius:
+                              '6px',
+                          }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            width:
+                              '40px',
+                            height:
+                              '55px',
+                            background:
+                              '#333',
+                            borderRadius:
+                              '6px',
+                          }}
+                        />
+                      )}
 
-                    {item.poster_url ? (
+                      <div>
+                        <div
+                          style={{
+                            fontWeight:
+                              'bold',
+                            fontSize:
+                              '14px',
+                          }}
+                        >
+                          {item.name}
 
-                      <img
-                        src={item.poster_url}
-                        alt=""
-                        style={{
-                          width: '40px',
-                          height: '55px',
-                          objectFit: 'cover',
-                          borderRadius: '6px'
-                        }}
-                      />
+                          {item.is_premium && (
+                            <span
+                              style={{
+                                color:
+                                  '#ffc107',
+                                marginRight:
+                                  '8px',
+                              }}
+                            >
+                              ⭐ VIP
+                            </span>
+                          )}
 
-                    ) : (
+                          {item.is_hidden && (
+                            <span
+                              style={{
+                                color:
+                                  '#ff9800',
+                                marginRight:
+                                  '8px',
+                                fontSize:
+                                  '11px',
+                              }}
+                            >
+                              مخفي
+                            </span>
+                          )}
+                        </div>
 
-                      <div
-                        style={{
-                          width: '40px',
-                          height: '55px',
-                          background: '#333',
-                          borderRadius: '6px'
-                        }}
-                      />
-
-                    )}
-
-                    <div>
-
-                      <div
-                        style={{
-                          fontWeight: 'bold',
-                          fontSize: '14px'
-                        }}
-                      >
-
-                        {item.name}
-
-                        {item.is_hidden && (
-
-                          <span
-                            style={{
-                              color: '#ff9800',
-                              fontSize: '12px',
-                              marginRight: '8px'
-                            }}
-                          >
-                            (مخفي)
-                          </span>
-
-                        )}
-
+                        <div
+                          style={{
+                            fontSize:
+                              '11px',
+                            color:
+                              '#777',
+                            marginTop:
+                              '3px',
+                          }}
+                        >
+                          {item.type ===
+                          'series'
+                            ? 'مسلسل'
+                            : 'فيلم'}{' '}
+                          • TMDB:{' '}
+                          {item.tmdb_id ||
+                            'غير مربوط'}
+                        </div>
                       </div>
-
-                      <div
-                        style={{
-                          fontSize: '11px',
-                          color: '#777',
-                          marginTop: '3px'
-                        }}
-                      >
-                        النوع:{' '}
-                        {item.type === 'series'
-                          ? 'مسلسل'
-                          : 'فيلم'}
-                        {' | '}
-                        TMDB:{' '}
-                        {item.tmdb_id || 'غير مربوط'}
-                      </div>
-
                     </div>
 
+                    <div
+                      style={{
+                        display:
+                          'flex',
+                        gap:
+                          '7px',
+                        flexWrap:
+                          'wrap',
+                      }}
+                    >
+                      <button
+                        onClick={() =>
+                          toggleTitlePremium(
+                            item.id,
+                            item.is_premium
+                          )
+                        }
+                        style={{
+                          padding:
+                            '7px 12px',
+                          background:
+                            item.is_premium
+                              ? '#ff9800'
+                              : '#222',
+                          color:
+                            '#fff',
+                          border:
+                            '1px solid #444',
+                          borderRadius:
+                            '6px',
+                          cursor:
+                            'pointer',
+                          fontSize:
+                            '11px',
+                        }}
+                      >
+                        {item.is_premium
+                          ? '⭐ إزالة VIP'
+                          : '⭐ جعل VIP'}
+                      </button>
+
+                      <button
+                        onClick={() =>
+                          toggleTitleVisibility(
+                            item.id,
+                            item.is_hidden
+                          )
+                        }
+                        style={{
+                          padding:
+                            '7px 12px',
+                          background:
+                            item.is_hidden
+                              ? '#28a745'
+                              : '#444',
+                          color:
+                            '#fff',
+                          border:
+                            'none',
+                          borderRadius:
+                            '6px',
+                          cursor:
+                            'pointer',
+                          fontSize:
+                            '11px',
+                        }}
+                      >
+                        {item.is_hidden
+                          ? '👁️ إظهار'
+                          : '🙈 إخفاء'}
+                      </button>
+
+                      <button
+                        onClick={() =>
+                          deleteTitle(
+                            item.id,
+                            item.name
+                          )
+                        }
+                        style={{
+                          padding:
+                            '7px 12px',
+                          background:
+                            '#d9534f',
+                          color:
+                            '#fff',
+                          border:
+                            'none',
+                          borderRadius:
+                            '6px',
+                          cursor:
+                            'pointer',
+                            fontSize:
+                            '11px',
+                          fontWeight:
+                            'bold',
+                        }}
+                      >
+                        🗑️ حذف
+                      </button>
+                    </div>
                   </div>
-
-
-                  <div
-                    style={{
-                      display: 'flex',
-                      gap: '8px',
-                      flexWrap: 'wrap'
-                    }}
-                  >
-
-                    <button
-                      onClick={() =>
-                        toggleTitlePremium(
-                          item.id,
-                          item.is_premium
-                        )
-                      }
-                      style={{
-                        ...smallButton,
-                        background:
-                          item.is_premium
-                            ? '#ff9800'
-                            : '#222',
-                        color: '#fff'
-                      }}
-                    >
-                      {item.is_premium
-                        ? 'حصري VIP 🌟'
-                        : 'عادي'}
-                    </button>
-
-                    <button
-                      onClick={() =>
-                        toggleTitleVisibility(
-                          item.id,
-                          item.is_hidden
-                        )
-                      }
-                      style={{
-                        ...smallButton,
-                        background:
-                          item.is_hidden
-                            ? '#28a745'
-                            : '#444',
-                        color: '#fff'
-                      }}
-                    >
-                      {item.is_hidden
-                        ? 'إظهار 👁️'
-                        : 'إخفاء 🙈'}
-                    </button>
-
-                    <button
-                      onClick={() =>
-                        deleteTitle(
-                          item.id,
-                          item.name
-                        )
-                      }
-                      style={{
-                        ...smallButton,
-                        background: '#d9534f',
-                        color: '#fff'
-                      }}
-                    >
-                      حذف 🗑️
-                    </button>
-
-                  </div>
-
-                </div>
-
-              ))}
-
+                )
+              )}
             </div>
-
           </div>
-
         )}
 
-
-        {/* ===================================================
+        {/* =====================================================
             LOGS
-        =================================================== */}
+        ===================================================== */}
 
         {activeTab === 'logs' && (
-
           <div
             style={{
               background: '#141414',
               padding: '20px',
               borderRadius: '12px',
-              border: '1px solid #282828'
+              border:
+                '1px solid #282828',
             }}
           >
-
             <h3
               style={{
-                margin: '0 0 15px'
+                margin:
+                  '0 0 15px',
               }}
             >
-              📋 سجل الأنشطة
+              📋 سجل العمليات
             </h3>
 
             <div
               style={{
-                background: '#080808',
-                padding: '15px',
-                borderRadius: '8px',
-                border: '1px solid #222',
-                fontFamily: 'monospace',
-                fontSize: '13px',
-                color: '#00ff00',
-                minHeight: '200px'
+                background:
+                  '#080808',
+                padding:
+                  '15px',
+                borderRadius:
+                  '8px',
+                border:
+                  '1px solid #222',
+                fontFamily:
+                  'monospace',
+                fontSize:
+                  '13px',
+                color:
+                  '#00ff00',
+                minHeight:
+                  '250px',
+                overflow:
+                  'auto',
               }}
             >
-
-              {systemLogs.length === 0 ? (
-
+              {systemLogs.length ===
+              0 ? (
                 <div
                   style={{
-                    color: '#555'
+                    color:
+                      '#555',
                   }}
                 >
                   لا توجد سجلات حالية.
                 </div>
-
               ) : (
-
                 systemLogs.map(
                   (log, index) => (
-
                     <div
-                      key={index}
+                      key={
+                        index
+                      }
                       style={{
-                        marginBottom: '8px'
+                        marginBottom:
+                          '8px',
                       }}
                     >
                       {log}
                     </div>
-
                   )
                 )
-
               )}
-
             </div>
-
           </div>
-
         )}
-
       </div>
-
     </div>
-  );
-}
-
-
-// =========================================================
-// STYLES
-// =========================================================
-
-const cardStyle = {
-  background: '#141414',
-  padding: '20px',
-  borderRadius: '12px',
-  border: '1px solid #282828',
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  gap: '20px',
-  flexWrap: 'wrap'
-};
-
-const descStyle = {
-  color: '#888',
-  fontSize: '13px',
-  margin: 0
-};
-
-const smallButton = {
-  padding: '8px 12px',
-  border: 'none',
-  borderRadius: '6px',
-  cursor: 'pointer',
-  fontSize: '12px',
-  fontWeight: 'bold'
-};
-
-
-function ToggleButton({
-  active,
-  onClick,
-  activeText,
-  inactiveText
-}) {
-
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        padding: '11px 20px',
-        background:
-          active
-            ? '#28a745'
-            : '#222',
-        color: '#fff',
-        border:
-          active
-            ? 'none'
-            : '1px solid #444',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        fontWeight: 'bold',
-        whiteSpace: 'nowrap'
-      }}
-    >
-      {active
-        ? activeText
-        : inactiveText}
-    </button>
   );
 }
