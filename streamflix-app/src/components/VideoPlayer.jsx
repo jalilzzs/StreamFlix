@@ -1,4 +1,4 @@
-import{ useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -27,23 +27,11 @@ export default function VideoPlayer({
 
   const [error, setError] = useState('');
 
-  /*
-   * =========================================================
-   * TMDB ID
-   * =========================================================
-   */
-
   const realTmdb =
     tmdbId ||
     title?.tmdb_id ||
     title?.tmdbId ||
     null;
-
-  /*
-   * =========================================================
-   * CONTENT TYPE
-   * =========================================================
-   */
 
   const contentType =
     type === 'series' ||
@@ -53,47 +41,23 @@ export default function VideoPlayer({
       ? 'tv'
       : 'movie';
 
-  /*
-   * =========================================================
-   * CURRENT EPISODE
-   * =========================================================
-   */
-
   const currentEpisodeId =
     episodeId ||
     title?.current_episode_id ||
     title?.episode_id ||
     null;
 
-  const currentSeason =
-    Number(
-      title?.current_season ||
+  const currentSeason = Number(
+    title?.current_season ||
       title?.season ||
       1
-    );
+  );
 
-  const currentEpisodeNumber =
-    Number(
-      title?.current_episode_number ||
+  const currentEpisodeNumber = Number(
+    title?.current_episode_number ||
       title?.episode_number ||
       1
-    );
-
-  /*
-   * =========================================================
-   * EPISODE STREAM URLS
-   * =========================================================
-   *
-   * episodes.stream_urls is JSONB.
-   *
-   * Example:
-   *
-   * {
-   *   "server1": "https://...."
-   * }
-   *
-   * Server 1 is taken from the database.
-   */
+  );
 
   const episodeStreamUrls =
     title?.current_episode_stream_urls ||
@@ -111,42 +75,21 @@ export default function VideoPlayer({
         )
       : null;
 
-  /*
-   * =========================================================
-   * SERVER 1
-   * =========================================================
-   *
-   * Episode:
-   *   episodes.stream_urls.server1
-   *   then title.url
-   *
-   * Movie:
-   *   title.url
-   */
-
   const server1Url =
     databaseServer1 ||
     title?.url ||
     null;
 
   /*
-   * =========================================================
-   * SERVER 2 - STREAMSRC
-   * =========================================================
-   *
-   * StreamSrc uses a complete external player.
+   * Server 2 - StreamSrc external player
    *
    * Movie:
-   * https://streamsrc.cc/watch/movie/tmdbid=TMDB
+   * https://streamsrc.cc/watch/movie/tmdbid=TMDB_ID
    *
    * Series:
-   * https://streamsrc.cc/watch/series/tmdbid=TMDB
+   * https://streamsrc.cc/watch/series/tmdbid=TMDB_ID
    *
-   * Do NOT append /season/episode because that route is not
-   * the documented StreamSrc player route.
-   *
-   * The StreamSrc series player handles seasons and episodes
-   * itself.
+   * StreamSrc provides the complete external player.
    */
 
   const streamSrcUrl = useMemo(() => {
@@ -163,16 +106,7 @@ export default function VideoPlayer({
     }
 
     return `https://streamsrc.cc/watch/series/tmdbid=${encodedTmdb}`;
-  }, [
-    realTmdb,
-    contentType,
-  ]);
-
-  /*
-   * =========================================================
-   * SERVERS
-   * =========================================================
-   */
+  }, [realTmdb, contentType]);
 
   const servers = useMemo(() => {
     return [
@@ -187,19 +121,10 @@ export default function VideoPlayer({
         url: streamSrcUrl,
       },
     ];
-  }, [
-    server1Url,
-    streamSrcUrl,
-  ]);
+  }, [server1Url, streamSrcUrl]);
 
   const currentServer =
-    servers[selectedServer];
-
-  /*
-   * =========================================================
-   * SERVER FALLBACK
-   * =========================================================
-   */
+    servers[selectedServer] || servers[0];
 
   useEffect(() => {
     if (
@@ -208,16 +133,7 @@ export default function VideoPlayer({
     ) {
       setSelectedServer(0);
     }
-  }, [
-    selectedServer,
-    streamSrcUrl,
-  ]);
-
-  /*
-   * =========================================================
-   * RESET ERROR
-   * =========================================================
-   */
+  }, [selectedServer, streamSrcUrl]);
 
   useEffect(() => {
     setError('');
@@ -228,12 +144,6 @@ export default function VideoPlayer({
     currentEpisodeNumber,
     currentEpisodeId,
   ]);
-
-  /*
-   * =========================================================
-   * LOAD FRIENDS
-   * =========================================================
-   */
 
   useEffect(() => {
     if (!shareOpen || !user?.id) {
@@ -272,16 +182,7 @@ export default function VideoPlayer({
     return () => {
       cancelled = true;
     };
-  }, [
-    shareOpen,
-    user?.id,
-  ]);
-
-  /*
-   * =========================================================
-   * FRIEND SELECTION
-   * =========================================================
-   */
+  }, [shareOpen, user?.id]);
 
   function toggleFriend(friendId) {
     setSelectedFriends((current) => {
@@ -291,24 +192,13 @@ export default function VideoPlayer({
         );
       }
 
-      return [
-        ...current,
-        friendId,
-      ];
+      return [...current, friendId];
     });
   }
 
-  /*
-   * =========================================================
-   * WATCH PARTY
-   * =========================================================
-   */
-
   async function createParty() {
     if (!user?.id) {
-      setError(
-        'يجب تسجيل الدخول أولاً'
-      );
+      setError('يجب تسجيل الدخول أولاً');
       return;
     }
 
@@ -338,8 +228,7 @@ export default function VideoPlayer({
           friendIds: selectedFriends,
         });
 
-      const party =
-        partyResult?.party;
+      const party = partyResult?.party;
 
       if (!party?.id) {
         throw new Error(
@@ -374,11 +263,9 @@ export default function VideoPlayer({
             ? 'series'
             : 'movie',
 
-        tmdb_id:
-          realTmdb,
+        tmdb_id: realTmdb,
 
-        episode_id:
-          currentEpisodeId,
+        episode_id: currentEpisodeId,
 
         season:
           contentType === 'tv'
@@ -390,32 +277,22 @@ export default function VideoPlayer({
             ? currentEpisodeNumber
             : null,
 
-        server:
-          selectedServer,
+        server: selectedServer,
 
         watch_party: true,
       };
 
-      /*
-       * Keep compatibility with the existing
-       * messages.kind constraint.
-       */
-
       await Promise.all(
-        selectedFriends.map(
-          (friendId) =>
-            sendMessage({
-              senderId: user.id,
-              receiverId: friendId,
-              kind: 'title_share',
-              content:
-                metadata.name,
-              sharedTitleId:
-                title.id,
-              sharedPartyId:
-                party.id,
-              metadata,
-            })
+        selectedFriends.map((friendId) =>
+          sendMessage({
+            senderId: user.id,
+            receiverId: friendId,
+            kind: 'title_share',
+            content: metadata.name,
+            sharedTitleId: title.id,
+            sharedPartyId: party.id,
+            metadata,
+          })
         )
       );
 
@@ -439,12 +316,6 @@ export default function VideoPlayer({
       setSharing(false);
     }
   }
-
-  /*
-   * =========================================================
-   * NO TMDB
-   * =========================================================
-   */
 
   if (!realTmdb) {
     return (
@@ -474,36 +345,14 @@ export default function VideoPlayer({
     );
   }
 
-  /*
-   * =========================================================
-   * IFRAME KEY
-   * =========================================================
-   *
-   * This forces only the iframe to be recreated when:
-   *
-   * - Server changes
-   * - Movie changes
-   * - Season changes
-   * - Episode changes
-   *
-   * The whole page is NOT refreshed.
-   */
-
-  const playerKey =
-    [
-      selectedServer,
-      realTmdb,
-      contentType,
-      currentSeason,
-      currentEpisodeNumber,
-      currentEpisodeId || '',
-    ].join('-');
-
-  /*
-   * =========================================================
-   * PLAYER
-   * =========================================================
-   */
+  const playerKey = [
+    selectedServer,
+    realTmdb,
+    contentType,
+    currentSeason,
+    currentEpisodeNumber,
+    currentEpisodeId || '',
+  ].join('-');
 
   return (
     <div
@@ -517,8 +366,6 @@ export default function VideoPlayer({
         position: 'relative',
       }}
     >
-      {/* PLAYER */}
-
       <div
         style={{
           position: 'relative',
@@ -590,11 +437,9 @@ export default function VideoPlayer({
                     marginTop: '5px',
                     border:
                       '1px solid #d4af37',
-                    background:
-                      '#d4af37',
+                    background: '#d4af37',
                     color: '#111',
-                    padding:
-                      '9px 16px',
+                    padding: '9px 16px',
                     borderRadius: '8px',
                     cursor: 'pointer',
                     fontWeight: 800,
@@ -606,8 +451,6 @@ export default function VideoPlayer({
           </div>
         )}
       </div>
-
-      {/* SERVERS + SHARE */}
 
       <div
         style={{
@@ -631,8 +474,7 @@ export default function VideoPlayer({
         </span>
 
         {servers.map((server) => {
-          const available =
-            Boolean(server.url);
+          const available = Boolean(server.url);
 
           return (
             <button
@@ -645,36 +487,28 @@ export default function VideoPlayer({
                 }
 
                 setError('');
-                setSelectedServer(
-                  server.id
-                );
+                setSelectedServer(server.id);
               }}
               style={{
                 border:
-                  selectedServer ===
-                  server.id
+                  selectedServer === server.id
                     ? '1px solid #d4af37'
                     : '1px solid #333',
 
                 background:
-                  selectedServer ===
-                  server.id
+                  selectedServer === server.id
                     ? '#d4af37'
                     : '#181818',
 
                 color:
-                  selectedServer ===
-                  server.id
+                  selectedServer === server.id
                     ? '#111'
                     : available
                       ? '#ddd'
                       : '#555',
 
-                padding:
-                  '8px 14px',
-
-                borderRadius:
-                  '8px',
+                padding: '8px 14px',
+                borderRadius: '8px',
 
                 cursor:
                   available
@@ -684,10 +518,7 @@ export default function VideoPlayer({
                 fontSize: '12px',
                 fontWeight: 700,
 
-                opacity:
-                  available
-                    ? 1
-                    : 0.55,
+                opacity: available ? 1 : 0.55,
               }}
             >
               {server.name}
@@ -702,13 +533,11 @@ export default function VideoPlayer({
             setShareOpen(true);
           }}
           style={{
-            border:
-              '1px solid #d4af37',
+            border: '1px solid #d4af37',
             background:
               'linear-gradient(135deg,#d4af37,#b89222)',
             color: '#111',
-            padding:
-              '8px 16px',
+            padding: '8px 16px',
             borderRadius: '8px',
             cursor: 'pointer',
             fontSize: '12px',
@@ -719,20 +548,16 @@ export default function VideoPlayer({
         </button>
       </div>
 
-      {/* SHARE MODAL */}
-
       {shareOpen && (
         <div
           onClick={() =>
-            !sharing &&
-            setShareOpen(false)
+            !sharing && setShareOpen(false)
           }
           style={{
             position: 'fixed',
             inset: 0,
             zIndex: 99999,
-            background:
-              'rgba(0,0,0,.75)',
+            background: 'rgba(0,0,0,.75)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -757,14 +582,11 @@ export default function VideoPlayer({
                 '0 25px 80px rgba(0,0,0,.55)',
             }}
           >
-            {/* HEADER */}
-
             <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent:
-                  'space-between',
+                justifyContent: 'space-between',
                 marginBottom: '18px',
               }}
             >
@@ -813,8 +635,6 @@ export default function VideoPlayer({
               </button>
             </div>
 
-            {/* MOVIE INFO */}
-
             <div
               style={{
                 display: 'flex',
@@ -822,8 +642,7 @@ export default function VideoPlayer({
                 padding: '12px',
                 borderRadius: '13px',
                 background: '#0e0e0e',
-                border:
-                  '1px solid #292929',
+                border: '1px solid #292929',
                 marginBottom: '15px',
               }}
             >
@@ -855,8 +674,7 @@ export default function VideoPlayer({
                     background: '#222',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent:
-                      'center',
+                    justifyContent: 'center',
                     fontSize: '25px',
                   }}
                 >
@@ -868,8 +686,7 @@ export default function VideoPlayer({
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
-                  justifyContent:
-                    'center',
+                  justifyContent: 'center',
                   gap: '5px',
                 }}
               >
@@ -897,15 +714,11 @@ export default function VideoPlayer({
               </div>
             </div>
 
-            {/* ERROR */}
-
             {error && (
               <div
                 style={{
-                  padding:
-                    '10px 12px',
-                  marginBottom:
-                    '12px',
+                  padding: '10px 12px',
+                  marginBottom: '12px',
                   borderRadius: '9px',
                   background:
                     'rgba(220,60,60,.1)',
@@ -918,8 +731,6 @@ export default function VideoPlayer({
                 {error}
               </div>
             )}
-
-            {/* FRIENDS */}
 
             <div
               style={{
@@ -957,175 +768,128 @@ export default function VideoPlayer({
               <div
                 style={{
                   display: 'flex',
-                  flexDirection:
-                    'column',
+                  flexDirection: 'column',
                   gap: '7px',
                   maxHeight: '300px',
                   overflowY: 'auto',
                 }}
               >
-                {friends.map(
-                  (friend) => {
-                    const selected =
-                      selectedFriends.includes(
-                        friend.id
-                      );
+                {friends.map((friend) => {
+                  const selected =
+                    selectedFriends.includes(
+                      friend.id
+                    );
 
-                    const name =
-                      friend.display_name ||
-                      friend.full_name ||
-                      friend.username ||
-                      'مستخدم';
+                  const name =
+                    friend.display_name ||
+                    friend.full_name ||
+                    friend.username ||
+                    'مستخدم';
 
-                    return (
-                      <button
-                        key={
-                          friend.id
-                        }
-                        type="button"
-                        onClick={() =>
-                          toggleFriend(
-                            friend.id
-                          )
-                        }
+                  return (
+                    <button
+                      key={friend.id}
+                      type="button"
+                      onClick={() =>
+                        toggleFriend(friend.id)
+                      }
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '10px',
+                        borderRadius: '10px',
+                        border:
+                          selected
+                            ? '1px solid #d4af37'
+                            : '1px solid #292929',
+                        background:
+                          selected
+                            ? 'rgba(212,175,55,.08)'
+                            : '#101010',
+                        color: '#fff',
+                        cursor: 'pointer',
+                        textAlign: 'right',
+                      }}
+                    >
+                      <div
                         style={{
-                          width: '100%',
-                          display:
-                            'flex',
-                          alignItems:
-                            'center',
-                          gap: '10px',
-                          padding:
-                            '10px',
-                          borderRadius:
-                            '10px',
+                          width: '38px',
+                          height: '38px',
+                          borderRadius: '50%',
+                          overflow: 'hidden',
+                          background: '#252525',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#d4af37',
+                          fontWeight: 900,
+                        }}
+                      >
+                        {friend.avatar_url ? (
+                          <img
+                            src={friend.avatar_url}
+                            alt=""
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                            }}
+                          />
+                        ) : (
+                          name
+                            .charAt(0)
+                            .toUpperCase()
+                        )}
+                      </div>
+
+                      <span
+                        style={{
+                          flex: 1,
+                          fontSize: '13px',
+                        }}
+                      >
+                        {name}
+                      </span>
+
+                      <span
+                        style={{
+                          width: '23px',
+                          height: '23px',
+                          borderRadius: '50%',
                           border:
                             selected
                               ? '1px solid #d4af37'
-                              : '1px solid #292929',
-                          background:
-                            selected
-                              ? 'rgba(212,175,55,.08)'
-                              : '#101010',
-                          color: '#fff',
-                          cursor:
-                            'pointer',
-                          textAlign:
-                            'right',
+                              : '1px solid #444',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#d4af37',
+                          fontWeight: 900,
                         }}
                       >
-                        <div
-                          style={{
-                            width: '38px',
-                            height: '38px',
-                            borderRadius:
-                              '50%',
-                            overflow:
-                              'hidden',
-                            background:
-                              '#252525',
-                            display:
-                              'flex',
-                            alignItems:
-                              'center',
-                            justifyContent:
-                              'center',
-                            color:
-                              '#d4af37',
-                            fontWeight:
-                              900,
-                          }}
-                        >
-                          {friend.avatar_url ? (
-                            <img
-                              src={
-                                friend.avatar_url
-                              }
-                              alt=""
-                              style={{
-                                width:
-                                  '100%',
-                                height:
-                                  '100%',
-                                objectFit:
-                                  'cover',
-                              }}
-                            />
-                          ) : (
-                            name
-                              .charAt(
-                                0
-                              )
-                              .toUpperCase()
-                          )}
-                        </div>
-
-                        <span
-                          style={{
-                            flex: 1,
-                            fontSize:
-                              '13px',
-                          }}
-                        >
-                          {name}
-                        </span>
-
-                        <span
-                          style={{
-                            width:
-                              '23px',
-                            height:
-                              '23px',
-                            borderRadius:
-                              '50%',
-                            border:
-                              selected
-                                ? '1px solid #d4af37'
-                                : '1px solid #444',
-                            display:
-                              'flex',
-                            alignItems:
-                              'center',
-                            justifyContent:
-                              'center',
-                            color:
-                              '#d4af37',
-                            fontWeight:
-                              900,
-                          }}
-                        >
-                          {selected
-                            ? '✓'
-                            : ''}
-                        </span>
-                      </button>
-                    );
-                  }
-                )}
+                        {selected ? '✓' : ''}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             )}
-
-            {/* SEND */}
 
             <button
               type="button"
               disabled={
                 sharing ||
-                selectedFriends.length ===
-                  0
+                selectedFriends.length === 0
               }
-              onClick={
-                createParty
-              }
+              onClick={createParty}
               style={{
                 width: '100%',
-                marginTop:
-                  '15px',
-                padding:
-                  '13px',
+                marginTop: '15px',
+                padding: '13px',
                 border: 'none',
-                borderRadius:
-                  '10px',
+                borderRadius: '10px',
                 background:
                   selectedFriends.length &&
                   !sharing
@@ -1142,8 +906,7 @@ export default function VideoPlayer({
                     ? 'pointer'
                     : 'not-allowed',
                 fontWeight: 900,
-                fontSize:
-                  '13px',
+                fontSize: '13px',
               }}
             >
               {sharing
@@ -1159,3 +922,6 @@ export default function VideoPlayer({
   );
 }
 ```
+
+**دير Replace كامل للملف بهذا، ثم Commit/Push.**
+والـ `npm audit` خليها حاليا؛ الخطأ اللي كان يطيّح الـBuild هو صيغة `VideoPlayer.jsx`، وهذا الملف ما فيهش علامات Markdown في آخره.
