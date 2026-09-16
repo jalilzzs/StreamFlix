@@ -1,4 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import VideoPlayer from '../components/VideoPlayer';
@@ -9,71 +13,97 @@ export default function TitleDetail() {
   const [title, setTitle] = useState(null);
   const [episodes, setEpisodes] = useState([]);
 
-  const [selectedSeason, setSelectedSeason] = useState(1);
-  const [selectedEpisode, setSelectedEpisode] =
+  const [selectedSeason, setSelectedSeason] =
+    useState(1);
+
+  const [selectedEpisodeId, setSelectedEpisodeId] =
     useState(null);
 
-  const [loading, setLoading] = useState(true);
-  const [loadingEpisodes, setLoadingEpisodes] =
+  const [loading, setLoading] =
+    useState(true);
+
+  const [episodesLoading, setEpisodesLoading] =
     useState(false);
 
+  // =========================================================
+  // جلب العمل والحلقات
+  // =========================================================
+
   useEffect(() => {
+    let cancelled = false;
+
     async function fetchTitle() {
       try {
         setLoading(true);
 
-        const { data, error } = await supabase
+        const {
+          data,
+          error,
+        } = await supabase
           .from('titles')
           .select('*')
           .eq('id', id)
           .single();
 
-        if (error) throw error;
+        if (error) {
+          throw error;
+        }
 
-        setTitle(data);
+        if (!cancelled) {
+          setTitle(data);
+        }
       } catch (error) {
         console.error(
           'خطأ في جلب بيانات العمل:',
           error
         );
 
-        setTitle(null);
+        if (!cancelled) {
+          setTitle(null);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
     if (id) {
       fetchTitle();
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
-  const tmdbId =
-    title?.tmdb_id ||
-    title?.tmdbId ||
-    title?.tmdb ||
-    null;
+  // =========================================================
+  // جلب الحلقات
+  // =========================================================
 
-  const type =
-    title?.type === 'series' ||
-    title?.type === 'tv'
-      ? 'tv'
-      : 'movie';
-
-  /*
-   * جلب حلقات المسلسل
-   */
   useEffect(() => {
+    let cancelled = false;
+
     async function fetchEpisodes() {
-      if (!id || type !== 'tv') {
+      if (
+        !id ||
+        !title ||
+        !(
+          title.type === 'series' ||
+          title.type === 'tv'
+        )
+      ) {
         setEpisodes([]);
         return;
       }
 
       try {
-        setLoadingEpisodes(true);
+        setEpisodesLoading(true);
 
-        const { data, error } = await supabase
+        const {
+          data,
+          error,
+        } = await supabase
           .from('episodes')
           .select('*')
           .eq('title_id', id)
@@ -84,28 +114,32 @@ export default function TitleDetail() {
             ascending: true,
           });
 
-        if (error) throw error;
+        if (error) {
+          throw error;
+        }
 
-        const loadedEpisodes = data || [];
+        if (!cancelled) {
+          const rows = data || [];
 
-        setEpisodes(loadedEpisodes);
+          setEpisodes(rows);
 
-        /*
-         * اختيار أول حلقة متوفرة تلقائيًا
-         */
-        if (loadedEpisodes.length > 0) {
-          const firstEpisode =
-            loadedEpisodes[0];
+          if (rows.length > 0) {
+            const firstSeason =
+              Number(
+                rows[0].season || 1
+              );
 
-          setSelectedSeason(
-            Number(
-              firstEpisode.season || 1
-            )
-          );
+            setSelectedSeason(
+              firstSeason
+            );
 
-          setSelectedEpisode(
-            firstEpisode
-          );
+            setSelectedEpisodeId(
+              rows[0].id
+            );
+          } else {
+            setSelectedSeason(1);
+            setSelectedEpisodeId(null);
+          }
         }
       } catch (error) {
         console.error(
@@ -113,27 +147,46 @@ export default function TitleDetail() {
           error
         );
 
-        setEpisodes([]);
+        if (!cancelled) {
+          setEpisodes([]);
+          setSelectedEpisodeId(null);
+        }
       } finally {
-        setLoadingEpisodes(false);
+        if (!cancelled) {
+          setEpisodesLoading(false);
+        }
       }
     }
 
     fetchEpisodes();
-  }, [id, type]);
 
-  /*
-   * المواسم الموجودة
-   */
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    id,
+    title,
+  ]);
+
+  // =========================================================
+  // المواسم
+  // =========================================================
+
   const seasons = useMemo(() => {
     const values = [
       ...new Set(
         episodes
           .map((episode) =>
-            Number(episode.season)
+            Number(
+              episode.season
+            )
           )
-          .filter((season) =>
-            Number.isFinite(season)
+          .filter(
+            (season) =>
+              Number.isInteger(
+                season
+              ) &&
+              season > 0
           )
       ),
     ];
@@ -143,32 +196,66 @@ export default function TitleDetail() {
     );
   }, [episodes]);
 
-  /*
-   * حلقات الموسم الحالي
-   */
+  // =========================================================
+  // حلقات الموسم الحالي
+  // =========================================================
+
   const seasonEpisodes = useMemo(() => {
     return episodes
       .filter(
         (episode) =>
-          Number(episode.season) ===
+          Number(
+            episode.season
+          ) ===
           Number(selectedSeason)
       )
       .sort(
         (a, b) =>
-          Number(a.episode_number) -
-          Number(b.episode_number)
+          Number(
+            a.episode_number
+          ) -
+          Number(
+            b.episode_number
+          )
       );
   }, [
     episodes,
     selectedSeason,
   ]);
 
-  /*
-   * تغيير الموسم
-   */
-  function handleSeasonChange(
+  // =========================================================
+  // الحلقة الحالية
+  // =========================================================
+
+  const selectedEpisode = useMemo(() => {
+    if (!seasonEpisodes.length) {
+      return null;
+    }
+
+    const byId =
+      seasonEpisodes.find(
+        (episode) =>
+          episode.id ===
+          selectedEpisodeId
+      );
+
+    if (byId) {
+      return byId;
+    }
+
+    return seasonEpisodes[0];
+  }, [
+    seasonEpisodes,
+    selectedEpisodeId,
+  ]);
+
+  // =========================================================
+  // عند تغيير الموسم
+  // =========================================================
+
+  const handleSeasonChange = (
     season
-  ) {
+  ) => {
     const numericSeason =
       Number(season);
 
@@ -177,42 +264,47 @@ export default function TitleDetail() {
     );
 
     const firstEpisode =
-      episodes.find(
-        (episode) =>
-          Number(episode.season) ===
-          numericSeason
-      );
+      episodes
+        .filter(
+          (episode) =>
+            Number(
+              episode.season
+            ) ===
+            numericSeason
+        )
+        .sort(
+          (a, b) =>
+            Number(
+              a.episode_number
+            ) -
+            Number(
+              b.episode_number
+            )
+        )[0];
 
-    setSelectedEpisode(
-      firstEpisode || null
+    setSelectedEpisodeId(
+      firstEpisode?.id ||
+        null
     );
-  }
+  };
 
-  /*
-   * تغيير الحلقة
-   */
-  function handleEpisodeChange(
-    episodeId
-  ) {
-    const episode =
-      episodes.find(
-        (item) =>
-          String(item.id) ===
-          String(episodeId)
-      );
+  // =========================================================
+  // عند تغيير الحلقة
+  // =========================================================
 
+  const handleEpisodeChange = (
+    episode
+  ) => {
     if (!episode) return;
 
-    setSelectedEpisode(
-      episode
+    setSelectedEpisodeId(
+      episode.id
     );
+  };
 
-    setSelectedSeason(
-      Number(
-        episode.season || 1
-      )
-    );
-  }
+  // =========================================================
+  // Loading
+  // =========================================================
 
   if (loading) {
     return (
@@ -232,6 +324,10 @@ export default function TitleDetail() {
     );
   }
 
+  // =========================================================
+  // Not found
+  // =========================================================
+
   if (!title) {
     return (
       <div
@@ -249,6 +345,44 @@ export default function TitleDetail() {
       </div>
     );
   }
+
+  const tmdbId =
+    title.tmdb_id ||
+    title.tmdbId ||
+    title.tmdb ||
+    null;
+
+  const type =
+    title.type === 'series' ||
+    title.type === 'tv'
+      ? 'tv'
+      : 'movie';
+
+  // =========================================================
+  // البيانات التي نمررها للـ VideoPlayer
+  // =========================================================
+
+  const playerTitle = {
+    ...title,
+
+    current_episode_id:
+      selectedEpisode?.id ||
+      null,
+
+    current_season:
+      selectedEpisode?.season ||
+      selectedSeason ||
+      1,
+
+    current_episode_number:
+      selectedEpisode?.episode_number ||
+      1,
+
+    // هذا هو الحقل الحقيقي في DB
+    current_episode_stream_urls:
+      selectedEpisode?.stream_urls ||
+      {},
+  };
 
   return (
     <div
@@ -272,247 +406,6 @@ export default function TitleDetail() {
           'بدون عنوان'}
       </h1>
 
-      {/* =========================
-          EPISODE SELECTOR
-          ========================= */}
-
-      {type === 'tv' && (
-        <div
-          style={{
-            width: '100%',
-            maxWidth: '900px',
-            margin: '0 auto 15px',
-            background: '#1a1a1a',
-            borderRadius: '10px',
-            padding: '15px',
-            boxSizing: 'border-box',
-          }}
-        >
-          {loadingEpisodes ? (
-            <div
-              style={{
-                textAlign: 'center',
-                color: '#888',
-                padding: '10px',
-              }}
-            >
-              جاري تحميل الحلقات...
-            </div>
-          ) : episodes.length === 0 ? (
-            <div
-              style={{
-                textAlign: 'center',
-                color: '#888',
-                padding: '10px',
-              }}
-            >
-              لا توجد حلقات متاحة لهذا المسلسل.
-            </div>
-          ) : (
-            <>
-              {/* SEASONS */}
-
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  flexWrap: 'wrap',
-                  marginBottom: '12px',
-                }}
-              >
-                <span
-                  style={{
-                    color: '#aaa',
-                    fontSize: '13px',
-                    fontWeight: 700,
-                  }}
-                >
-                  الموسم:
-                </span>
-
-                {seasons.map(
-                  (season) => (
-                    <button
-                      key={season}
-                      type="button"
-                      onClick={() =>
-                        handleSeasonChange(
-                          season
-                        )
-                      }
-                      style={{
-                        padding:
-                          '7px 12px',
-                        borderRadius:
-                          '7px',
-                        border:
-                          Number(
-                            selectedSeason
-                          ) ===
-                          Number(season)
-                            ? '1px solid #d4af37'
-                            : '1px solid #333',
-                        background:
-                          Number(
-                            selectedSeason
-                          ) ===
-                          Number(season)
-                            ? '#d4af37'
-                            : '#181818',
-                        color:
-                          Number(
-                            selectedSeason
-                          ) ===
-                          Number(season)
-                            ? '#111'
-                            : '#ddd',
-                        cursor:
-                          'pointer',
-                        fontSize:
-                          '12px',
-                        fontWeight:
-                          700,
-                      }}
-                    >
-                      {season}
-                    </button>
-                  )
-                )}
-              </div>
-
-              {/* EPISODES */}
-
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  flexWrap: 'wrap',
-                }}
-              >
-                <span
-                  style={{
-                    color: '#aaa',
-                    fontSize: '13px',
-                    fontWeight: 700,
-                  }}
-                >
-                  الحلقة:
-                </span>
-
-                {seasonEpisodes.map(
-                  (episode) => {
-                    const isActive =
-                      String(
-                        selectedEpisode?.id
-                      ) ===
-                      String(
-                        episode.id
-                      );
-
-                    return (
-                      <button
-                        key={episode.id}
-                        type="button"
-                        onClick={() =>
-                          handleEpisodeChange(
-                            episode.id
-                          )
-                        }
-                        style={{
-                          minWidth: '42px',
-                          padding:
-                            '7px 10px',
-                          borderRadius:
-                            '7px',
-                          border:
-                            isActive
-                              ? '1px solid #d4af37'
-                              : '1px solid #333',
-                          background:
-                            isActive
-                              ? '#d4af37'
-                              : '#181818',
-                          color:
-                            isActive
-                              ? '#111'
-                              : '#ddd',
-                          cursor:
-                            'pointer',
-                          fontSize:
-                            '12px',
-                          fontWeight:
-                            700,
-                        }}
-                        title={
-                          episode.name ||
-                          `الحلقة ${episode.episode_number}`
-                        }
-                      >
-                        {episode.episode_number}
-                      </button>
-                    );
-                  }
-                )}
-              </div>
-
-              {/* CURRENT EPISODE */}
-
-              {selectedEpisode && (
-                <div
-                  style={{
-                    marginTop: '12px',
-                    paddingTop: '10px',
-                    borderTop:
-                      '1px solid #292929',
-                    color: '#aaa',
-                    fontSize: '12px',
-                  }}
-                >
-                  تشاهد الآن:
-                  <strong
-                    style={{
-                      color: '#d4af37',
-                      marginRight: '5px',
-                    }}
-                  >
-                    موسم{' '}
-                    {
-                      selectedEpisode.season
-                    }{' '}
-                    • حلقة{' '}
-                    {
-                      selectedEpisode.episode_number
-                    }
-                  </strong>
-
-                  {selectedEpisode.name && (
-                    <span
-                      style={{
-                        marginRight:
-                          '8px',
-                        color: '#777',
-                      }}
-                    >
-                      —
-                      {' '}
-                      {
-                        selectedEpisode.name
-                      }
-                    </span>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* =========================
-          VIDEO PLAYER
-          ========================= */}
-
       <div
         style={{
           width: '100%',
@@ -528,46 +421,7 @@ export default function TitleDetail() {
         <VideoPlayer
           tmdbId={tmdbId}
           type={type}
-          title={{
-            ...title,
-
-            /*
-             * نمرر بيانات الحلقة الحالية
-             * للـVideoPlayer
-             */
-
-            current_episode_id:
-              selectedEpisode?.id ||
-              null,
-
-            current_season:
-              selectedEpisode?.season ||
-              selectedSeason ||
-              1,
-
-            current_episode_number:
-              selectedEpisode?.episode_number ||
-              1,
-
-            /*
-             * StreamSrc الخاص بالحلقة
-             */
-            stream_url:
-              selectedEpisode?.stream_url ||
-              title.stream_url ||
-              null,
-
-            /*
-             * Stelar الخاص بالحلقة
-             * إذا كان موجودًا في episode.
-             */
-            url:
-              selectedEpisode?.url ||
-              selectedEpisode?.video_url ||
-              title.url ||
-              title.video_url ||
-              null,
-          }}
+          title={playerTitle}
           episodeId={
             selectedEpisode?.id ||
             null
@@ -575,9 +429,232 @@ export default function TitleDetail() {
         />
       </div>
 
-      {/* =========================
-          TITLE INFO
-          ========================= */}
+      {/* =====================================================
+          اختيار الموسم والحلقة
+      ===================================================== */}
+
+      {type === 'tv' && (
+        <div
+          style={{
+            maxWidth: '900px',
+            margin: '20px auto',
+            background: '#1a1a1a',
+            padding: '15px',
+            borderRadius: '8px',
+          }}
+        >
+          {episodesLoading ? (
+            <div
+              style={{
+                color: '#888',
+                textAlign: 'center',
+                padding: '15px',
+              }}
+            >
+              جاري تحميل الحلقات...
+            </div>
+          ) : episodes.length === 0 ? (
+            <div
+              style={{
+                color: '#888',
+                textAlign: 'center',
+                padding: '15px',
+              }}
+            >
+              لا توجد حلقات متاحة لهذا المسلسل.
+            </div>
+          ) : (
+            <>
+              {/* المواسم */}
+
+              <div
+                style={{
+                  marginBottom: '18px',
+                }}
+              >
+                <div
+                  style={{
+                    color: '#aaa',
+                    fontSize: '13px',
+                    marginBottom: '9px',
+                  }}
+                >
+                  الموسم:
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '8px',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  {seasons.map(
+                    (season) => {
+                      const active =
+                        Number(
+                          selectedSeason
+                        ) ===
+                        Number(
+                          season
+                        );
+
+                      return (
+                        <button
+                          key={season}
+                          type="button"
+                          onClick={() =>
+                            handleSeasonChange(
+                              season
+                            )
+                          }
+                          style={{
+                            padding:
+                              '8px 14px',
+                            borderRadius:
+                              '8px',
+                            border: active
+                              ? '1px solid #d4af37'
+                              : '1px solid #333',
+                            background:
+                              active
+                                ? '#d4af37'
+                                : '#222',
+                            color:
+                              active
+                                ? '#111'
+                                : '#ccc',
+                            cursor:
+                              'pointer',
+                            fontWeight:
+                              active
+                                ? 800
+                                : 500,
+                          }}
+                        >
+                          {season}
+                        </button>
+                      );
+                    }
+                  )}
+                </div>
+              </div>
+
+              {/* الحلقات */}
+
+              <div>
+                <div
+                  style={{
+                    color: '#aaa',
+                    fontSize: '13px',
+                    marginBottom: '9px',
+                  }}
+                >
+                  حلقات الموسم{' '}
+                  {selectedSeason}:
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns:
+                      'repeat(auto-fill,minmax(130px,1fr))',
+                    gap: '8px',
+                  }}
+                >
+                  {seasonEpisodes.map(
+                    (episode) => {
+                      const active =
+                        episode.id ===
+                        selectedEpisode?.id;
+
+                      return (
+                        <button
+                          key={
+                            episode.id
+                          }
+                          type="button"
+                          onClick={() =>
+                            handleEpisodeChange(
+                              episode
+                            )
+                          }
+                          style={{
+                            minHeight:
+                              '52px',
+                            padding:
+                              '8px',
+                            borderRadius:
+                              '8px',
+                            border: active
+                              ? '1px solid #d4af37'
+                              : '1px solid #333',
+                            background:
+                              active
+                                ? 'rgba(212,175,55,.15)'
+                                : '#111',
+                            color:
+                              active
+                                ? '#d4af37'
+                                : '#ccc',
+                            cursor:
+                              'pointer',
+                            textAlign:
+                              'right',
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize:
+                                '12px',
+                              fontWeight:
+                                800,
+                            }}
+                          >
+                            الحلقة{' '}
+                            {
+                              episode.episode_number
+                            }
+                          </div>
+
+                          {episode.name && (
+                            <div
+                              style={{
+                                marginTop:
+                                  '3px',
+                                fontSize:
+                                  '10px',
+                                color:
+                                  active
+                                    ? '#d4af37'
+                                    : '#777',
+                                overflow:
+                                  'hidden',
+                                whiteSpace:
+                                  'nowrap',
+                                textOverflow:
+                                  'ellipsis',
+                              }}
+                            >
+                              {
+                                episode.name
+                              }
+                            </div>
+                          )}
+                        </button>
+                      );
+                    }
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* =====================================================
+          معلومات العمل
+      ===================================================== */}
 
       <div
         style={{
@@ -625,6 +702,28 @@ export default function TitleDetail() {
               ? 'مسلسل'
               : 'فيلم'}
           </span>
+
+          {type === 'tv' &&
+            selectedEpisode && (
+              <span
+                style={{
+                  background: '#222',
+                  color: '#d4af37',
+                  padding: '3px 8px',
+                  borderRadius: '4px',
+                  fontSize: '12px',
+                }}
+              >
+                S
+                {String(
+                  selectedEpisode.season
+                ).padStart(2, '0')}
+                E
+                {String(
+                  selectedEpisode.episode_number
+                ).padStart(2, '0')}
+              </span>
+            )}
         </div>
 
         <p
