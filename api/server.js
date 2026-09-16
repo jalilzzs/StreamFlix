@@ -69,7 +69,7 @@ async function getFreshPlayerUrl() {
   const response = await axios.get(
     scraperUrl(VS_SRC_URL),
     {
-      timeout: 20000,
+      timeout: 25000,
       validateStatus: () => true,
       headers: {
         "User-Agent":
@@ -127,16 +127,13 @@ app.get("/", (req, res) => {
 });
 
 // ==========================================
-// PIRATE BAY ENGINE ENDPOINT
+// PIRATE BAY & TORRENT ENGINE ENDPOINT
 // ==========================================
 app.get("/api/piratebay", async (req, res) => {
   const { q, type, season, episode } = req.query;
 
   if (!q) {
-    return res.status(400).json({
-      success: false,
-      error: "Query parameter 'q' is required"
-    });
+    return res.status(400).send("<h3 style='color:white;text-align:center;font-family:sans-serif;'>الرجاء توفير عنوان للبحث</h3>");
   }
 
   let searchQuery = q;
@@ -146,11 +143,14 @@ app.get("/api/piratebay", async (req, res) => {
     searchQuery = `${q} S${s}E${e}`;
   }
 
+  let magnetLink = null;
+  let torrentName = "";
+
+  // 1. محاولة الجلب من Pirate Bay (مع وقت انتظار 25 ثانية)
   try {
     const apirUrl = `https://apibay.org/q.php?q=${encodeURIComponent(searchQuery)}`;
-
     const response = await axios.get(apirUrl, {
-      timeout: 12000,
+      timeout: 25000,
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
       }
@@ -158,40 +158,52 @@ app.get("/api/piratebay", async (req, res) => {
 
     let results = response.data;
 
-    if (!Array.isArray(results) || results.length === 0 || results[0].id === "0") {
-      return res.status(404).send("<h3 style='color:white;text-align:center;font-family:sans-serif;'>لم يتم العثور على مصادر تورنت لهذا المحتوى</h3>");
+    if (Array.isArray(results) && results.length > 0 && results[0].id !== "0") {
+      results.sort((a, b) => Number(b.seeders) - Number(a.seeders));
+      const best = results[0];
+      magnetLink = `magnet:?xt=urn:btih:${best.info_hash}&dn=${encodeURIComponent(best.name)}`;
+      torrentName = best.name;
     }
-
-    // فرز النتائج حسب الأعلى في الـ Seeders لضمان أفضل سرعة تشغيل
-    results.sort((a, b) => Number(b.seeders) - Number(a.seeders));
-
-    const bestTorrent = results[0];
-    const magnetLink = `magnet:?xt=urn:btih:${bestTorrent.info_hash}&dn=${encodeURIComponent(bestTorrent.name)}`;
-    const streamUrl = `https://webtor.io/show?magnet=${encodeURIComponent(magnetLink)}`;
-
-    // إعادة التوجيه للمشغل مباشرة عند فتح الرابط داخل iframe
-    if (req.headers.accept && req.headers.accept.includes("text/html")) {
-      return res.redirect(streamUrl);
-    }
-
-    return res.json({
-      success: true,
-      query: searchQuery,
-      stream_url: streamUrl,
-      best_torrent: {
-        name: bestTorrent.name,
-        seeders: Number(bestTorrent.seeders),
-        magnet: magnetLink
-      }
-    });
-
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      error: "Failed to fetch from Pirate Bay engine",
-      details: error.message
-    });
+  } catch (err) {
+    console.warn("PirateBay fetch timed out or failed, switching to backup engine...");
   }
+
+  // 2. Fallback: إذا فشل PirateBay نحاول مع YTS / Torrentio كمصدر بديل سريع
+  if (!magnetLink) {
+    try {
+      const backupUrl = `https://yts.mx/api/v2/list_movies.json?query_term=${encodeURIComponent(q)}`;
+      const backupRes = await axios.get(backupUrl, { timeout: 10000 });
+      if (backupRes.data?.data?.movies?.[0]?.torrents?.[0]) {
+        const hash = backupRes.data.data.movies[0].torrents[0].hash;
+        torrentName = backupRes.data.data.movies[0].title;
+        magnetLink = `magnet:?xt=urn:btih:${hash}&dn=${encodeURIComponent(torrentName)}`;
+      }
+    } catch (err) {
+      console.error("Backup search also failed");
+    }
+  }
+
+  // إذا لم نجد أي رابط تورنت
+  if (!magnetLink) {
+    return res.status(404).send("<h3 style='color:white;text-align:center;font-family:sans-serif;'>لم يتم العثور على مصادر تورنت لهذا المحتوى حالياً</h3>");
+  }
+
+  const streamUrl = `https://webtor.io/show?magnet=${encodeURIComponent(magnetLink)}`;
+
+  // التوجيه المباشر في حالة الطلب من iframe
+  if (req.headers.accept && req.headers.accept.includes("text/html")) {
+    return res.redirect(streamUrl);
+  }
+
+  return res.json({
+    success: true,
+    query: searchQuery,
+    stream_url: streamUrl,
+    best_torrent: {
+      name: torrentName,
+      magnet: magnetLink
+    }
+  });
 });
 
 // ==========================================
@@ -228,7 +240,7 @@ app.get("/api/find-player-code", async (req, res) => {
     const response = await axios.get(
       scraperUrl(PAGE_URL),
       {
-        timeout: 20000,
+        timeout: 25000,
         validateStatus: () => true,
         headers: {
           "User-Agent":
