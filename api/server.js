@@ -8,6 +8,10 @@ const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY;
 
 const VS_SRC_URL = "https://vsembed.ru/vs_src.php?type=movie&id=550";
 
+/* =========================================================
+   HELPER FUNCTIONS
+   ========================================================= */
+
 function scraperUrl(target) {
   const params = new URLSearchParams({
     api_key: SCRAPER_API_KEY,
@@ -109,15 +113,101 @@ async function getFreshPlayerUrl() {
   };
 }
 
+/* =========================================================
+   ROUTES
+   ========================================================= */
+
 app.get("/", (req, res) => {
   res.json({
     online: true,
-    service: "StreamFlix diagnostic API",
-    stage: "vs_src_dynamic",
-    test_endpoint: "/api/find-player-code"
+    service: "StreamFlix diagnostic & Torrent API",
+    stage: "active",
+    endpoints: {
+      find_player: "/api/find-player-code",
+      piratebay_search: "/api/piratebay?q=Inception"
+    }
   });
 });
 
+// ==========================================
+// PIRATE BAY ENGINE ENDPOINT
+// ==========================================
+app.get("/api/piratebay", async (req, res) => {
+  const { q, type, season, episode } = req.query;
+
+  if (!q) {
+    return res.status(400).json({
+      success: false,
+      error: "Query parameter 'q' is required"
+    });
+  }
+
+  // بناء كلمة البحث تلقائياً (مثلاً: Movie Name S01E05)
+  let searchQuery = q;
+  if (type === "tv" && season && episode) {
+    const s = String(season).padStart(2, "0");
+    const e = String(episode).padStart(2, "0");
+    searchQuery = `${q} S${s}E${e}`;
+  }
+
+  try {
+    // استخدام PirateBay APi العادية / Proxy للحصول على النتائج بشكل JSON مباشر
+    const apirUrl = `https://apibay.org/q.php?q=${encodeURIComponent(searchQuery)}`;
+
+    const response = await axios.get(apirUrl, {
+      timeout: 12000,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+      }
+    });
+
+    const results = response.data;
+
+    if (!Array.isArray(results) || results.length === 0 || results[0].id === "0") {
+      return res.status(444).json({
+        success: false,
+        message: "No torrents found for this content",
+        query: searchQuery
+      });
+    }
+
+    // تنسيق واستخراج الروابط والمعلومات المهمة
+    const torrents = results.slice(0, 15).map((item) => {
+      // بناء رابط الـ Magnet Link المباشر
+      const magnetLink = `magnet:?xt=urn:btih:${item.info_hash}&dn=${encodeURIComponent(item.name)}`;
+
+      return {
+        id: item.id,
+        name: item.name,
+        info_hash: item.info_hash,
+        seeders: Number(item.seeders),
+        leechers: Number(item.leechers),
+        size_bytes: Number(item.size),
+        magnet: magnetLink,
+        // يمكنك إرسال الـ Magnet لمشغل Torrent Web المفضل لديك
+        stream_url: `https://webtor.io/show?magnet=${encodeURIComponent(magnetLink)}`
+      };
+    });
+
+    return res.json({
+      success: true,
+      query: searchQuery,
+      total_found: torrents.length,
+      torrents
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch from Pirate Bay engine",
+      details: error.message
+    });
+  }
+});
+
+// ==========================================
+// DIAGNOSTIC ENDPOINT
+// ==========================================
 app.get("/api/find-player-code", async (req, res) => {
   const started = Date.now();
 
@@ -129,11 +219,6 @@ app.get("/api/find-player-code", async (req, res) => {
   }
 
   try {
-    // ==========================================
-    // STEP 1
-    // Get a fresh player URL from vsembed
-    // ==========================================
-
     const player = await getFreshPlayerUrl();
 
     if (!player.success) {
@@ -150,11 +235,6 @@ app.get("/api/find-player-code", async (req, res) => {
     }
 
     const PAGE_URL = player.src;
-
-    // ==========================================
-    // STEP 2
-    // Fetch the fresh player page
-    // ==========================================
 
     const response = await axios.get(
       scraperUrl(PAGE_URL),
@@ -174,11 +254,6 @@ app.get("/api/find-player-code", async (req, res) => {
       typeof response.data === "string"
         ? response.data
         : JSON.stringify(response.data);
-
-    // ==========================================
-    // STEP 3
-    // Search for player/source code
-    // ==========================================
 
     const keywords = [
       "vs_src",
@@ -207,11 +282,6 @@ app.get("/api/find-player-code", async (req, res) => {
         keyword
       );
     }
-
-    // ==========================================
-    // STEP 4
-    // Return diagnostic result
-    // ==========================================
 
     return res.json({
       success:
@@ -256,6 +326,6 @@ app.get("/api/find-player-code", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(
-    `StreamFlix player-code diagnostic running on port ${PORT}`
+    `StreamFlix server & PirateBay engine running on port ${PORT}`
   );
 });
