@@ -17,6 +17,8 @@ import {
 
 import { supabase } from '../lib/supabaseClient';
 
+import './Notifications.css';
+
 // ============================================================
 // ICON
 // ============================================================
@@ -209,10 +211,7 @@ export default function Notifications() {
           notificationData,
           count,
         ] = await Promise.all([
-          fetchNotifications(
-            user.id,
-            50
-          ),
+          fetchNotifications(user.id, 50),
           fetchUnreadNotificationCount(
             user.id
           ),
@@ -226,10 +225,7 @@ export default function Notifications() {
             : [];
 
         setNotifications(normalized);
-
-        setUnreadCount(
-          Number(count) || 0
-        );
+        setUnreadCount(Number(count) || 0);
       } catch (error) {
         console.error(
           'Failed to load notifications:',
@@ -258,35 +254,27 @@ export default function Notifications() {
           if (!incoming) return;
 
           const notification =
-            normalizeNotification(
-              incoming
-            );
+            normalizeNotification(incoming);
 
-          // DELETE
           if (
-            incoming.__event ===
-            'DELETE'
+            incoming.__event === 'DELETE'
           ) {
             setNotifications((prev) =>
               prev.filter(
                 (item) =>
-                  item.id !==
-                  incoming.id
+                  item.id !== incoming.id
               )
             );
 
             return;
           }
 
-          // UPDATE
           if (
-            incoming.__event ===
-            'UPDATE'
+            incoming.__event === 'UPDATE'
           ) {
             setNotifications((prev) =>
               prev.map((item) =>
-                item.id ===
-                notification.id
+                item.id === notification.id
                   ? normalizeNotification({
                       ...item,
                       ...notification,
@@ -298,13 +286,11 @@ export default function Notifications() {
             return;
           }
 
-          // INSERT
           setNotifications((prev) => [
             notification,
             ...prev.filter(
               (item) =>
-                item.id !==
-                notification.id
+                item.id !== notification.id
             ),
           ]);
 
@@ -314,10 +300,8 @@ export default function Notifications() {
             );
           }
 
-          // Browser notification
           if (
-            typeof window !==
-              'undefined' &&
+            typeof window !== 'undefined' &&
             'Notification' in window &&
             Notification.permission ===
               'granted'
@@ -342,8 +326,7 @@ export default function Notifications() {
 
     return () => {
       if (
-        typeof unsubscribe ===
-        'function'
+        typeof unsubscribe === 'function'
       ) {
         unsubscribe();
       }
@@ -378,12 +361,10 @@ export default function Notifications() {
 
           setNotifications((prev) =>
             prev.map((item) =>
-              item.id ===
-              notification.id
+              item.id === notification.id
                 ? {
                     ...item,
                     is_read: true,
-                    isRead: true,
                     read_at: now,
                   }
                 : item
@@ -397,10 +378,7 @@ export default function Notifications() {
 
         if (notification.link) {
           setOpen(false);
-
-          navigate(
-            notification.link
-          );
+          navigate(notification.link);
         }
       } catch (error) {
         console.error(
@@ -414,45 +392,43 @@ export default function Notifications() {
   // MARK ALL
   // ==========================================================
 
-  const handleMarkAllRead =
-    async () => {
-      if (
-        !user?.id ||
-        unreadCount === 0
-      ) {
-        return;
-      }
+  const handleMarkAllRead = async () => {
+    if (
+      !user?.id ||
+      unreadCount === 0
+    ) {
+      return;
+    }
 
-      try {
-        setProcessing(true);
+    try {
+      setProcessing(true);
 
-        await markAllNotificationsAsRead(
-          user.id
-        );
+      await markAllNotificationsAsRead(
+        user.id
+      );
 
-        const now =
-          new Date().toISOString();
+      const now =
+        new Date().toISOString();
 
-        setNotifications((prev) =>
-          prev.map((item) => ({
-            ...item,
-            is_read: true,
-            isRead: true,
-            read_at:
-              item.read_at || now,
-          }))
-        );
+      setNotifications((prev) =>
+        prev.map((item) => ({
+          ...item,
+          is_read: true,
+          read_at:
+            item.read_at || now,
+        }))
+      );
 
-        setUnreadCount(0);
-      } catch (error) {
-        console.error(
-          'Failed to mark notifications as read:',
-          error
-        );
-      } finally {
-        setProcessing(false);
-      }
-    };
+      setUnreadCount(0);
+    } catch (error) {
+      console.error(
+        'Failed to mark notifications as read:',
+        error
+      );
+    } finally {
+      setProcessing(false);
+    }
+  };
 
   // ==========================================================
   // DELETE
@@ -475,8 +451,7 @@ export default function Notifications() {
       setNotifications((prev) =>
         prev.filter(
           (item) =>
-            item.id !==
-            notification.id
+            item.id !== notification.id
         )
       );
 
@@ -528,14 +503,12 @@ export default function Notifications() {
   // ==========================================================
 
   return (
-    <div className="notification-wrap">
-      {/* ====================================================
-          BUTTON
-      ==================================================== */}
+    <div className="sf-notification-wrap">
+      {/* BUTTON */}
 
       <button
         type="button"
-        className="notification-button"
+        className="sf-notification-btn"
         onClick={handleOpen}
         aria-label="Notifications"
         aria-expanded={open}
@@ -556,7 +529,7 @@ export default function Notifications() {
         </svg>
 
         {unreadCount > 0 && (
-          <span className="notification-badge">
+          <span className="sf-notification-badge">
             {unreadCount > 99
               ? '99+'
               : unreadCount}
@@ -564,29 +537,21 @@ export default function Notifications() {
         )}
       </button>
 
-      {/* ====================================================
-          DROPDOWN
-      ==================================================== */}
-
       {open && (
         <>
           <div
-            className="notification-backdrop"
-            onClick={() =>
-              setOpen(false)
-            }
+            className="sf-notification-overlay"
+            onClick={() => setOpen(false)}
           />
 
-          <div className="notification-panel">
-            {/* HEADER */}
-
-            <div className="notification-header">
+          <div className="sf-notification-menu">
+            <div className="sf-notification-head">
               <div>
-                <div className="notification-title">
+                <div className="sf-notification-heading">
                   Notifications
                 </div>
 
-                <div className="notification-subtitle">
+                <div className="sf-notification-count">
                   {unreadCount > 0
                     ? `${unreadCount} unread`
                     : 'All caught up'}
@@ -596,7 +561,7 @@ export default function Notifications() {
               {unreadCount > 0 && (
                 <button
                   type="button"
-                  className="notification-mark-all"
+                  className="sf-notification-readall"
                   onClick={
                     handleMarkAllRead
                   }
@@ -607,29 +572,25 @@ export default function Notifications() {
               )}
             </div>
 
-            {/* BODY */}
-
-            <div className="notification-list">
+            <div className="sf-notification-list">
               {loading ? (
-                <div className="notification-empty">
-                  <div className="notification-loading">
-                    Loading notifications...
-                  </div>
+                <div className="sf-notification-state">
+                  Loading notifications...
                 </div>
               ) : notifications.length ===
                 0 ? (
-                <div className="notification-empty">
-                  <div className="notification-empty-icon">
+                <div className="sf-notification-state sf-notification-empty">
+                  <div className="sf-notification-empty-icon">
                     🔔
                   </div>
 
-                  <div className="notification-empty-title">
+                  <strong>
                     No notifications
-                  </div>
+                  </strong>
 
-                  <div className="notification-empty-text">
+                  <span>
                     You're all caught up.
-                  </div>
+                  </span>
                 </div>
               ) : (
                 notifications.map(
@@ -638,10 +599,10 @@ export default function Notifications() {
                       key={
                         notification.id
                       }
-                      className={`notification-item ${
+                      className={`sf-notification-item ${
                         notification.is_read
                           ? ''
-                          : 'unread'
+                          : 'is-unread'
                       }`}
                       onClick={() =>
                         handleNotificationClick(
@@ -649,9 +610,7 @@ export default function Notifications() {
                         )
                       }
                     >
-                      {/* ICON */}
-
-                      <div className="notification-item-icon">
+                      <div className="sf-notification-icon">
                         <NotificationIcon
                           type={
                             notification.type
@@ -659,40 +618,34 @@ export default function Notifications() {
                         />
                       </div>
 
-                      {/* CONTENT */}
-
-                      <div className="notification-item-content">
-                        <div className="notification-item-title-row">
+                      <div className="sf-notification-content">
+                        <div className="sf-notification-title-row">
                           {!notification.is_read && (
-                            <span className="notification-unread-dot" />
+                            <span className="sf-notification-dot" />
                           )}
 
-                          <div className="notification-item-title">
+                          <span className="sf-notification-item-title">
                             {notification.title ||
                               'Notification'}
-                          </div>
+                          </span>
                         </div>
 
-                        <div className="notification-item-message">
+                        <div className="sf-notification-message">
                           {notification.message ||
                             ''}
                         </div>
 
-                        <div className="notification-item-time">
+                        <div className="sf-notification-time">
                           {formatTime(
                             notification.created_at
                           )}
                         </div>
                       </div>
 
-                      {/* DELETE */}
-
                       <button
                         type="button"
-                        className="notification-delete"
-                        onClick={(
-                          event
-                        ) =>
+                        className="sf-notification-delete"
+                        onClick={(event) =>
                           handleDelete(
                             event,
                             notification
