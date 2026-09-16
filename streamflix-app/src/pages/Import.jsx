@@ -9,8 +9,12 @@ import { supabase } from '../lib/supabaseClient';
   Security model:
   - Supabase Auth identifies the user.
   - admin_users determines who is an administrator.
-  - Database RLS will be applied in the next step.
+  - Database RLS protects INSERT / UPDATE / DELETE.
   - No PIN is used.
+
+  TMDB:
+  - API key is read from VITE_TMDB_API_KEY
+  - NEVER hardcode the TMDB API key in this file.
 
   Database:
   titles:
@@ -41,36 +45,71 @@ import { supabase } from '../lib/supabaseClient';
     Server 2 = Stellar
 */
 
-const TMDB_API_KEY = '826583b8634812328768a35607b22a01';
-const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
-const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
+/* ============================================================
+   TMDB CONFIG
+============================================================ */
+
+const TMDB_API_KEY =
+  import.meta.env.VITE_TMDB_API_KEY || '';
+
+const TMDB_BASE_URL =
+  'https://api.themoviedb.org/3';
+
+const TMDB_IMAGE_BASE =
+  'https://image.tmdb.org/t/p';
+
+/* ============================================================
+   VIDEO SERVERS
+============================================================ */
 
 const VIDSRC_MOVIE = (tmdbId) =>
   `https://vidsrc.me/embed/movie?tmdb=${tmdbId}`;
 
-const VIDSRC_EPISODE = (tmdbId, season, episode) =>
+const VIDSRC_EPISODE = (
+  tmdbId,
+  season,
+  episode
+) =>
   `https://vidsrc.me/embed/tv?tmdb=${tmdbId}&season=${season}&episode=${episode}`;
 
 const STELLAR_MOVIE = (tmdbId) =>
   `https://stellar.rip/en/watch/embed/movie/${tmdbId}`;
 
-const STELLAR_EPISODE = (tmdbId, season, episode) =>
+const STELLAR_EPISODE = (
+  tmdbId,
+  season,
+  episode
+) =>
   `https://stellar.rip/en/watch/embed/tv/${tmdbId}-${season}-${episode}`;
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms) =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+/* ============================================================
+   HELPERS
+============================================================ */
 
 function normalizeType(type) {
-  if (type === 'tv' || type === 'series') return 'series';
+  if (
+    type === 'tv' ||
+    type === 'series'
+  ) {
+    return 'series';
+  }
+
   return 'movie';
 }
 
 function getYear(item) {
   const date =
-    item.release_date ||
-    item.first_air_date ||
+    item?.release_date ||
+    item?.first_air_date ||
     '';
 
-  const year = parseInt(String(date).slice(0, 4), 10);
+  const year = parseInt(
+    String(date).slice(0, 4),
+    10
+  );
 
   return Number.isFinite(year)
     ? year
@@ -78,23 +117,29 @@ function getYear(item) {
 }
 
 function getTitle(item) {
-  return item.title || item.name || 'بدون عنوان';
+  return (
+    item?.title ||
+    item?.name ||
+    'بدون عنوان'
+  );
 }
 
 function getPoster(item) {
-  return item.poster_path
+  return item?.poster_path
     ? `${TMDB_IMAGE_BASE}/w500${item.poster_path}`
     : null;
 }
 
 function getBackdrop(item) {
-  return item.backdrop_path
+  return item?.backdrop_path
     ? `${TMDB_IMAGE_BASE}/w1280${item.backdrop_path}`
     : null;
 }
 
 function getGenres(item) {
-  if (!Array.isArray(item.genres)) return [];
+  if (!Array.isArray(item?.genres)) {
+    return [];
+  }
 
   return item.genres
     .map((genre) => genre?.name)
@@ -102,7 +147,9 @@ function getGenres(item) {
 }
 
 function getRating(item) {
-  const value = Number(item.vote_average);
+  const value = Number(
+    item?.vote_average
+  );
 
   return Number.isFinite(value)
     ? Number(value.toFixed(1))
@@ -110,8 +157,14 @@ function getRating(item) {
 }
 
 function formatNumber(value) {
-  return Number(value || 0).toLocaleString('en-US');
+  return Number(value || 0).toLocaleString(
+    'en-US'
+  );
 }
+
+/* ============================================================
+   COMPONENT
+============================================================ */
 
 export default function Import() {
   /* ============================================================
@@ -119,48 +172,82 @@ export default function Import() {
   ============================================================ */
 
   const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [adminLoading, setAdminLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [adminError, setAdminError] = useState('');
+  const [authLoading, setAuthLoading] =
+    useState(true);
+
+  const [adminLoading, setAdminLoading] =
+    useState(true);
+
+  const [isAdmin, setIsAdmin] =
+    useState(false);
+
+  const [adminError, setAdminError] =
+    useState('');
 
   /* ============================================================
      SEARCH
   ============================================================ */
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchType, setSearchType] = useState('movie');
-  const [searchResults, setSearchResults] = useState([]);
-  const [isSearching, setIsSearching] = useState(false);
+  const [searchQuery, setSearchQuery] =
+    useState('');
+
+  const [searchType, setSearchType] =
+    useState('movie');
+
+  const [searchResults, setSearchResults] =
+    useState([]);
+
+  const [isSearching, setIsSearching] =
+    useState(false);
 
   /* ============================================================
      BULK IMPORT
   ============================================================ */
 
-  const [bulkType, setBulkType] = useState('both');
-  const [pageCount, setPageCount] = useState(5);
-  const [isBulkLoading, setIsBulkLoading] = useState(false);
+  const [bulkType, setBulkType] =
+    useState('both');
+
+  const [pageCount, setPageCount] =
+    useState(5);
+
+  const [isBulkLoading, setIsBulkLoading] =
+    useState(false);
 
   /* ============================================================
      TRENDING
   ============================================================ */
 
-  const [isTrendingLoading, setIsTrendingLoading] = useState(false);
+  const [
+    isTrendingLoading,
+    setIsTrendingLoading,
+  ] = useState(false);
 
   /* ============================================================
      SERIES EPISODES
   ============================================================ */
 
-  const [seriesTmdbId, setSeriesTmdbId] = useState('');
-  const [seasonCount, setSeasonCount] = useState(1);
-  const [episodesPerSeason, setEpisodesPerSeason] = useState(10);
-  const [isEpisodeLoading, setIsEpisodeLoading] = useState(false);
+  const [seriesTmdbId, setSeriesTmdbId] =
+    useState('');
+
+  const [seasonCount, setSeasonCount] =
+    useState(1);
+
+  const [
+    episodesPerSeason,
+    setEpisodesPerSeason,
+  ] = useState(10);
+
+  const [
+    isEpisodeLoading,
+    setIsEpisodeLoading,
+  ] = useState(false);
 
   /* ============================================================
      TOOLS
   ============================================================ */
 
-  const [isToolLoading, setIsToolLoading] = useState(false);
+  const [isToolLoading, setIsToolLoading] =
+    useState(false);
 
   /* ============================================================
      LOGS / STATS
@@ -178,8 +265,13 @@ export default function Import() {
     total: 0,
   });
 
-  const [currentOperation, setCurrentOperation] = useState('');
-  const [progress, setProgress] = useState(0);
+  const [
+    currentOperation,
+    setCurrentOperation,
+  ] = useState('');
+
+  const [progress, setProgress] =
+    useState(0);
 
   /* ============================================================
      AUTH CHECK
@@ -212,11 +304,14 @@ export default function Import() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!mounted) return;
+    } =
+      supabase.auth.onAuthStateChange(
+        (_event, session) => {
+          if (!mounted) return;
 
-      setUser(session?.user || null);
-    });
+          setUser(session?.user || null);
+        }
+      );
 
     return () => {
       mounted = false;
@@ -242,16 +337,12 @@ export default function Import() {
       setAdminError('');
 
       try {
-        /*
-          IMPORTANT:
-          This table will be created in Supabase in the next step.
-        */
-
-        const { data, error } = await supabase
-          .from('admin_users')
-          .select('user_id')
-          .eq('user_id', user.id)
-          .maybeSingle();
+        const { data, error } =
+          await supabase
+            .from('admin_users')
+            .select('user_id')
+            .eq('user_id', user.id)
+            .maybeSingle();
 
         if (error) {
           throw error;
@@ -265,15 +356,23 @@ export default function Import() {
 
         setIsAdmin(false);
 
+        const message =
+          String(
+            error?.message || ''
+          ).toLowerCase();
+
         if (
-          error?.message?.toLowerCase().includes('admin_users')
+          message.includes(
+            'admin_users'
+          )
         ) {
           setAdminError(
-            'جدول صلاحيات الإدارة غير موجود بعد. طبّق SQL الحماية في Supabase ثم أعد تحميل الصفحة.'
+            'تعذر الوصول إلى جدول صلاحيات الإدارة. تأكد من تطبيق SQL الحماية في Supabase.'
           );
         } else {
           setAdminError(
-            error?.message || 'تعذر التحقق من صلاحيات الإدارة.'
+            error?.message ||
+              'تعذر التحقق من صلاحيات الإدارة.'
           );
         }
       } finally {
@@ -294,10 +393,17 @@ export default function Import() {
      LOGGING
   ============================================================ */
 
-  const addLog = (message, type = 'info') => {
-    const time = new Date().toLocaleTimeString('en-US', {
-      hour12: false,
-    });
+  const addLog = (
+    message,
+    type = 'info'
+  ) => {
+    const time =
+      new Date().toLocaleTimeString(
+        'en-US',
+        {
+          hour12: false,
+        }
+      );
 
     setLogs((prev) => [
       {
@@ -335,127 +441,193 @@ export default function Import() {
      TMDB REQUEST
   ============================================================ */
 
-  const tmdbFetch = async (path, params = {}) => {
-    const url = new URL(`${TMDB_BASE_URL}${path}`);
+  const tmdbFetch = async (
+    path,
+    params = {}
+  ) => {
+    if (!TMDB_API_KEY) {
+      throw new Error(
+        'TMDB API Key غير موجودة. أضف VITE_TMDB_API_KEY في Environment Variables ثم أعد Build/Deploy.'
+      );
+    }
 
-    url.searchParams.set('api_key', TMDB_API_KEY);
-    url.searchParams.set('language', 'ar-SA');
+    const url = new URL(
+      `${TMDB_BASE_URL}${path}`
+    );
 
-    Object.entries(params).forEach(([key, value]) => {
-      if (
-        value !== undefined &&
-        value !== null &&
-        value !== ''
-      ) {
-        url.searchParams.set(key, value);
+    url.searchParams.set(
+      'api_key',
+      TMDB_API_KEY
+    );
+
+    url.searchParams.set(
+      'language',
+      'ar-SA'
+    );
+
+    Object.entries(params).forEach(
+      ([key, value]) => {
+        if (
+          value !== undefined &&
+          value !== null &&
+          value !== ''
+        ) {
+          url.searchParams.set(
+            key,
+            value
+          );
+        }
       }
-    });
+    );
 
-    const response = await fetch(url.toString());
+    const response = await fetch(
+      url.toString()
+    );
+
+    let data = null;
+
+    try {
+      data = await response.json();
+    } catch {
+      data = null;
+    }
 
     if (!response.ok) {
-      let message = `TMDB HTTP ${response.status}`;
+      const message =
+        data?.status_message ||
+        `TMDB HTTP ${response.status}`;
 
-      try {
-        const data = await response.json();
-
-        if (data?.status_message) {
-          message = data.status_message;
-        }
-      } catch {
-        // ignore JSON parsing errors
+      if (
+        response.status === 401
+      ) {
+        throw new Error(
+          'TMDB API Key غير صالحة أو لم يتم تحميل المفتاح الجديد. تأكد من VITE_TMDB_API_KEY ثم أعد Build جديد.'
+        );
       }
 
       throw new Error(message);
     }
 
-    return response.json();
+    if (
+      data?.status_code &&
+      data?.status_message
+    ) {
+      throw new Error(
+        data.status_message
+      );
+    }
+
+    return data;
   };
 
   /* ============================================================
      DATABASE HELPERS
   ============================================================ */
 
-  const findExistingTitle = async (tmdbId) => {
-    const { data, error } = await supabase
-      .from('titles')
-      .select('*')
-      .eq('tmdb_id', String(tmdbId))
-      .limit(1)
-      .maybeSingle();
+  const findExistingTitle =
+    async (tmdbId) => {
+      const { data, error } =
+        await supabase
+          .from('titles')
+          .select('*')
+          .eq(
+            'tmdb_id',
+            String(tmdbId)
+          )
+          .limit(1)
+          .maybeSingle();
 
-    if (error) {
-      throw error;
-    }
+      if (error) {
+        throw error;
+      }
 
-    return data || null;
-  };
+      return data || null;
+    };
 
-  const buildTitleData = (item, type) => {
-    const normalizedType = normalizeType(type);
+  const buildTitleData = (
+    item,
+    type
+  ) => {
+    const normalizedType =
+      normalizeType(type);
 
-    const data = {
+    return {
       type: normalizedType,
       name: getTitle(item),
-      synopsis: item.overview || null,
-      poster_url: getPoster(item),
-      release_year: getYear(item),
-      genres: getGenres(item),
-      rating_avg: getRating(item),
+      synopsis:
+        item?.overview || null,
+      poster_url:
+        getPoster(item),
+      release_year:
+        getYear(item),
+      genres:
+        getGenres(item),
+      rating_avg:
+        getRating(item),
       is_premium: false,
       tmdb_id: String(item.id),
     };
-
-    /*
-      IMPORTANT:
-      We intentionally do not put url here.
-      Existing titles.url must never be destroyed.
-
-      For a NEW movie we set Vidsrc below.
-    */
-
-    return data;
   };
 
-  const saveTitle = async (item, type, options = {}) => {
-    const normalizedType = normalizeType(type);
-    const titleData = buildTitleData(item, normalizedType);
+  const saveTitle = async (
+    item,
+    type
+  ) => {
+    const normalizedType =
+      normalizeType(type);
 
-    const existing = await findExistingTitle(item.id);
+    const titleData =
+      buildTitleData(
+        item,
+        normalizedType
+      );
+
+    const existing =
+      await findExistingTitle(
+        item.id
+      );
 
     if (existing) {
       const updateData = {
-        type: titleData.type,
-        name: titleData.name,
-        synopsis: titleData.synopsis,
-        poster_url: titleData.poster_url,
-        release_year: titleData.release_year,
-        genres: titleData.genres,
-        rating_avg: titleData.rating_avg,
+        type:
+          titleData.type,
+        name:
+          titleData.name,
+        synopsis:
+          titleData.synopsis,
+        poster_url:
+          titleData.poster_url,
+        release_year:
+          titleData.release_year,
+        genres:
+          titleData.genres,
+        rating_avg:
+          titleData.rating_avg,
         is_premium:
-          typeof existing.is_premium === 'boolean'
+          typeof existing.is_premium ===
+          'boolean'
             ? existing.is_premium
             : false,
       };
-
-      /*
-        Never overwrite existing URL.
-
-        If the existing URL is empty and this is a movie,
-        we can safely initialize it with Vidsrc.
-      */
 
       if (
         normalizedType === 'movie' &&
         !existing.url
       ) {
-        updateData.url = VIDSRC_MOVIE(item.id);
+        updateData.url =
+          VIDSRC_MOVIE(item.id);
       }
 
-      const { data, error } = await supabase
+      const {
+        data,
+        error,
+      } = await supabase
         .from('titles')
         .update(updateData)
-        .eq('id', existing.id)
+        .eq(
+          'id',
+          existing.id
+        )
         .select('*')
         .single();
 
@@ -474,33 +646,32 @@ export default function Import() {
       ...titleData,
     };
 
-    /*
-      For new movies:
-      titles.url = Vidsrc Server 1.
-      Stellar Server 2 is generated by VideoPlayer.
-    */
-
-    if (normalizedType === 'movie') {
-      insertData.url = VIDSRC_MOVIE(item.id);
+    if (
+      normalizedType === 'movie'
+    ) {
+      insertData.url =
+        VIDSRC_MOVIE(item.id);
     }
 
-    const { data, error } = await supabase
+    const {
+      data,
+      error,
+    } = await supabase
       .from('titles')
       .insert(insertData)
       .select('*')
       .single();
 
     if (error) {
-      /*
-        Because titles.name is UNIQUE, another title may exist
-        with the same name while tmdb_id is different.
-      */
-
       if (
         error.code === '23505' &&
-        String(error.message || '')
+        String(
+          error.message || ''
+        )
           .toLowerCase()
-          .includes('titles_name_key')
+          .includes(
+            'titles_name_key'
+          )
       ) {
         throw new Error(
           `العنوان "${titleData.name}" موجود مسبقاً باسم مختلف عن TMDB ID ${item.id}.`
@@ -521,264 +692,361 @@ export default function Import() {
      SAVE EPISODES
   ============================================================ */
 
-  const saveEpisodesForTitle = async (
-    titleId,
-    tmdbId,
-    seasons,
-    maxEpisodesPerSeason
-  ) => {
-    let insertedOrUpdated = 0;
+  const saveEpisodesForTitle =
+    async (
+      titleId,
+      tmdbId,
+      seasons,
+      maxEpisodesPerSeason
+    ) => {
+      let insertedOrUpdated = 0;
 
-    for (const season of seasons) {
-      const seasonNumber = season.season_number;
+      for (const season of seasons) {
+        const seasonNumber =
+          season.season_number;
 
-      if (seasonNumber === 0) {
-        continue;
-      }
-
-      const detail = await tmdbFetch(
-        `/tv/${tmdbId}/season/${seasonNumber}`
-      );
-
-      const episodes = Array.isArray(detail.episodes)
-        ? detail.episodes
-        : [];
-
-      const selectedEpisodes = episodes.slice(
-        0,
-        maxEpisodesPerSeason
-      );
-
-      for (const episode of selectedEpisodes) {
-        const episodeNumber = episode.episode_number;
-
-        const streamUrls = {
-          server1: VIDSRC_EPISODE(
-            tmdbId,
-            seasonNumber,
-            episodeNumber
-          ),
-          server2: STELLAR_EPISODE(
-            tmdbId,
-            seasonNumber,
-            episodeNumber
-          ),
-        };
-
-        const episodeData = {
-          title_id: titleId,
-          season: seasonNumber,
-          episode_number: episodeNumber,
-          name:
-            episode.name ||
-            `الحلقة ${episodeNumber}`,
-          duration_seconds:
-            episode.runtime
-              ? Number(episode.runtime) * 60
-              : null,
-          stream_urls: streamUrls,
-        };
-
-        /*
-          episodes has UNIQUE(title_id, season, episode_number),
-          so we manually find/update/insert instead of relying
-          on an assumed conflict target.
-        */
-
-        const { data: existingEpisode, error: findError } =
-          await supabase
-            .from('episodes')
-            .select('id')
-            .eq('title_id', titleId)
-            .eq('season', seasonNumber)
-            .eq('episode_number', episodeNumber)
-            .limit(1)
-            .maybeSingle();
-
-        if (findError) {
-          throw findError;
+        if (
+          seasonNumber === 0
+        ) {
+          continue;
         }
 
-        if (existingEpisode) {
-          const { error: updateError } =
+        const detail =
+          await tmdbFetch(
+            `/tv/${tmdbId}/season/${seasonNumber}`
+          );
+
+        const episodes =
+          Array.isArray(
+            detail?.episodes
+          )
+            ? detail.episodes
+            : [];
+
+        const selectedEpisodes =
+          episodes.slice(
+            0,
+            maxEpisodesPerSeason
+          );
+
+        for (
+          const episode of selectedEpisodes
+        ) {
+          const episodeNumber =
+            episode.episode_number;
+
+          const streamUrls = {
+            server1:
+              VIDSRC_EPISODE(
+                tmdbId,
+                seasonNumber,
+                episodeNumber
+              ),
+
+            server2:
+              STELLAR_EPISODE(
+                tmdbId,
+                seasonNumber,
+                episodeNumber
+              ),
+          };
+
+          const episodeData = {
+            title_id:
+              titleId,
+
+            season:
+              seasonNumber,
+
+            episode_number:
+              episodeNumber,
+
+            name:
+              episode.name ||
+              `الحلقة ${episodeNumber}`,
+
+            duration_seconds:
+              episode.runtime
+                ? Number(
+                    episode.runtime
+                  ) * 60
+                : null,
+
+            stream_urls:
+              streamUrls,
+          };
+
+          const {
+            data:
+              existingEpisode,
+            error:
+              findError,
+          } =
             await supabase
               .from('episodes')
-              .update({
-                name: episodeData.name,
-                duration_seconds:
-                  episodeData.duration_seconds,
-                stream_urls:
-                  episodeData.stream_urls,
-              })
-              .eq('id', existingEpisode.id);
+              .select('id')
+              .eq(
+                'title_id',
+                titleId
+              )
+              .eq(
+                'season',
+                seasonNumber
+              )
+              .eq(
+                'episode_number',
+                episodeNumber
+              )
+              .limit(1)
+              .maybeSingle();
 
-          if (updateError) {
-            throw updateError;
+          if (findError) {
+            throw findError;
           }
-        } else {
-          const { error: insertError } =
-            await supabase
-              .from('episodes')
-              .insert(episodeData);
 
-          if (insertError) {
-            throw insertError;
+          if (existingEpisode) {
+            const {
+              error:
+                updateError,
+            } =
+              await supabase
+                .from(
+                  'episodes'
+                )
+                .update({
+                  name:
+                    episodeData.name,
+
+                  duration_seconds:
+                    episodeData.duration_seconds,
+
+                  stream_urls:
+                    episodeData.stream_urls,
+                })
+                .eq(
+                  'id',
+                  existingEpisode.id
+                );
+
+            if (updateError) {
+              throw updateError;
+            }
+          } else {
+            const {
+              error:
+                insertError,
+            } =
+              await supabase
+                .from(
+                  'episodes'
+                )
+                .insert(
+                  episodeData
+                );
+
+            if (insertError) {
+              throw insertError;
+            }
           }
+
+          insertedOrUpdated++;
+
+          setStats((prev) => ({
+            ...prev,
+            episodes:
+              prev.episodes + 1,
+          }));
         }
-
-        insertedOrUpdated++;
-
-        updateStats({
-          episodes: stats.episodes + 1,
-        });
       }
-    }
 
-    return insertedOrUpdated;
-  };
+      return insertedOrUpdated;
+    };
 
   /* ============================================================
      INDIVIDUAL SEARCH
   ============================================================ */
 
-  const handleSingleSearch = async (event) => {
-    event.preventDefault();
+  const handleSingleSearch =
+    async (event) => {
+      event.preventDefault();
 
-    if (!searchQuery.trim()) {
-      addLog(
-        '⚠️ أدخل اسم العمل أو TMDB ID أولاً.',
-        'warning'
-      );
-      return;
-    }
-
-    setIsSearching(true);
-    setSearchResults([]);
-
-    try {
-      addLog(
-        `🔎 البحث عن "${searchQuery}"...`,
-        'info'
-      );
-
-      if (/^\d+$/.test(searchQuery.trim())) {
-        const item = await tmdbFetch(
-          `/${searchType}/${searchQuery.trim()}`
-        );
-
-        setSearchResults([item]);
-
+      if (
+        !searchQuery.trim()
+      ) {
         addLog(
-          `✅ تم العثور على: ${getTitle(item)}`,
-          'success'
+          '⚠️ أدخل اسم العمل أو TMDB ID أولاً.',
+          'warning'
         );
-      } else {
-        const data = await tmdbFetch(
-          `/search/${searchType}`,
-          {
-            query: searchQuery.trim(),
-            page: 1,
-          }
+        return;
+      }
+
+      setIsSearching(true);
+      setSearchResults([]);
+
+      try {
+        addLog(
+          `🔎 البحث عن "${searchQuery}"...`,
+          'info'
         );
 
-        const results = data.results || [];
+        if (
+          /^\d+$/.test(
+            searchQuery.trim()
+          )
+        ) {
+          const item =
+            await tmdbFetch(
+              `/${searchType}/${searchQuery.trim()}`
+            );
 
-        setSearchResults(results);
+          setSearchResults([
+            item,
+          ]);
 
-        if (results.length) {
           addLog(
-            `✅ تم العثور على ${results.length} نتيجة.`,
+            `✅ تم العثور على: ${getTitle(
+              item
+            )}`,
             'success'
           );
         } else {
-          addLog(
-            '⚠️ لا توجد نتائج.',
-            'warning'
+          const data =
+            await tmdbFetch(
+              `/search/${searchType}`,
+              {
+                query:
+                  searchQuery.trim(),
+                page: 1,
+              }
+            );
+
+          const results =
+            data?.results || [];
+
+          setSearchResults(
+            results
           );
+
+          if (
+            results.length
+          ) {
+            addLog(
+              `✅ تم العثور على ${results.length} نتيجة.`,
+              'success'
+            );
+          } else {
+            addLog(
+              '⚠️ لا توجد نتائج.',
+              'warning'
+            );
+          }
         }
+      } catch (error) {
+        addLog(
+          `❌ فشل البحث: ${error.message}`,
+          'error'
+        );
+      } finally {
+        setIsSearching(false);
       }
-    } catch (error) {
-      addLog(
-        `❌ فشل البحث: ${error.message}`,
-        'error'
-      );
-    } finally {
-      setIsSearching(false);
-    }
-  };
+    };
 
   /* ============================================================
      INDIVIDUAL IMPORT
   ============================================================ */
 
-  const importSingleItem = async (item) => {
-    if (!isAdmin) return;
+  const importSingleItem =
+    async (item) => {
+      if (!isAdmin) return;
 
-    setIsToolLoading(true);
+      setIsToolLoading(true);
 
-    try {
-      const type =
-        searchType === 'tv'
-          ? 'series'
-          : 'movie';
+      try {
+        const type =
+          searchType === 'tv'
+            ? 'series'
+            : 'movie';
 
-      setCurrentOperation(
-        `استيراد ${getTitle(item)}`
-      );
-
-      addLog(
-        `⏳ بدء استيراد "${getTitle(item)}"...`,
-        'info'
-      );
-
-      const result = await saveTitle(
-        item,
-        type
-      );
-
-      if (result.created) {
-        updateStats({
-          imported: stats.imported + 1,
-        });
+        setCurrentOperation(
+          `استيراد ${getTitle(
+            item
+          )}`
+        );
 
         addLog(
-          `🎉 تم إنشاء "${getTitle(item)}" بنجاح.`,
-          'success'
-        );
-      } else {
-        updateStats({
-          updated: stats.updated + 1,
-        });
-
-        addLog(
-          `🔄 تم تحديث "${getTitle(item)}".`,
-          'success'
-        );
-      }
-
-      /*
-        If the user imports a series individually,
-        we also fetch all currently available seasons
-        and their episodes.
-      */
-
-      if (type === 'series') {
-        const details = await tmdbFetch(
-          `/tv/${item.id}`
+          `⏳ بدء استيراد "${getTitle(
+            item
+          )}"...`,
+          'info'
         );
 
-        const seasons = Array.isArray(details.seasons)
-          ? details.seasons
-          : [];
+        const result =
+          await saveTitle(
+            item,
+            type
+          );
 
-        if (seasons.length) {
+        if (
+          result.created
+        ) {
+          setStats(
+            (prev) => ({
+              ...prev,
+              imported:
+                prev.imported +
+                1,
+            })
+          );
+
+          addLog(
+            `🎉 تم إنشاء "${getTitle(
+              item
+            )}" بنجاح.`,
+            'success'
+          );
+        } else {
+          setStats(
+            (prev) => ({
+              ...prev,
+              updated:
+                prev.updated +
+                1,
+            })
+          );
+
+          addLog(
+            `🔄 تم تحديث "${getTitle(
+              item
+            )}".`,
+            'success'
+          );
+        }
+
+        if (
+          type === 'series'
+        ) {
+          const details =
+            await tmdbFetch(
+              `/tv/${item.id}`
+            );
+
+          const seasons =
+            Array.isArray(
+              details?.seasons
+            )
+              ? details.seasons
+              : [];
+
           const validSeasons =
             seasons.filter(
               (season) =>
-                season.season_number > 0
+                season.season_number >
+                0
             );
 
-          if (validSeasons.length) {
+          if (
+            validSeasons.length
+          ) {
             addLog(
               `📺 المسلسل يحتوي على ${validSeasons.length} موسم.`,
               'info'
@@ -792,1088 +1060,1327 @@ export default function Import() {
             );
 
             addLog(
-              `🎞️ تم تحديث حلقات "${getTitle(item)}".`,
+              `🎞️ تم تحديث حلقات "${getTitle(
+                item
+              )}".`,
               'success'
             );
           }
         }
-      }
-    } catch (error) {
-      updateStats({
-        failed: stats.failed + 1,
-      });
+      } catch (error) {
+        setStats(
+          (prev) => ({
+            ...prev,
+            failed:
+              prev.failed + 1,
+          })
+        );
 
-      addLog(
-        `❌ فشل استيراد "${getTitle(item)}": ${error.message}`,
-        'error'
-      );
-    } finally {
-      setCurrentOperation('');
-      setIsToolLoading(false);
-    }
-  };
+        addLog(
+          `❌ فشل استيراد "${getTitle(
+            item
+          )}": ${error.message}`,
+          'error'
+        );
+      } finally {
+        setCurrentOperation('');
+        setIsToolLoading(false);
+      }
+    };
 
   /* ============================================================
      BULK HELPERS
   ============================================================ */
 
-  const getBulkTypes = () => {
-    if (bulkType === 'movie') {
-      return ['movie'];
-    }
-
-    if (bulkType === 'series') {
-      return ['tv'];
-    }
-
-    return ['movie', 'tv'];
-  };
-
-  const getPopularEndpoint = (type, page) =>
-    `/${type}/popular`;
-
-  const importBulkPages = async ({
-    endpointFactory,
-    label,
-  }) => {
-    if (!isAdmin) return;
-
-    setIsBulkLoading(true);
-    resetOperationStats();
-
-    try {
-      const types = getBulkTypes();
-
-      addLog(
-        `🚀 بدء ${label}. النوع: ${bulkType}. الصفحات: ${pageCount}.`,
-        'info'
-      );
-
-      const estimatedTotal =
-        Number(pageCount) *
-        20 *
-        types.length;
-
-      updateStats({
-        total: estimatedTotal,
-      });
-
-      let processed = 0;
-
-      for (const type of types) {
-        for (
-          let page = 1;
-          page <= Number(pageCount);
-          page++
-        ) {
-          setCurrentOperation(
-            `${label} — ${type === 'movie' ? 'أفلام' : 'مسلسلات'} — الصفحة ${page}/${pageCount}`
-          );
-
-          addLog(
-            `📥 جلب ${type === 'movie' ? 'الأفلام' : 'المسلسلات'} — الصفحة ${page}/${pageCount}...`,
-            'info'
-          );
-
-          const data = await tmdbFetch(
-            endpointFactory(type, page)
-          );
-
-          const results = data.results || [];
-
-          addLog(
-            `📦 الصفحة ${page}: ${results.length} عنصر.`,
-            'info'
-          );
-
-          for (const item of results) {
-            processed++;
-
-            try {
-              const result = await saveTitle(
-                item,
-                type
-              );
-
-              if (result.created) {
-                setStats((prev) => ({
-                  ...prev,
-                  imported: prev.imported + 1,
-                  processed,
-                }));
-              } else {
-                setStats((prev) => ({
-                  ...prev,
-                  updated: prev.updated + 1,
-                  processed,
-                }));
-              }
-
-              setProgress(
-                Math.min(
-                  100,
-                  Math.round(
-                    (processed /
-                      Math.max(
-                        estimatedTotal,
-                        1
-                      )) *
-                      100
-                  )
-                )
-              );
-            } catch (error) {
-              setStats((prev) => ({
-                ...prev,
-                failed: prev.failed + 1,
-                processed,
-              }));
-
-              addLog(
-                `❌ فشل "${getTitle(item)}": ${error.message}`,
-                'error'
-              );
-            }
-          }
-
-          addLog(
-            `✅ انتهت الصفحة ${page}/${pageCount}.`,
-            'success'
-          );
-
-          await sleep(150);
-        }
+  const getBulkTypes =
+    () => {
+      if (
+        bulkType === 'movie'
+      ) {
+        return ['movie'];
       }
 
-      setProgress(100);
+      if (
+        bulkType === 'series'
+      ) {
+        return ['tv'];
+      }
 
-      addLog(
-        `🎉 اكتملت عملية ${label}. مستورد: ${stats.imported} — محدث: ${stats.updated} — فاشل: ${stats.failed}.`,
-        'success'
-      );
-    } catch (error) {
-      addLog(
-        `❌ توقفت العملية: ${error.message}`,
-        'error'
-      );
-    } finally {
-      setIsBulkLoading(false);
-      setCurrentOperation('');
-    }
-  };
+      return [
+        'movie',
+        'tv',
+      ];
+    };
+
+  const getPopularEndpoint =
+    (type, page) =>
+      `/${type}/popular`;
+
+  const importBulkPages =
+    async ({
+      endpointFactory,
+      label,
+    }) => {
+      if (!isAdmin) return;
+
+      setIsBulkLoading(true);
+      resetOperationStats();
+
+      try {
+        const types =
+          getBulkTypes();
+
+        addLog(
+          `🚀 بدء ${label}. النوع: ${bulkType}. الصفحات: ${pageCount}.`,
+          'info'
+        );
+
+        const estimatedTotal =
+          Number(pageCount) *
+          20 *
+          types.length;
+
+        updateStats({
+          total:
+            estimatedTotal,
+        });
+
+        let processed = 0;
+
+        for (
+          const type of types
+        ) {
+          for (
+            let page = 1;
+            page <=
+            Number(pageCount);
+            page++
+          ) {
+            setCurrentOperation(
+              `${label} — ${
+                type === 'movie'
+                  ? 'أفلام'
+                  : 'مسلسلات'
+              } — الصفحة ${page}/${pageCount}`
+            );
+
+            addLog(
+              `📥 جلب ${
+                type === 'movie'
+                  ? 'الأفلام'
+                  : 'المسلسلات'
+              } — الصفحة ${page}/${pageCount}...`,
+              'info'
+            );
+
+            const data =
+              await tmdbFetch(
+                endpointFactory(
+                  type,
+                  page
+                )
+              );
+
+            const results =
+              data?.results || [];
+
+            addLog(
+              `📦 الصفحة ${page}: ${results.length} عنصر.`,
+              'info'
+            );
+
+            for (
+              const item of results
+            ) {
+              processed++;
+
+              try {
+                const result =
+                  await saveTitle(
+                    item,
+                    type
+                  );
+
+                setStats(
+                  (prev) => ({
+                    ...prev,
+                    imported:
+                      prev.imported +
+                      (result.created
+                        ? 1
+                        : 0),
+                    updated:
+                      prev.updated +
+                      (result.created
+                        ? 0
+                        : 1),
+                    processed,
+                  })
+                );
+
+                setProgress(
+                  Math.min(
+                    100,
+                    Math.round(
+                      (processed /
+                        Math.max(
+                          estimatedTotal,
+                          1
+                        )) *
+                        100
+                    )
+                  )
+                );
+              } catch (error) {
+                setStats(
+                  (prev) => ({
+                    ...prev,
+                    failed:
+                      prev.failed +
+                      1,
+                    processed,
+                  })
+                );
+
+                addLog(
+                  `❌ فشل "${getTitle(
+                    item
+                  )}": ${error.message}`,
+                  'error'
+                );
+              }
+            }
+
+            addLog(
+              `✅ انتهت الصفحة ${page}/${pageCount}.`,
+              'success'
+            );
+
+            await sleep(150);
+          }
+        }
+
+        setProgress(100);
+
+        addLog(
+          `🎉 اكتملت عملية ${label}.`,
+          'success'
+        );
+      } catch (error) {
+        addLog(
+          `❌ توقفت العملية: ${error.message}`,
+          'error'
+        );
+      } finally {
+        setIsBulkLoading(false);
+        setCurrentOperation('');
+      }
+    };
 
   /* ============================================================
      POPULAR
   ============================================================ */
 
-  const handleBulkPopularImport = () => {
-    importBulkPages({
-      endpointFactory: (type, page) =>
-        getPopularEndpoint(type, page),
-      label: 'استيراد الأعمال الشائعة',
-    });
-  };
+  const handleBulkPopularImport =
+    () => {
+      importBulkPages({
+        endpointFactory:
+          (type, page) =>
+            getPopularEndpoint(
+              type,
+              page
+            ),
+
+        label:
+          'استيراد الأعمال الشائعة',
+      });
+    };
 
   /* ============================================================
-     TRENDING - LATEST 20
+     TRENDING
   ============================================================ */
 
-  const handleTrendingImport = async () => {
-    if (!isAdmin) return;
+  const handleTrendingImport =
+    async () => {
+      if (!isAdmin) return;
 
-    setIsTrendingLoading(true);
-    resetOperationStats();
+      setIsTrendingLoading(true);
+      resetOperationStats();
 
-    try {
-      addLog(
-        '🔥 جاري جلب أحدث 20 عمل من Trending...',
-        'info'
-      );
-
-      const data = await tmdbFetch(
-        '/trending/all/week'
-      );
-
-      const results = Array.isArray(data.results)
-        ? data.results
-            .filter(
-              (item) =>
-                item.media_type === 'movie' ||
-                item.media_type === 'tv'
-            )
-            .slice(0, 20)
-        : [];
-
-      updateStats({
-        total: results.length,
-      });
-
-      if (!results.length) {
+      try {
         addLog(
-          '⚠️ لم يتم العثور على أعمال Trending.',
-          'warning'
+          '🔥 جاري جلب أحدث 20 عمل من Trending...',
+          'info'
         );
-        return;
-      }
 
-      for (let index = 0; index < results.length; index++) {
-        const item = results[index];
-
-        try {
-          const type =
-            item.media_type === 'tv'
-              ? 'series'
-              : 'movie';
-
-          const result = await saveTitle(
-            item,
-            type
+        const data =
+          await tmdbFetch(
+            '/trending/all/week'
           );
 
-          if (result.created) {
-            setStats((prev) => ({
-              ...prev,
-              imported: prev.imported + 1,
-              processed: index + 1,
-            }));
-          } else {
-            setStats((prev) => ({
-              ...prev,
-              updated: prev.updated + 1,
-              processed: index + 1,
-            }));
-          }
+        const results =
+          Array.isArray(
+            data?.results
+          )
+            ? data.results
+                .filter(
+                  (item) =>
+                    item.media_type ===
+                      'movie' ||
+                    item.media_type ===
+                      'tv'
+                )
+                .slice(0, 20)
+            : [];
 
-          setProgress(
-            Math.round(
-              ((index + 1) /
-                results.length) *
-                100
-            )
-          );
+        updateStats({
+          total:
+            results.length,
+        });
 
+        if (
+          !results.length
+        ) {
           addLog(
-            `✅ ${index + 1}/20 — ${getTitle(item)}`,
-            'success'
+            '⚠️ لم يتم العثور على أعمال Trending.',
+            'warning'
           );
-        } catch (error) {
-          setStats((prev) => ({
-            ...prev,
-            failed: prev.failed + 1,
-            processed: index + 1,
-          }));
-
-          addLog(
-            `❌ ${getTitle(item)}: ${error.message}`,
-            'error'
-          );
+          return;
         }
-      }
 
-      addLog(
-        '🔥 اكتمل استيراد Trending.',
-        'success'
-      );
-    } catch (error) {
-      addLog(
-        `❌ فشل Trending: ${error.message}`,
-        'error'
-      );
-    } finally {
-      setIsTrendingLoading(false);
-    }
-  };
+        for (
+          let index = 0;
+          index < results.length;
+          index++
+        ) {
+          const item =
+            results[index];
+
+          try {
+            const type =
+              item.media_type ===
+              'tv'
+                ? 'series'
+                : 'movie';
+
+            const result =
+              await saveTitle(
+                item,
+                type
+              );
+
+            setStats(
+              (prev) => ({
+                ...prev,
+                imported:
+                  prev.imported +
+                  (result.created
+                    ? 1
+                    : 0),
+                updated:
+                  prev.updated +
+                  (result.created
+                    ? 0
+                    : 1),
+                processed:
+                  index + 1,
+              })
+            );
+
+            setProgress(
+              Math.round(
+                ((index + 1) /
+                  results.length) *
+                  100
+              )
+            );
+
+            addLog(
+              `✅ ${
+                index + 1
+              }/20 — ${getTitle(
+                item
+              )}`,
+              'success'
+            );
+          } catch (error) {
+            setStats(
+              (prev) => ({
+                ...prev,
+                failed:
+                  prev.failed + 1,
+                processed:
+                  index + 1,
+              })
+            );
+
+            addLog(
+              `❌ ${getTitle(
+                item
+              )}: ${error.message}`,
+              'error'
+            );
+          }
+        }
+
+        addLog(
+          '🔥 اكتمل استيراد Trending.',
+          'success'
+        );
+      } catch (error) {
+        addLog(
+          `❌ فشل Trending: ${error.message}`,
+          'error'
+        );
+      } finally {
+        setIsTrendingLoading(false);
+      }
+    };
 
   /* ============================================================
      SERIES / EPISODE IMPORT
   ============================================================ */
 
-  const handleSeriesEpisodesImport = async () => {
-    if (!isAdmin) return;
+  const handleSeriesEpisodesImport =
+    async () => {
+      if (!isAdmin) return;
 
-    const tmdbId = seriesTmdbId.trim();
+      const tmdbId =
+        seriesTmdbId.trim();
 
-    if (!/^\d+$/.test(tmdbId)) {
-      addLog(
-        '⚠️ أدخل TMDB ID صحيح للمسلسل.',
-        'warning'
-      );
-      return;
-    }
-
-    setIsEpisodeLoading(true);
-    resetOperationStats();
-
-    try {
-      setCurrentOperation(
-        `جلب معلومات المسلسل ${tmdbId}`
-      );
-
-      addLog(
-        `📺 جاري جلب المسلسل TMDB ${tmdbId}...`,
-        'info'
-      );
-
-      const series = await tmdbFetch(
-        `/tv/${tmdbId}`
-      );
-
-      const titleResult = await saveTitle(
-        series,
-        'series'
-      );
-
-      if (titleResult.created) {
-        updateStats({
-          imported: 1,
-        });
-      } else {
-        updateStats({
-          updated: 1,
-        });
-      }
-
-      const allSeasons = Array.isArray(
-        series.seasons
-      )
-        ? series.seasons
-        : [];
-
-      const seasons = allSeasons
-        .filter(
-          (season) =>
-            season.season_number > 0
-        )
-        .slice(
-          0,
-          Math.max(1, Number(seasonCount))
-        );
-
-      if (!seasons.length) {
+      if (
+        !/^\d+$/.test(tmdbId)
+      ) {
         addLog(
-          '⚠️ لا توجد مواسم متاحة.',
+          '⚠️ أدخل TMDB ID صحيح للمسلسل.',
           'warning'
         );
         return;
       }
 
-      addLog(
-        `📚 سيتم استيراد ${seasons.length} موسم، بحد أقصى ${episodesPerSeason} حلقة لكل موسم.`,
-        'info'
-      );
+      setIsEpisodeLoading(true);
+      resetOperationStats();
 
-      let episodeTotal = 0;
-
-      for (
-        let index = 0;
-        index < seasons.length;
-        index++
-      ) {
-        const season = seasons[index];
-
+      try {
         setCurrentOperation(
-          `الموسم ${season.season_number} — ${index + 1}/${seasons.length}`
+          `جلب معلومات المسلسل ${tmdbId}`
         );
 
         addLog(
-          `📥 جلب الموسم ${season.season_number}...`,
+          `📺 جاري جلب المسلسل TMDB ${tmdbId}...`,
           'info'
         );
 
-        const detail = await tmdbFetch(
-          `/tv/${tmdbId}/season/${season.season_number}`
-        );
+        const series =
+          await tmdbFetch(
+            `/tv/${tmdbId}`
+          );
 
-        const episodes = Array.isArray(
-          detail.episodes
-        )
-          ? detail.episodes.slice(
+        const titleResult =
+          await saveTitle(
+            series,
+            'series'
+          );
+
+        if (
+          titleResult.created
+        ) {
+          updateStats({
+            imported: 1,
+          });
+        } else {
+          updateStats({
+            updated: 1,
+          });
+        }
+
+        const allSeasons =
+          Array.isArray(
+            series?.seasons
+          )
+            ? series.seasons
+            : [];
+
+        const seasons =
+          allSeasons
+            .filter(
+              (season) =>
+                season.season_number >
+                0
+            )
+            .slice(
               0,
               Math.max(
                 1,
-                Number(episodesPerSeason)
+                Number(
+                  seasonCount
+                )
               )
+            );
+
+        if (
+          !seasons.length
+        ) {
+          addLog(
+            '⚠️ لا توجد مواسم متاحة.',
+            'warning'
+          );
+          return;
+        }
+
+        addLog(
+          `📚 سيتم استيراد ${seasons.length} موسم، بحد أقصى ${episodesPerSeason} حلقة لكل موسم.`,
+          'info'
+        );
+
+        let episodeTotal = 0;
+
+        for (
+          let index = 0;
+          index < seasons.length;
+          index++
+        ) {
+          const season =
+            seasons[index];
+
+          setCurrentOperation(
+            `الموسم ${season.season_number} — ${
+              index + 1
+            }/${seasons.length}`
+          );
+
+          addLog(
+            `📥 جلب الموسم ${season.season_number}...`,
+            'info'
+          );
+
+          const detail =
+            await tmdbFetch(
+              `/tv/${tmdbId}/season/${season.season_number}`
+            );
+
+          const episodes =
+            Array.isArray(
+              detail?.episodes
             )
-          : [];
+              ? detail.episodes.slice(
+                  0,
+                  Math.max(
+                    1,
+                    Number(
+                      episodesPerSeason
+                    )
+                  )
+                )
+              : [];
 
-        for (const episode of episodes) {
-          try {
-            const episodeNumber =
-              episode.episode_number;
+          for (
+            const episode of episodes
+          ) {
+            try {
+              const episodeNumber =
+                episode.episode_number;
 
-            const streamUrls = {
-              server1: VIDSRC_EPISODE(
-                tmdbId,
-                season.season_number,
-                episodeNumber
-              ),
-              server2: STELLAR_EPISODE(
-                tmdbId,
-                season.season_number,
-                episodeNumber
-              ),
-            };
+              const streamUrls = {
+                server1:
+                  VIDSRC_EPISODE(
+                    tmdbId,
+                    season.season_number,
+                    episodeNumber
+                  ),
 
-            const episodeData = {
-              title_id:
-                titleResult.title.id,
-              season:
-                season.season_number,
-              episode_number:
-                episodeNumber,
-              name:
-                episode.name ||
-                `الحلقة ${episodeNumber}`,
-              duration_seconds:
-                episode.runtime
-                  ? Number(episode.runtime) *
-                    60
-                  : null,
-              stream_urls:
-                streamUrls,
-            };
+                server2:
+                  STELLAR_EPISODE(
+                    tmdbId,
+                    season.season_number,
+                    episodeNumber
+                  ),
+              };
 
-            const {
-              data: existingEpisode,
-              error: findError,
-            } = await supabase
-              .from('episodes')
-              .select('id')
-              .eq(
-                'title_id',
-                titleResult.title.id
-              )
-              .eq(
-                'season',
-                season.season_number
-              )
-              .eq(
-                'episode_number',
-                episodeNumber
-              )
-              .limit(1)
-              .maybeSingle();
+              const episodeData = {
+                title_id:
+                  titleResult
+                    .title.id,
 
-            if (findError) {
-              throw findError;
-            }
+                season:
+                  season.season_number,
 
-            if (existingEpisode) {
+                episode_number:
+                  episodeNumber,
+
+                name:
+                  episode.name ||
+                  `الحلقة ${episodeNumber}`,
+
+                duration_seconds:
+                  episode.runtime
+                    ? Number(
+                        episode.runtime
+                      ) * 60
+                    : null,
+
+                stream_urls:
+                  streamUrls,
+              };
+
               const {
-                error: updateError,
-              } = await supabase
-                .from('episodes')
-                .update({
-                  name:
-                    episodeData.name,
-                  duration_seconds:
-                    episodeData.duration_seconds,
-                  stream_urls:
-                    episodeData.stream_urls,
+                data:
+                  existingEpisode,
+                error:
+                  findError,
+              } =
+                await supabase
+                  .from(
+                    'episodes'
+                  )
+                  .select('id')
+                  .eq(
+                    'title_id',
+                    titleResult
+                      .title.id
+                  )
+                  .eq(
+                    'season',
+                    season.season_number
+                  )
+                  .eq(
+                    'episode_number',
+                    episodeNumber
+                  )
+                  .limit(1)
+                  .maybeSingle();
+
+              if (findError) {
+                throw findError;
+              }
+
+              if (
+                existingEpisode
+              ) {
+                const {
+                  error:
+                    updateError,
+                } =
+                  await supabase
+                    .from(
+                      'episodes'
+                    )
+                    .update({
+                      name:
+                        episodeData.name,
+
+                      duration_seconds:
+                        episodeData.duration_seconds,
+
+                      stream_urls:
+                        episodeData.stream_urls,
+                    })
+                    .eq(
+                      'id',
+                      existingEpisode.id
+                    );
+
+                if (
+                  updateError
+                ) {
+                  throw updateError;
+                }
+              } else {
+                const {
+                  error:
+                    insertError,
+                } =
+                  await supabase
+                    .from(
+                      'episodes'
+                    )
+                    .insert(
+                      episodeData
+                    );
+
+                if (
+                  insertError
+                ) {
+                  throw insertError;
+                }
+              }
+
+              episodeTotal++;
+
+              setStats(
+                (prev) => ({
+                  ...prev,
+                  episodes:
+                    prev.episodes +
+                    1,
+                  processed:
+                    prev.processed +
+                    1,
                 })
-                .eq(
-                  'id',
-                  existingEpisode.id
-                );
+              );
 
-              if (updateError) {
-                throw updateError;
-              }
-            } else {
-              const {
-                error: insertError,
-              } = await supabase
-                .from('episodes')
-                .insert(
-                  episodeData
-                );
+              addLog(
+                `🎞️ S${season.season_number} E${episodeNumber} — ${
+                  episode.name ||
+                  `الحلقة ${episodeNumber}`
+                }`,
+                'success'
+              );
+            } catch (error) {
+              setStats(
+                (prev) => ({
+                  ...prev,
+                  failed:
+                    prev.failed +
+                    1,
+                })
+              );
 
-              if (insertError) {
-                throw insertError;
-              }
+              addLog(
+                `❌ فشل S${season.season_number} E${episode.episode_number}: ${error.message}`,
+                'error'
+              );
             }
-
-            episodeTotal++;
-
-            setStats((prev) => ({
-              ...prev,
-              episodes:
-                prev.episodes + 1,
-            }));
-
-            addLog(
-              `🎞️ S${season.season_number} E${episodeNumber} — ${episode.name || `الحلقة ${episodeNumber}`}`,
-              'success'
-            );
-          } catch (error) {
-            setStats((prev) => ({
-              ...prev,
-              failed: prev.failed + 1,
-            }));
-
-            addLog(
-              `❌ فشل S${season.season_number} E${episode.episode_number}: ${error.message}`,
-              'error'
-            );
           }
         }
+
+        setProgress(100);
+
+        addLog(
+          `🎉 اكتمل استيراد الحلقات. تم تحديث ${episodeTotal} حلقة.`,
+          'success'
+        );
+      } catch (error) {
+        addLog(
+          `❌ فشل استيراد المواسم والحلقات: ${error.message}`,
+          'error'
+        );
+      } finally {
+        setIsEpisodeLoading(false);
+        setCurrentOperation('');
       }
-
-      setProgress(100);
-
-      addLog(
-        `🎉 اكتمل استيراد الحلقات. تم تحديث ${episodeTotal} حلقة.`,
-        'success'
-      );
-    } catch (error) {
-      addLog(
-        `❌ فشل استيراد المواسم والحلقات: ${error.message}`,
-        'error'
-      );
-    } finally {
-      setIsEpisodeLoading(false);
-      setCurrentOperation('');
-    }
-  };
+    };
 
   /* ============================================================
      FIX URLS
   ============================================================ */
 
-  const handleFixUrls = async () => {
-    if (!isAdmin) return;
+  const handleFixUrls =
+    async () => {
+      if (!isAdmin) return;
 
-    setIsToolLoading(true);
-    resetOperationStats();
+      setIsToolLoading(true);
+      resetOperationStats();
 
-    try {
-      setCurrentOperation(
-        'فحص وإصلاح الروابط'
-      );
+      try {
+        setCurrentOperation(
+          'فحص وإصلاح الروابط'
+        );
 
-      addLog(
-        '🛠️ بدء فحص وإصلاح بيانات الروابط...',
-        'info'
-      );
-
-      const {
-        data: titles,
-        error,
-      } = await supabase
-        .from('titles')
-        .select('*');
-
-      if (error) {
-        throw error;
-      }
-
-      if (!titles?.length) {
         addLog(
-          'ℹ️ قاعدة البيانات فارغة.',
+          '🛠️ بدء فحص وإصلاح بيانات الروابط...',
           'info'
         );
-        return;
-      }
 
-      updateStats({
-        total: titles.length,
-      });
+        const {
+          data: titles,
+          error,
+        } =
+          await supabase
+            .from('titles')
+            .select('*');
 
-      let fixed = 0;
+        if (error) {
+          throw error;
+        }
 
-      for (
-        let index = 0;
-        index < titles.length;
-        index++
-      ) {
-        const item = titles[index];
+        if (!titles?.length) {
+          addLog(
+            'ℹ️ قاعدة البيانات فارغة.',
+            'info'
+          );
+          return;
+        }
 
-        try {
-          const normalizedType =
-            normalizeType(item.type);
+        updateStats({
+          total:
+            titles.length,
+        });
 
-          const updateData = {};
+        let fixed = 0;
 
-          if (
-            normalizedType !== item.type
-          ) {
-            updateData.type =
-              normalizedType;
-          }
+        for (
+          let index = 0;
+          index < titles.length;
+          index++
+        ) {
+          const item =
+            titles[index];
 
-          /*
-            Do not overwrite a valid existing URL.
-
-            Only initialize missing movie URLs.
-          */
-
-          if (
-            normalizedType === 'movie' &&
-            !item.url &&
-            item.tmdb_id
-          ) {
-            updateData.url =
-              VIDSRC_MOVIE(
-                item.tmdb_id
+          try {
+            const normalizedType =
+              normalizeType(
+                item.type
               );
-          }
 
-          if (
-            Object.keys(updateData)
-              .length
-          ) {
-            const {
-              error: updateError,
-            } = await supabase
-              .from('titles')
-              .update(updateData)
-              .eq('id', item.id);
+            const updateData = {};
 
-            if (updateError) {
-              throw updateError;
+            if (
+              normalizedType !==
+              item.type
+            ) {
+              updateData.type =
+                normalizedType;
             }
 
-            fixed++;
+            if (
+              normalizedType ===
+                'movie' &&
+              !item.url &&
+              item.tmdb_id
+            ) {
+              updateData.url =
+                VIDSRC_MOVIE(
+                  item.tmdb_id
+                );
+            }
+
+            if (
+              Object.keys(
+                updateData
+              ).length
+            ) {
+              const {
+                error:
+                  updateError,
+              } =
+                await supabase
+                  .from('titles')
+                  .update(
+                    updateData
+                  )
+                  .eq(
+                    'id',
+                    item.id
+                  );
+
+              if (updateError) {
+                throw updateError;
+              }
+
+              fixed++;
+            }
+
+            setProgress(
+              Math.round(
+                ((index + 1) /
+                  titles.length) *
+                  100
+              )
+            );
+          } catch (error) {
+            setStats(
+              (prev) => ({
+                ...prev,
+                failed:
+                  prev.failed +
+                  1,
+              })
+            );
+
+            addLog(
+              `❌ فشل إصلاح ${item.name}: ${error.message}`,
+              'error'
+            );
           }
-
-          setProgress(
-            Math.round(
-              ((index + 1) /
-                titles.length) *
-                100
-            )
-          );
-        } catch (error) {
-          setStats((prev) => ({
-            ...prev,
-            failed: prev.failed + 1,
-          }));
-
-          addLog(
-            `❌ فشل إصلاح ${item.name}: ${error.message}`,
-            'error'
-          );
         }
+
+        updateStats({
+          updated: fixed,
+          processed:
+            titles.length,
+        });
+
+        addLog(
+          `✅ انتهى الإصلاح. تم تعديل ${fixed} سجل.`,
+          'success'
+        );
+      } catch (error) {
+        addLog(
+          `❌ خطأ في إصلاح الروابط: ${error.message}`,
+          'error'
+        );
+      } finally {
+        setIsToolLoading(false);
+        setCurrentOperation('');
       }
-
-      updateStats({
-        updated: fixed,
-        processed: titles.length,
-      });
-
-      addLog(
-        `✅ انتهى الإصلاح. تم تعديل ${fixed} سجل.`,
-        'success'
-      );
-    } catch (error) {
-      addLog(
-        `❌ خطأ في إصلاح الروابط: ${error.message}`,
-        'error'
-      );
-    } finally {
-      setIsToolLoading(false);
-      setCurrentOperation('');
-    }
-  };
+    };
 
   /* ============================================================
      POSTER REPAIR
   ============================================================ */
 
-  const handleFixPosters = async () => {
-    if (!isAdmin) return;
+  const handleFixPosters =
+    async () => {
+      if (!isAdmin) return;
 
-    setIsToolLoading(true);
-    resetOperationStats();
+      setIsToolLoading(true);
+      resetOperationStats();
 
-    try {
-      addLog(
-        '🖼️ بدء إصلاح Posters...',
-        'info'
-      );
+      try {
+        addLog(
+          '🖼️ بدء إصلاح Posters...',
+          'info'
+        );
 
-      const {
-        data: titles,
-        error,
-      } = await supabase
-        .from('titles')
-        .select('id,tmdb_id,name,poster_url');
+        const {
+          data: titles,
+          error,
+        } =
+          await supabase
+            .from('titles')
+            .select(
+              'id,tmdb_id,name,type,poster_url'
+            );
 
-      if (error) {
-        throw error;
-      }
-
-      const list = titles || [];
-
-      updateStats({
-        total: list.length,
-      });
-
-      let fixed = 0;
-
-      for (
-        let index = 0;
-        index < list.length;
-        index++
-      ) {
-        const item = list[index];
-
-        if (!item.tmdb_id) {
-          continue;
+        if (error) {
+          throw error;
         }
 
-        try {
-          const tmdbItem = await tmdbFetch(
-            `/${normalizeType(
-              item.type
-            ) === 'series' ? 'tv' : 'movie'}/${item.tmdb_id}`
-          );
+        const list =
+          titles || [];
 
-          const posterUrl =
-            getPoster(tmdbItem);
+        updateStats({
+          total:
+            list.length,
+        });
 
-          if (
-            posterUrl &&
-            posterUrl !==
-              item.poster_url
-          ) {
-            const {
-              error: updateError,
-            } = await supabase
-              .from('titles')
-              .update({
-                poster_url:
-                  posterUrl,
-              })
-              .eq(
-                'id',
-                item.id
-              );
+        let fixed = 0;
 
-            if (updateError) {
-              throw updateError;
-            }
+        for (
+          let index = 0;
+          index < list.length;
+          index++
+        ) {
+          const item =
+            list[index];
 
-            fixed++;
+          if (!item.tmdb_id) {
+            continue;
           }
 
-          setProgress(
-            Math.round(
-              ((index + 1) /
-                Math.max(
-                  list.length,
-                  1
-                )) *
-                100
-            )
-          );
-        } catch (error) {
-          setStats((prev) => ({
-            ...prev,
-            failed: prev.failed + 1,
-          }));
+          try {
+            const endpoint =
+              normalizeType(
+                item.type
+              ) === 'series'
+                ? 'tv'
+                : 'movie';
 
-          addLog(
-            `❌ Poster ${item.name}: ${error.message}`,
-            'error'
-          );
+            const tmdbItem =
+              await tmdbFetch(
+                `/${endpoint}/${item.tmdb_id}`
+              );
+
+            const posterUrl =
+              getPoster(
+                tmdbItem
+              );
+
+            if (
+              posterUrl &&
+              posterUrl !==
+                item.poster_url
+            ) {
+              const {
+                error:
+                  updateError,
+              } =
+                await supabase
+                  .from('titles')
+                  .update({
+                    poster_url:
+                      posterUrl,
+                  })
+                  .eq(
+                    'id',
+                    item.id
+                  );
+
+              if (updateError) {
+                throw updateError;
+              }
+
+              fixed++;
+            }
+
+            setProgress(
+              Math.round(
+                ((index + 1) /
+                  Math.max(
+                    list.length,
+                    1
+                  )) *
+                  100
+              )
+            );
+          } catch (error) {
+            setStats(
+              (prev) => ({
+                ...prev,
+                failed:
+                  prev.failed +
+                  1,
+              })
+            );
+
+            addLog(
+              `❌ Poster ${item.name}: ${error.message}`,
+              'error'
+            );
+          }
         }
+
+        updateStats({
+          updated: fixed,
+          processed:
+            list.length,
+        });
+
+        addLog(
+          `🖼️ اكتمل إصلاح Posters: ${fixed} سجل.`,
+          'success'
+        );
+      } catch (error) {
+        addLog(
+          `❌ فشل إصلاح Posters: ${error.message}`,
+          'error'
+        );
+      } finally {
+        setIsToolLoading(false);
       }
-
-      updateStats({
-        updated: fixed,
-        processed: list.length,
-      });
-
-      addLog(
-        `🖼️ اكتمل إصلاح Posters: ${fixed} سجل.`,
-        'success'
-      );
-    } catch (error) {
-      addLog(
-        `❌ فشل إصلاح Posters: ${error.message}`,
-        'error'
-      );
-    } finally {
-      setIsToolLoading(false);
-    }
-  };
+    };
 
   /* ============================================================
      RATING UPDATE
   ============================================================ */
 
-  const handleUpdateRatings = async () => {
-    if (!isAdmin) return;
+  const handleUpdateRatings =
+    async () => {
+      if (!isAdmin) return;
 
-    setIsToolLoading(true);
-    resetOperationStats();
+      setIsToolLoading(true);
+      resetOperationStats();
 
-    try {
-      addLog(
-        '⭐ بدء تحديث التقييمات من TMDB...',
-        'info'
-      );
-
-      const {
-        data: titles,
-        error,
-      } = await supabase
-        .from('titles')
-        .select(
-          'id,tmdb_id,name,type,rating_avg'
+      try {
+        addLog(
+          '⭐ بدء تحديث التقييمات من TMDB...',
+          'info'
         );
 
-      if (error) {
-        throw error;
-      }
+        const {
+          data: titles,
+          error,
+        } =
+          await supabase
+            .from('titles')
+            .select(
+              'id,tmdb_id,name,type,rating_avg'
+            );
 
-      const list = titles || [];
-
-      updateStats({
-        total: list.length,
-      });
-
-      let updated = 0;
-
-      for (
-        let index = 0;
-        index < list.length;
-        index++
-      ) {
-        const item = list[index];
-
-        if (!item.tmdb_id) {
-          continue;
+        if (error) {
+          throw error;
         }
 
-        try {
-          const endpoint =
-            normalizeType(item.type) ===
-            'series'
-              ? 'tv'
-              : 'movie';
+        const list =
+          titles || [];
 
-          const tmdbItem =
-            await tmdbFetch(
-              `/${endpoint}/${item.tmdb_id}`
-            );
+        updateStats({
+          total:
+            list.length,
+        });
 
-          const rating =
-            getRating(tmdbItem);
+        let updated = 0;
 
-          const {
-            error: updateError,
-          } = await supabase
-            .from('titles')
-            .update({
-              rating_avg: rating,
-            })
-            .eq(
-              'id',
-              item.id
-            );
+        for (
+          let index = 0;
+          index < list.length;
+          index++
+        ) {
+          const item =
+            list[index];
 
-          if (updateError) {
-            throw updateError;
+          if (!item.tmdb_id) {
+            continue;
           }
 
-          updated++;
+          try {
+            const endpoint =
+              normalizeType(
+                item.type
+              ) === 'series'
+                ? 'tv'
+                : 'movie';
 
-          setProgress(
-            Math.round(
-              ((index + 1) /
-                Math.max(
-                  list.length,
-                  1
-                )) *
-                100
-            )
-          );
-        } catch (error) {
-          setStats((prev) => ({
-            ...prev,
-            failed: prev.failed + 1,
-          }));
+            const tmdbItem =
+              await tmdbFetch(
+                `/${endpoint}/${item.tmdb_id}`
+              );
 
-          addLog(
-            `❌ Rating ${item.name}: ${error.message}`,
-            'error'
-          );
+            const rating =
+              getRating(
+                tmdbItem
+              );
+
+            const {
+              error:
+                updateError,
+            } =
+              await supabase
+                .from('titles')
+                .update({
+                  rating_avg:
+                    rating,
+                })
+                .eq(
+                  'id',
+                  item.id
+                );
+
+            if (updateError) {
+              throw updateError;
+            }
+
+            updated++;
+
+            setProgress(
+              Math.round(
+                ((index + 1) /
+                  Math.max(
+                    list.length,
+                    1
+                  )) *
+                  100
+              )
+            );
+          } catch (error) {
+            setStats(
+              (prev) => ({
+                ...prev,
+                failed:
+                  prev.failed +
+                  1,
+              })
+            );
+
+            addLog(
+              `❌ Rating ${item.name}: ${error.message}`,
+              'error'
+            );
+          }
         }
+
+        updateStats({
+          updated,
+          processed:
+            list.length,
+        });
+
+        addLog(
+          `⭐ تم تحديث ${updated} تقييم.`,
+          'success'
+        );
+      } catch (error) {
+        addLog(
+          `❌ فشل تحديث التقييمات: ${error.message}`,
+          'error'
+        );
+      } finally {
+        setIsToolLoading(false);
       }
-
-      updateStats({
-        updated,
-        processed: list.length,
-      });
-
-      addLog(
-        `⭐ تم تحديث ${updated} تقييم.`,
-        'success'
-      );
-    } catch (error) {
-      addLog(
-        `❌ فشل تحديث التقييمات: ${error.message}`,
-        'error'
-      );
-    } finally {
-      setIsToolLoading(false);
-    }
-  };
+    };
 
   /* ============================================================
      FULL INFO UPDATE
   ============================================================ */
 
-  const handleUpdateInfo = async () => {
-    if (!isAdmin) return;
+  const handleUpdateInfo =
+    async () => {
+      if (!isAdmin) return;
 
-    setIsToolLoading(true);
-    resetOperationStats();
+      setIsToolLoading(true);
+      resetOperationStats();
 
-    try {
-      addLog(
-        '📝 بدء تحديث معلومات الأعمال...',
-        'info'
-      );
-
-      const {
-        data: titles,
-        error,
-      } = await supabase
-        .from('titles')
-        .select(
-          'id,tmdb_id,name,type,url'
+      try {
+        addLog(
+          '📝 بدء تحديث معلومات الأعمال...',
+          'info'
         );
 
-      if (error) {
-        throw error;
-      }
-
-      const list = titles || [];
-
-      updateStats({
-        total: list.length,
-      });
-
-      let updated = 0;
-
-      for (
-        let index = 0;
-        index < list.length;
-        index++
-      ) {
-        const item = list[index];
-
-        if (!item.tmdb_id) {
-          continue;
-        }
-
-        try {
-          const normalizedType =
-            normalizeType(item.type);
-
-          const endpoint =
-            normalizedType === 'series'
-              ? 'tv'
-              : 'movie';
-
-          const tmdbItem =
-            await tmdbFetch(
-              `/${endpoint}/${item.tmdb_id}`
-            );
-
-          const updateData = {
-            type: normalizedType,
-            name: getTitle(
-              tmdbItem
-            ),
-            synopsis:
-              tmdbItem.overview ||
-              null,
-            poster_url:
-              getPoster(tmdbItem),
-            release_year:
-              getYear(tmdbItem),
-            genres:
-              getGenres(tmdbItem),
-            rating_avg:
-              getRating(tmdbItem),
-          };
-
-          /*
-            Only create a missing movie URL.
-            Existing URL remains untouched.
-          */
-
-          if (
-            normalizedType === 'movie' &&
-            !item.url
-          ) {
-            updateData.url =
-              VIDSRC_MOVIE(
-                item.tmdb_id
-              );
-          }
-
-          const {
-            error: updateError,
-          } = await supabase
+        const {
+          data: titles,
+          error,
+        } =
+          await supabase
             .from('titles')
-            .update(updateData)
-            .eq(
-              'id',
-              item.id
+            .select(
+              'id,tmdb_id,name,type,url'
             );
 
-          if (updateError) {
-            throw updateError;
+        if (error) {
+          throw error;
+        }
+
+        const list =
+          titles || [];
+
+        updateStats({
+          total:
+            list.length,
+        });
+
+        let updated = 0;
+
+        for (
+          let index = 0;
+          index < list.length;
+          index++
+        ) {
+          const item =
+            list[index];
+
+          if (!item.tmdb_id) {
+            continue;
           }
 
-          updated++;
+          try {
+            const normalizedType =
+              normalizeType(
+                item.type
+              );
 
-          setProgress(
-            Math.round(
-              ((index + 1) /
-                Math.max(
-                  list.length,
-                  1
-                )) *
-                100
-            )
-          );
-        } catch (error) {
-          setStats((prev) => ({
-            ...prev,
-            failed: prev.failed + 1,
-          }));
+            const endpoint =
+              normalizedType ===
+              'series'
+                ? 'tv'
+                : 'movie';
 
-          addLog(
-            `❌ Info ${item.name}: ${error.message}`,
-            'error'
-          );
+            const tmdbItem =
+              await tmdbFetch(
+                `/${endpoint}/${item.tmdb_id}`
+              );
+
+            const updateData = {
+              type:
+                normalizedType,
+
+              name:
+                getTitle(
+                  tmdbItem
+                ),
+
+              synopsis:
+                tmdbItem.overview ||
+                null,
+
+              poster_url:
+                getPoster(
+                  tmdbItem
+                ),
+
+              release_year:
+                getYear(
+                  tmdbItem
+                ),
+
+              genres:
+                getGenres(
+                  tmdbItem
+                ),
+
+              rating_avg:
+                getRating(
+                  tmdbItem
+                ),
+            };
+
+            if (
+              normalizedType ===
+                'movie' &&
+              !item.url
+            ) {
+              updateData.url =
+                VIDSRC_MOVIE(
+                  item.tmdb_id
+                );
+            }
+
+            const {
+              error:
+                updateError,
+            } =
+              await supabase
+                .from('titles')
+                .update(
+                  updateData
+                )
+                .eq(
+                  'id',
+                  item.id
+                );
+
+            if (updateError) {
+              throw updateError;
+            }
+
+            updated++;
+
+            setProgress(
+              Math.round(
+                ((index + 1) /
+                  Math.max(
+                    list.length,
+                    1
+                  )) *
+                  100
+              )
+            );
+          } catch (error) {
+            setStats(
+              (prev) => ({
+                ...prev,
+                failed:
+                  prev.failed +
+                  1,
+              })
+            );
+
+            addLog(
+              `❌ Info ${item.name}: ${error.message}`,
+              'error'
+            );
+          }
         }
+
+        updateStats({
+          updated,
+          processed:
+            list.length,
+        });
+
+        addLog(
+          `📝 تم تحديث معلومات ${updated} عمل.`,
+          'success'
+        );
+      } catch (error) {
+        addLog(
+          `❌ فشل تحديث المعلومات: ${error.message}`,
+          'error'
+        );
+      } finally {
+        setIsToolLoading(false);
       }
-
-      updateStats({
-        updated,
-        processed: list.length,
-      });
-
-      addLog(
-        `📝 تم تحديث معلومات ${updated} عمل.`,
-        'success'
-      );
-    } catch (error) {
-      addLog(
-        `❌ فشل تحديث المعلومات: ${error.message}`,
-        'error'
-      );
-    } finally {
-      setIsToolLoading(false);
-    }
-  };
+    };
 
   /* ============================================================
      LOG CLEAR
@@ -1894,43 +2401,56 @@ export default function Import() {
     isEpisodeLoading ||
     isToolLoading;
 
-  const statusText = useMemo(() => {
-    if (authLoading) {
-      return 'جاري التحقق من تسجيل الدخول...';
-    }
+  const statusText =
+    useMemo(() => {
+      if (authLoading) {
+        return 'جاري التحقق من تسجيل الدخول...';
+      }
 
-    if (!user) {
-      return 'غير مسجل الدخول';
-    }
+      if (!user) {
+        return 'غير مسجل الدخول';
+      }
 
-    if (adminLoading) {
-      return 'جاري التحقق من صلاحيات الإدارة...';
-    }
+      if (adminLoading) {
+        return 'جاري التحقق من صلاحيات الإدارة...';
+      }
 
-    if (!isAdmin) {
-      return 'الحساب ليس Admin';
-    }
+      if (!isAdmin) {
+        return 'الحساب ليس Admin';
+      }
 
-    return 'Admin مفعل';
-  }, [
-    authLoading,
-    user,
-    adminLoading,
-    isAdmin,
-  ]);
+      return 'Admin مفعل';
+    }, [
+      authLoading,
+      user,
+      adminLoading,
+      isAdmin,
+    ]);
 
   /* ============================================================
      LOADING / AUTH UI
   ============================================================ */
 
-  if (authLoading || adminLoading) {
+  if (
+    authLoading ||
+    adminLoading
+  ) {
     return (
       <div style={styles.centerPage}>
-        <div style={styles.loadingCard}>
-          <div style={styles.spinner} />
-          <h2>🔐 {statusText}</h2>
+        <div
+          style={styles.loadingCard}
+        >
+          <div
+            style={styles.spinner}
+          />
+
+          <h2>
+            🔐 {statusText}
+          </h2>
+
           <p>
-            يتم التحقق من صلاحيات الوصول...
+            يتم التحقق من صلاحيات
+            الوصول...
           </p>
         </div>
       </div>
@@ -1940,8 +2460,12 @@ export default function Import() {
   if (!user) {
     return (
       <div style={styles.centerPage}>
-        <div style={styles.deniedCard}>
-          <div style={styles.deniedIcon}>
+        <div
+          style={styles.deniedCard}
+        >
+          <div
+            style={styles.deniedIcon}
+          >
             🔒
           </div>
 
@@ -1950,21 +2474,29 @@ export default function Import() {
           </h1>
 
           <p>
-            يجب تسجيل الدخول بحساب StreamFlix
-            للوصول إلى لوحة الاستيراد.
+            يجب تسجيل الدخول بحساب
+            StreamFlix للوصول إلى
+            لوحة الاستيراد.
           </p>
 
           <button
-            style={styles.primaryButton}
+            style={
+              styles.primaryButton
+            }
             onClick={() =>
-              supabase.auth.signInWithOAuth({
-                provider: 'google',
-                options: {
-                  redirectTo:
-                    window.location.origin +
-                    '/import',
-                },
-              })
+              supabase.auth.signInWithOAuth(
+                {
+                  provider:
+                    'google',
+
+                  options: {
+                    redirectTo:
+                      window.location
+                        .origin +
+                      '/import',
+                  },
+                }
+              )
             }
           >
             تسجيل الدخول
@@ -1977,8 +2509,12 @@ export default function Import() {
   if (!isAdmin) {
     return (
       <div style={styles.centerPage}>
-        <div style={styles.deniedCard}>
-          <div style={styles.deniedIcon}>
+        <div
+          style={styles.deniedCard}
+        >
+          <div
+            style={styles.deniedIcon}
+          >
             ⛔
           </div>
 
@@ -1991,17 +2527,22 @@ export default function Import() {
           </p>
 
           <strong>
-            {user.email || user.id}
+            {user.email ||
+              user.id}
           </strong>
 
           {adminError && (
-            <div style={styles.errorBox}>
+            <div
+              style={styles.errorBox}
+            >
               {adminError}
             </div>
           )}
 
           <button
-            style={styles.secondaryButton}
+            style={
+              styles.secondaryButton
+            }
             onClick={async () => {
               await supabase.auth.signOut();
             }}
@@ -2019,39 +2560,63 @@ export default function Import() {
 
   return (
     <div style={styles.page}>
-      <div style={styles.container}>
+      <div
+        style={styles.container}
+      >
         {/* HEADER */}
 
-        <header style={styles.header}>
+        <header
+          style={styles.header}
+        >
           <div>
-            <div style={styles.badge}>
+            <div
+              style={styles.badge}
+            >
               🔐 ADMIN
             </div>
 
-            <h1 style={styles.title}>
-              StreamFlix Import Center
+            <h1
+              style={styles.title}
+            >
+              StreamFlix Import
+              Center
             </h1>
 
-            <p style={styles.subtitle}>
-              لوحة الإدارة والاستيراد الآمنة
+            <p
+              style={styles.subtitle}
+            >
+              لوحة الإدارة والاستيراد
+              الآمنة
             </p>
           </div>
 
-          <div style={styles.userCard}>
-            <div style={styles.onlineDot} />
+          <div
+            style={styles.userCard}
+          >
+            <div
+              style={
+                styles.onlineDot
+              }
+            />
 
             <div>
               <strong>
                 {user.email}
               </strong>
 
-              <small>
+              <small
+                style={
+                  styles.userRole
+                }
+              >
                 صلاحيات Admin
               </small>
             </div>
 
             <button
-              style={styles.logoutButton}
+              style={
+                styles.logoutButton
+              }
               onClick={async () => {
                 await supabase.auth.signOut();
               }}
@@ -2064,14 +2629,25 @@ export default function Import() {
         {/* CURRENT OPERATION */}
 
         {currentOperation && (
-          <div style={styles.operationBar}>
+          <div
+            style={
+              styles.operationBar
+            }
+          >
             <div>
               <strong>
-                ⚙️ {currentOperation}
+                ⚙️{' '}
+                {
+                  currentOperation
+                }
               </strong>
             </div>
 
-            <div style={styles.progressTrack}>
+            <div
+              style={
+                styles.progressTrack
+              }
+            >
               <div
                 style={{
                   ...styles.progressFill,
@@ -2088,47 +2664,63 @@ export default function Import() {
 
         {/* STATS */}
 
-        <section style={styles.statsGrid}>
+        <section
+          style={styles.statsGrid}
+        >
           <StatCard
             icon="🎬"
             label="مستورد"
-            value={stats.imported}
+            value={
+              stats.imported
+            }
           />
 
           <StatCard
             icon="🔄"
             label="محدث"
-            value={stats.updated}
+            value={
+              stats.updated
+            }
           />
 
           <StatCard
             icon="🎞️"
             label="الحلقات"
-            value={stats.episodes}
+            value={
+              stats.episodes
+            }
           />
 
           <StatCard
             icon="❌"
             label="فشل"
-            value={stats.failed}
+            value={
+              stats.failed
+            }
           />
 
           <StatCard
             icon="📊"
             label="معالج"
-            value={stats.processed}
+            value={
+              stats.processed
+            }
           />
 
           <StatCard
             icon="📦"
             label="الإجمالي"
-            value={stats.total}
+            value={
+              stats.total
+            }
           />
         </section>
 
         {/* SEARCH */}
 
-        <section style={styles.card}>
+        <section
+          style={styles.card}
+        >
           <SectionTitle
             icon="🔎"
             title="استيراد فردي"
@@ -2136,29 +2728,41 @@ export default function Import() {
           />
 
           <form
-            onSubmit={handleSingleSearch}
-            style={styles.searchRow}
+            onSubmit={
+              handleSingleSearch
+            }
+            style={
+              styles.searchRow
+            }
           >
             <input
-              value={searchQuery}
+              value={
+                searchQuery
+              }
               onChange={(e) =>
                 setSearchQuery(
                   e.target.value
                 )
               }
               placeholder="اسم الفيلم / المسلسل أو TMDB ID"
-              style={styles.input}
+              style={
+                styles.input
+              }
               disabled={busy}
             />
 
             <select
-              value={searchType}
+              value={
+                searchType
+              }
               onChange={(e) =>
                 setSearchType(
                   e.target.value
                 )
               }
-              style={styles.select}
+              style={
+                styles.select
+              }
               disabled={busy}
             >
               <option value="movie">
@@ -2172,7 +2776,9 @@ export default function Import() {
 
             <button
               type="submit"
-              style={styles.primaryButton}
+              style={
+                styles.primaryButton
+              }
               disabled={busy}
             >
               {isSearching
@@ -2181,19 +2787,28 @@ export default function Import() {
             </button>
           </form>
 
-          {searchResults.length > 0 && (
-            <div style={styles.resultsGrid}>
+          {searchResults.length >
+            0 && (
+            <div
+              style={
+                styles.resultsGrid
+              }
+            >
               {searchResults.map(
                 (item) => (
                   <div
                     key={`${item.id}-${item.media_type || searchType}`}
-                    style={styles.resultCard}
+                    style={
+                      styles.resultCard
+                    }
                   >
                     {item.poster_path ? (
                       <img
                         src={`${TMDB_IMAGE_BASE}/w185${item.poster_path}`}
                         alt=""
-                        style={styles.poster}
+                        style={
+                          styles.poster
+                        }
                       />
                     ) : (
                       <div
@@ -2211,23 +2826,30 @@ export default function Import() {
                       }
                     >
                       <strong>
-                        {getTitle(item)}
+                        {getTitle(
+                          item
+                        )}
                       </strong>
 
                       <small>
-                        TMDB: {item.id}
+                        TMDB:{' '}
+                        {item.id}
                       </small>
 
                       <small>
                         ⭐{' '}
-                        {getRating(item)}
+                        {getRating(
+                          item
+                        )}
                       </small>
 
                       <button
                         style={
                           styles.smallButton
                         }
-                        disabled={busy}
+                        disabled={
+                          busy
+                        }
                         onClick={() =>
                           importSingleItem(
                             item
@@ -2246,27 +2868,41 @@ export default function Import() {
 
         {/* BULK IMPORT */}
 
-        <section style={styles.card}>
+        <section
+          style={styles.card}
+        >
           <SectionTitle
             icon="📦"
             title="الاستيراد الجماعي"
             description="اختر النوع وعدد صفحات TMDB."
           />
 
-          <div style={styles.controlsGrid}>
+          <div
+            style={
+              styles.controlsGrid
+            }
+          >
             <div>
-              <label style={styles.label}>
+              <label
+                style={
+                  styles.label
+                }
+              >
                 نوع المحتوى
               </label>
 
               <select
-                value={bulkType}
+                value={
+                  bulkType
+                }
                 onChange={(e) =>
                   setBulkType(
                     e.target.value
                   )
                 }
-                style={styles.selectFull}
+                style={
+                  styles.selectFull
+                }
                 disabled={busy}
               >
                 <option value="both">
@@ -2284,7 +2920,11 @@ export default function Import() {
             </div>
 
             <div>
-              <label style={styles.label}>
+              <label
+                style={
+                  styles.label
+                }
+              >
                 عدد الصفحات
               </label>
 
@@ -2292,7 +2932,9 @@ export default function Import() {
                 type="number"
                 min="1"
                 max="500"
-                value={pageCount}
+                value={
+                  pageCount
+                }
                 onChange={(e) =>
                   setPageCount(
                     Math.max(
@@ -2300,20 +2942,25 @@ export default function Import() {
                       Math.min(
                         500,
                         Number(
-                          e.target.value
+                          e.target
+                            .value
                         ) || 1
                       )
                     )
                   )
                 }
-                style={styles.input}
+                style={
+                  styles.input
+                }
                 disabled={busy}
               />
             </div>
           </div>
 
           <button
-            style={styles.primaryWideButton}
+            style={
+              styles.primaryWideButton
+            }
             disabled={busy}
             onClick={
               handleBulkPopularImport
@@ -2325,7 +2972,9 @@ export default function Import() {
 
         {/* TRENDING */}
 
-        <section style={styles.card}>
+        <section
+          style={styles.card}
+        >
           <SectionTitle
             icon="🔥"
             title="Trending"
@@ -2333,9 +2982,13 @@ export default function Import() {
           />
 
           <button
-            style={styles.trendingButton}
+            style={
+              styles.trendingButton
+            }
             disabled={busy}
-            onClick={handleTrendingImport}
+            onClick={
+              handleTrendingImport
+            }
           >
             {isTrendingLoading
               ? '🔥 جاري الاستيراد...'
@@ -2345,34 +2998,52 @@ export default function Import() {
 
         {/* SERIES EPISODES */}
 
-        <section style={styles.card}>
+        <section
+          style={styles.card}
+        >
           <SectionTitle
             icon="📺"
             title="المواسم والحلقات"
             description="استيراد عدد محدد من المواسم والحلقات مع Vidsrc + Stellar."
           />
 
-          <div style={styles.controlsGrid}>
+          <div
+            style={
+              styles.controlsGrid
+            }
+          >
             <div>
-              <label style={styles.label}>
+              <label
+                style={
+                  styles.label
+                }
+              >
                 TMDB ID للمسلسل
               </label>
 
               <input
-                value={seriesTmdbId}
+                value={
+                  seriesTmdbId
+                }
                 onChange={(e) =>
                   setSeriesTmdbId(
                     e.target.value
                   )
                 }
                 placeholder="مثال: 108978"
-                style={styles.input}
+                style={
+                  styles.input
+                }
                 disabled={busy}
               />
             </div>
 
             <div>
-              <label style={styles.label}>
+              <label
+                style={
+                  styles.label
+                }
+              >
                 عدد المواسم
               </label>
 
@@ -2380,7 +3051,9 @@ export default function Import() {
                 type="number"
                 min="1"
                 max="100"
-                value={seasonCount}
+                value={
+                  seasonCount
+                }
                 onChange={(e) =>
                   setSeasonCount(
                     Math.max(
@@ -2388,19 +3061,26 @@ export default function Import() {
                       Math.min(
                         100,
                         Number(
-                          e.target.value
+                          e.target
+                            .value
                         ) || 1
                       )
                     )
                   )
                 }
-                style={styles.input}
+                style={
+                  styles.input
+                }
                 disabled={busy}
               />
             </div>
 
             <div>
-              <label style={styles.label}>
+              <label
+                style={
+                  styles.label
+                }
+              >
                 الحلقات لكل موسم
               </label>
 
@@ -2418,20 +3098,25 @@ export default function Import() {
                       Math.min(
                         500,
                         Number(
-                          e.target.value
+                          e.target
+                            .value
                         ) || 1
                       )
                     )
                   )
                 }
-                style={styles.input}
+                style={
+                  styles.input
+                }
                 disabled={busy}
               />
             </div>
           </div>
 
           <button
-            style={styles.primaryWideButton}
+            style={
+              styles.primaryWideButton
+            }
             disabled={busy}
             onClick={
               handleSeriesEpisodesImport
@@ -2443,14 +3128,20 @@ export default function Import() {
 
         {/* TOOLS */}
 
-        <section style={styles.card}>
+        <section
+          style={styles.card}
+        >
           <SectionTitle
             icon="🛠️"
             title="أدوات قاعدة البيانات"
             description="عمليات مستقلة لتحديث وإصلاح البيانات."
           />
 
-          <div style={styles.toolsGrid}>
+          <div
+            style={
+              styles.toolsGrid
+            }
+          >
             <ToolButton
               icon="🛠️"
               text="إصلاح الروابط"
@@ -2491,16 +3182,30 @@ export default function Import() {
 
         {/* SERVERS */}
 
-        <section style={styles.card}>
+        <section
+          style={styles.card}
+        >
           <SectionTitle
             icon="🎥"
             title="نظام المشغلات"
             description="المصادر التي يتم إنشاؤها أثناء الاستيراد."
           />
 
-          <div style={styles.serverGrid}>
-            <div style={styles.serverCard}>
-              <div style={styles.serverNumber}>
+          <div
+            style={
+              styles.serverGrid
+            }
+          >
+            <div
+              style={
+                styles.serverCard
+              }
+            >
+              <div
+                style={
+                  styles.serverNumber
+                }
+              >
                 1
               </div>
 
@@ -2515,8 +3220,16 @@ export default function Import() {
               </div>
             </div>
 
-            <div style={styles.serverCard}>
-              <div style={styles.serverNumber}>
+            <div
+              style={
+                styles.serverCard
+              }
+            >
+              <div
+                style={
+                  styles.serverNumber
+                }
+              >
                 2
               </div>
 
@@ -2535,8 +3248,14 @@ export default function Import() {
 
         {/* LOGS */}
 
-        <section style={styles.card}>
-          <div style={styles.logsHeader}>
+        <section
+          style={styles.card}
+        >
+          <div
+            style={
+              styles.logsHeader
+            }
+          >
             <SectionTitle
               icon="📜"
               title="سجل العمليات"
@@ -2547,15 +3266,22 @@ export default function Import() {
               style={
                 styles.clearButton
               }
-              onClick={clearLogs}
-              disabled={!logs.length}
+              onClick={
+                clearLogs
+              }
+              disabled={
+                !logs.length
+              }
             >
               مسح السجل
             </button>
           </div>
 
-          <div style={styles.logs}>
-            {logs.length === 0 ? (
+          <div
+            style={styles.logs}
+          >
+            {logs.length ===
+            0 ? (
               <div
                 style={
                   styles.emptyLogs
@@ -2564,39 +3290,43 @@ export default function Import() {
                 لا توجد عمليات بعد.
               </div>
             ) : (
-              logs.map((log) => (
-                <div
-                  key={log.id}
-                  style={{
-                    ...styles.log,
-                    borderRight:
-                      `3px solid ${
-                        log.type ===
-                        'error'
-                          ? '#ef4444'
-                          : log.type ===
-                            'success'
-                          ? '#22c55e'
-                          : log.type ===
-                            'warning'
-                          ? '#f59e0b'
-                          : '#3b82f6'
-                      }`,
-                  }}
-                >
-                  <span
-                    style={
-                      styles.logTime
-                    }
+              logs.map(
+                (log) => (
+                  <div
+                    key={log.id}
+                    style={{
+                      ...styles.log,
+                      borderRight:
+                        `3px solid ${
+                          log.type ===
+                          'error'
+                            ? '#ef4444'
+                            : log.type ===
+                              'success'
+                            ? '#22c55e'
+                            : log.type ===
+                              'warning'
+                            ? '#f59e0b'
+                            : '#3b82f6'
+                        }`,
+                    }}
                   >
-                    {log.time}
-                  </span>
+                    <span
+                      style={
+                        styles.logTime
+                      }
+                    >
+                      {log.time}
+                    </span>
 
-                  <span>
-                    {log.message}
-                  </span>
-                </div>
-              ))
+                    <span>
+                      {
+                        log.message
+                      }
+                    </span>
+                  </div>
+                )
+              )
             )}
           </div>
         </section>
@@ -2604,9 +3334,15 @@ export default function Import() {
         {/* SECURITY NOTICE */}
 
         <section
-          style={styles.securityNotice}
+          style={
+            styles.securityNotice
+          }
         >
-          <div style={styles.securityIcon}>
+          <div
+            style={
+              styles.securityIcon
+            }
+          >
             🔐
           </div>
 
@@ -2617,11 +3353,12 @@ export default function Import() {
 
             <p>
               الصفحة تعتمد على Supabase
-              Authentication والتحقق من
-              admin_users. في الخطوة التالية
-              سنطبق RLS على قاعدة البيانات
-              حتى تصبح عمليات INSERT وUPDATE
-              محمية من جهة السيرفر أيضاً.
+              Authentication و
+              admin_users، وقاعدة البيانات
+              محمية بواسطة RLS بحيث عمليات
+              INSERT وUPDATE وDELETE لا
+              يسمح بها إلا للحسابات الموجودة
+              في admin_users.
             </p>
           </div>
         </section>
@@ -2640,17 +3377,29 @@ function StatCard({
   value,
 }) {
   return (
-    <div style={styles.statCard}>
-      <div style={styles.statIcon}>
+    <div
+      style={styles.statCard}
+    >
+      <div
+        style={styles.statIcon}
+      >
         {icon}
       </div>
 
       <div>
-        <span style={styles.statLabel}>
+        <span
+          style={
+            styles.statLabel
+          }
+        >
           {label}
         </span>
 
-        <strong style={styles.statValue}>
+        <strong
+          style={
+            styles.statValue
+          }
+        >
           {formatNumber(value)}
         </strong>
       </div>
@@ -2664,8 +3413,16 @@ function SectionTitle({
   description,
 }) {
   return (
-    <div style={styles.sectionTitle}>
-      <div style={styles.sectionIcon}>
+    <div
+      style={
+        styles.sectionTitle
+      }
+    >
+      <div
+        style={
+          styles.sectionIcon
+        }
+      >
         {icon}
       </div>
 
@@ -2690,7 +3447,9 @@ function ToolButton({
 }) {
   return (
     <button
-      style={styles.toolButton}
+      style={
+        styles.toolButton
+      }
       onClick={onClick}
       disabled={disabled}
     >
@@ -2716,7 +3475,8 @@ const styles = {
     direction: 'rtl',
     fontFamily:
       'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    padding: '24px 14px 60px',
+    padding:
+      '24px 14px 60px',
     boxSizing: 'border-box',
   },
 
@@ -2739,9 +3499,11 @@ const styles = {
   },
 
   loadingCard: {
-    width: 'min(450px, 100%)',
+    width:
+      'min(450px, 100%)',
     textAlign: 'center',
-    padding: '40px 25px',
+    padding:
+      '40px 25px',
     borderRadius: '24px',
     background:
       'linear-gradient(145deg, #171717, #0d0d0d)',
@@ -2752,9 +3514,11 @@ const styles = {
   },
 
   deniedCard: {
-    width: 'min(500px, 100%)',
+    width:
+      'min(500px, 100%)',
     textAlign: 'center',
-    padding: '42px 28px',
+    padding:
+      '42px 28px',
     borderRadius: '26px',
     background:
       'linear-gradient(145deg, #191919, #0b0b0b)',
@@ -2775,15 +3539,16 @@ const styles = {
     borderRadius: '50%',
     border:
       '4px solid rgba(255,255,255,.12)',
-    borderTopColor: '#e50914',
-    margin: '0 auto 20px',
-    animation:
-      'streamflixSpin 1s linear infinite',
+    borderTopColor:
+      '#e50914',
+    margin:
+      '0 auto 20px',
   },
 
   header: {
     display: 'flex',
-    justifyContent: 'space-between',
+    justifyContent:
+      'space-between',
     alignItems: 'center',
     gap: '20px',
     marginBottom: '24px',
@@ -2823,39 +3588,37 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '10px',
-    padding: '10px 12px',
+    padding:
+      '10px 12px',
     borderRadius: '15px',
     background:
       'rgba(255,255,255,.045)',
     border:
       '1px solid rgba(255,255,255,.08)',
+  },
+
+  userRole: {
+    display: 'block',
+    color: '#888',
+    fontSize: '11px',
+    marginTop: '3px',
   },
 
   onlineDot: {
     width: '9px',
     height: '9px',
     borderRadius: '50%',
-    background: '#22c55e',
+    background:
+      '#22c55e',
     boxShadow:
       '0 0 12px rgba(34,197,94,.7)',
-  },
-
-  userCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    padding: '10px 12px',
-    borderRadius: '15px',
-    background:
-      'rgba(255,255,255,.045)',
-    border:
-      '1px solid rgba(255,255,255,.08)',
   },
 
   logoutButton: {
     border: 0,
     borderRadius: '10px',
-    padding: '8px 12px',
+    padding:
+      '8px 12px',
     background:
       'rgba(255,255,255,.08)',
     color: '#fff',
@@ -2868,7 +3631,8 @@ const styles = {
       'minmax(180px, 1fr) minmax(150px, 2fr) 50px',
     alignItems: 'center',
     gap: '15px',
-    padding: '14px 16px',
+    padding:
+      '14px 16px',
     marginBottom: '18px',
     borderRadius: '16px',
     background:
@@ -2962,10 +3726,6 @@ const styles = {
     flexShrink: 0,
   },
 
-  sectionTitleText: {
-    minWidth: 0,
-  },
-
   searchRow: {
     display: 'grid',
     gridTemplateColumns:
@@ -2991,7 +3751,8 @@ const styles = {
   input: {
     width: '100%',
     boxSizing: 'border-box',
-    padding: '13px 14px',
+    padding:
+      '13px 14px',
     borderRadius: '12px',
     border:
       '1px solid rgba(255,255,255,.1)',
@@ -3002,7 +3763,8 @@ const styles = {
   },
 
   select: {
-    padding: '13px 12px',
+    padding:
+      '13px 12px',
     borderRadius: '12px',
     border:
       '1px solid rgba(255,255,255,.1)',
@@ -3014,7 +3776,8 @@ const styles = {
   selectFull: {
     width: '100%',
     boxSizing: 'border-box',
-    padding: '13px 12px',
+    padding:
+      '13px 12px',
     borderRadius: '12px',
     border:
       '1px solid rgba(255,255,255,.1)',
@@ -3031,7 +3794,8 @@ const styles = {
     color: '#fff',
     fontWeight: 800,
     cursor: 'pointer',
-    padding: '0 18px',
+    padding:
+      '0 18px',
     minHeight: '46px',
   },
 
@@ -3070,7 +3834,8 @@ const styles = {
     background:
       'rgba(255,255,255,.05)',
     color: '#fff',
-    padding: '12px 20px',
+    padding:
+      '12px 20px',
     cursor: 'pointer',
   },
 
@@ -3080,7 +3845,8 @@ const styles = {
     borderRadius: '9px',
     background: '#e50914',
     color: '#fff',
-    padding: '8px 10px',
+    padding:
+      '8px 10px',
     cursor: 'pointer',
     fontWeight: 750,
   },
@@ -3192,7 +3958,8 @@ const styles = {
   logsHeader: {
     display: 'flex',
     alignItems: 'flex-start',
-    justifyContent: 'space-between',
+    justifyContent:
+      'space-between',
     gap: '15px',
   },
 
@@ -3202,7 +3969,8 @@ const styles = {
     background:
       'rgba(255,255,255,.04)',
     color: '#aaa',
-    padding: '8px 12px',
+    padding:
+      '8px 12px',
     borderRadius: '9px',
     cursor: 'pointer',
   },
@@ -3222,7 +3990,8 @@ const styles = {
     display: 'flex',
     gap: '10px',
     alignItems: 'flex-start',
-    padding: '8px 10px',
+    padding:
+      '8px 10px',
     background:
       'rgba(255,255,255,.025)',
     borderRadius: '7px',
