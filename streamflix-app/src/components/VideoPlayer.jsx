@@ -14,7 +14,8 @@ export default function VideoPlayer({
   episodeId = null,
 }) {
   const { user } = useAuth();
-  const navigate = useNavigate(); 
+  const navigate = useNavigate();
+
   const [selectedServer, setSelectedServer] = useState(0);
 
   const [shareOpen, setShareOpen] = useState(false);
@@ -56,33 +57,122 @@ export default function VideoPlayer({
     title?.episode_number ||
     1;
 
+  /*
+   * =========================================================
+   * CURRENT EPISODE SERVER LINKS
+   * =========================================================
+   *
+   * episodes.stream_urls is JSONB.
+   *
+   * Example:
+   *
+   * {
+   *   "server1": "https://....",
+   *   "server2": "https://...."
+   * }
+   *
+   * We only use server1 from the database here.
+   * StreamSrc server2 is generated below so that it always
+   * matches the current TMDB / season / episode.
+   */
+
+  const episodeStreamUrls =
+    title?.current_episode_stream_urls ||
+    title?.stream_urls ||
+    {};
+
+  const databaseServer1 =
+    typeof episodeStreamUrls === 'object' &&
+    episodeStreamUrls !== null
+      ? episodeStreamUrls.server1 ||
+        episodeStreamUrls.stelar ||
+        episodeStreamUrls.stelar_rip ||
+        null
+      : null;
+
+  /*
+   * =========================================================
+   * SERVER 1
+   * =========================================================
+   *
+   * For an episode:
+   *   1. episodes.stream_urls.server1
+   *   2. title.url
+   *
+   * For a movie:
+   *   title.url
+   */
+
+  const server1Url =
+    databaseServer1 ||
+    title?.url ||
+    null;
+
+  /*
+   * =========================================================
+   * STREAMSRC - SERVER 2
+   * =========================================================
+   *
+   * Movie:
+   * https://streamsrc.cc/watch/movie/tmdbid=TMDB
+   *
+   * Series episode:
+   * https://streamsrc.cc/watch/series/tmdbid=TMDB/SEASON/EPISODE
+   */
+
+  const streamSrcUrl = useMemo(() => {
+    if (!realTmdb) return null;
+
+    if (contentType === 'movie') {
+      return `https://streamsrc.cc/watch/movie/tmdbid=${realTmdb}`;
+    }
+
+    return `https://streamsrc.cc/watch/series/tmdbid=${realTmdb}/${currentSeason}/${currentEpisodeNumber}`;
+  }, [
+    realTmdb,
+    contentType,
+    currentSeason,
+    currentEpisodeNumber,
+  ]);
+
   const servers = useMemo(() => {
     return [
       {
         id: 0,
         name: 'سيرفر 1',
-        url:
-          contentType === 'movie'
-            ? `https://vidsrc.me/embed/movie?tmdb=${realTmdb}`
-            : `https://vidsrc.me/embed/tv?tmdb=${realTmdb}&season=${currentSeason}&episode=${currentEpisodeNumber}`,
+        url: server1Url,
       },
       {
         id: 1,
         name: 'سيرفر 2',
-        url:
-          contentType === 'movie'
-            ? `https://vidsrc.cc/v2/embed/movie/${realTmdb}`
-            : `https://vidsrc.cc/v2/embed/tv/${realTmdb}/${currentSeason}/${currentEpisodeNumber}`,
+        url: streamSrcUrl,
       },
     ];
-  }, [
-    contentType,
-    realTmdb,
-    currentSeason,
-    currentEpisodeNumber,
-  ]);
+  }, [server1Url, streamSrcUrl]);
 
   const currentServer = servers[selectedServer];
+
+  /*
+   * If the selected server has no URL, automatically return
+   * to server 1.
+   */
+  useEffect(() => {
+    if (
+      selectedServer === 1 &&
+      !streamSrcUrl
+    ) {
+      setSelectedServer(0);
+    }
+  }, [
+    selectedServer,
+    streamSrcUrl,
+  ]);
+
+  /*
+   * =========================================================
+   * FRIENDS
+   * =========================================================
+   */
 
   useEffect(() => {
     if (!shareOpen || !user?.id) return;
@@ -120,6 +210,12 @@ export default function VideoPlayer({
     };
   }, [shareOpen, user?.id]);
 
+  /*
+   * =========================================================
+   * FRIEND SELECTION
+   * =========================================================
+   */
+
   function toggleFriend(friendId) {
     setSelectedFriends((current) => {
       if (current.includes(friendId)) {
@@ -131,6 +227,12 @@ export default function VideoPlayer({
       return [...current, friendId];
     });
   }
+
+  /*
+   * =========================================================
+   * WATCH PARTY
+   * =========================================================
+   */
 
   async function createParty() {
     if (!user?.id) {
@@ -247,7 +349,10 @@ export default function VideoPlayer({
 
       setSelectedFriends([]);
       setShareOpen(false);
-      navigate(`/watch-party/${party.id}`);
+
+      navigate(
+        `/watch-party/${party.id}`
+      );
     } catch (err) {
       console.error(
         'Watch Party creation error:',
@@ -262,6 +367,12 @@ export default function VideoPlayer({
       setSharing(false);
     }
   }
+
+  /*
+   * =========================================================
+   * NO TMDB
+   * =========================================================
+   */
 
   if (!realTmdb) {
     return (
@@ -289,6 +400,12 @@ export default function VideoPlayer({
     );
   }
 
+  /*
+   * =========================================================
+   * PLAYER
+   * =========================================================
+   */
+
   return (
     <div
       style={{
@@ -314,20 +431,74 @@ export default function VideoPlayer({
           justifyContent: 'center',
         }}
       >
-        <iframe
-          key={`${selectedServer}-${realTmdb}-${currentEpisodeId || ''}`}
-          src={currentServer.url}
-          style={{
-            width: '100%',
-            height: '420px',
-            border: 'none',
-            background: '#000',
-          }}
-          allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-          allowFullScreen
-          referrerPolicy="no-referrer"
-          title="StreamFlix Video Player"
-        />
+        {currentServer?.url ? (
+          <iframe
+            key={`${selectedServer}-${realTmdb}-${currentSeason}-${currentEpisodeNumber}-${currentEpisodeId || ''}`}
+            src={currentServer.url}
+            style={{
+              width: '100%',
+              height: '420px',
+              border: 'none',
+              background: '#000',
+            }}
+            allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+            allowFullScreen
+            referrerPolicy="no-referrer"
+            title="StreamFlix Video Player"
+          />
+        ) : (
+          <div
+            style={{
+              minHeight: '420px',
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexDirection: 'column',
+              gap: '10px',
+              color: '#aaa',
+              padding: '20px',
+              textAlign: 'center',
+            }}
+          >
+            <div
+              style={{
+                fontSize: '35px',
+              }}
+            >
+              ⚠️
+            </div>
+
+            <div>
+              هذا السيرفر لا يحتوي على رابط متاح
+            </div>
+
+            {selectedServer === 0 &&
+              streamSrcUrl && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedServer(1)
+                  }
+                  style={{
+                    marginTop: '5px',
+                    border:
+                      '1px solid #d4af37',
+                    background:
+                      '#d4af37',
+                    color: '#111',
+                    padding:
+                      '9px 16px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 800,
+                  }}
+                >
+                  تجربة سيرفر 2
+                </button>
+              )}
+          </div>
+        )}
       </div>
 
       {/* SERVERS + SHARE */}
@@ -353,36 +524,62 @@ export default function VideoPlayer({
           السيرفرات:
         </span>
 
-        {servers.map((server) => (
-          <button
-            key={server.id}
-            type="button"
-            onClick={() =>
-              setSelectedServer(server.id)
-            }
-            style={{
-              border:
-                selectedServer === server.id
-                  ? '1px solid #d4af37'
-                  : '1px solid #333',
-              background:
-                selectedServer === server.id
-                  ? '#d4af37'
-                  : '#181818',
-              color:
-                selectedServer === server.id
-                  ? '#111'
-                  : '#ddd',
-              padding: '8px 14px',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontSize: '12px',
-              fontWeight: 700,
-            }}
-          >
-            {server.name}
-          </button>
-        ))}
+        {servers.map((server) => {
+          const available =
+            Boolean(server.url);
+
+          return (
+            <button
+              key={server.id}
+              type="button"
+              disabled={!available}
+              onClick={() => {
+                if (!available) return;
+
+                setError('');
+                setSelectedServer(
+                  server.id
+                );
+              }}
+              style={{
+                border:
+                  selectedServer ===
+                  server.id
+                    ? '1px solid #d4af37'
+                    : '1px solid #333',
+
+                background:
+                  selectedServer ===
+                  server.id
+                    ? '#d4af37'
+                    : '#181818',
+
+                color:
+                  selectedServer ===
+                  server.id
+                    ? '#111'
+                    : available
+                      ? '#ddd'
+                      : '#555',
+
+                padding: '8px 14px',
+                borderRadius: '8px',
+                cursor: available
+                  ? 'pointer'
+                  : 'not-allowed',
+
+                fontSize: '12px',
+                fontWeight: 700,
+
+                opacity: available
+                  ? 1
+                  : 0.55,
+              }}
+            >
+              {server.name}
+            </button>
+          );
+        })}
 
         <button
           type="button"
@@ -391,7 +588,8 @@ export default function VideoPlayer({
             setShareOpen(true);
           }}
           style={{
-            border: '1px solid #d4af37',
+            border:
+              '1px solid #d4af37',
             background:
               'linear-gradient(135deg,#d4af37,#b89222)',
             color: '#111',
