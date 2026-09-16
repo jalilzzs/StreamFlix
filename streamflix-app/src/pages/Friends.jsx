@@ -23,7 +23,9 @@ import ProfilePopup from '../components/ProfilePopup';
 import './Friends.css';
 
 function FriendsInner() {
-  const { user, profile } = useAuth();
+  const { user, profile, isPremium } = useAuth();
+
+  const hasVipAccess = Boolean(isPremium);
 
   const [friends, setFriends] = useState([]);
   const [pending, setPending] = useState([]);
@@ -61,6 +63,27 @@ function FriendsInner() {
 
   const userId = user?.id;
 
+  // =========================================================================
+  // VIP HELPERS
+  // =========================================================================
+
+  const showVipRequired = useCallback(
+    (feature = 'هذه الميزة') => {
+      setError(
+        `⭐🔒 ${feature} متاحة لمشتركي VIP فقط.`
+      );
+    },
+    []
+  );
+
+  const goToSubscription = useCallback(() => {
+    window.location.href = '/subscription';
+  }, []);
+
+  // =========================================================================
+  // LOAD FRIENDS
+  // =========================================================================
+
   const loadFriends = useCallback(async () => {
     if (!userId) return;
 
@@ -84,6 +107,8 @@ function FriendsInner() {
   }, [userId]);
 
   useEffect(() => {
+    if (!userId) return;
+
     loadFriends();
 
     const unsubscribe =
@@ -96,6 +121,10 @@ function FriendsInner() {
       if (unsubscribe) unsubscribe();
     };
   }, [userId, loadFriends]);
+
+  // =========================================================================
+  // LOAD MESSAGES
+  // =========================================================================
 
   useEffect(() => {
     if (!userId || !activeFriend?.id) {
@@ -138,11 +167,19 @@ function FriendsInner() {
     };
   }, [userId, activeFriend]);
 
+  // =========================================================================
+  // AUTO SCROLL
+  // =========================================================================
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
       behavior: 'smooth',
     });
   }, [messages]);
+
+  // =========================================================================
+  // CLEANUP RECORDING
+  // =========================================================================
 
   useEffect(() => {
     return () => {
@@ -156,10 +193,18 @@ function FriendsInner() {
         mediaRecorderRef.current?.state ===
         'recording'
       ) {
-        mediaRecorderRef.current.stop();
+        try {
+          mediaRecorderRef.current.stop();
+        } catch {
+          // cleanup
+        }
       }
     };
   }, []);
+
+  // =========================================================================
+  // PROFILE
+  // =========================================================================
 
   const openProfile = async (person) => {
     if (!person?.id) return;
@@ -245,6 +290,10 @@ function FriendsInner() {
     }
   };
 
+  // =========================================================================
+  // FRIEND REQUESTS
+  // =========================================================================
+
   const handleAddFriend = async (e) => {
     e?.preventDefault();
 
@@ -294,6 +343,10 @@ function FriendsInner() {
     }
   };
 
+  // =========================================================================
+  // TEXT MESSAGE - FREE
+  // =========================================================================
+
   const handleSendText = async (e) => {
     e?.preventDefault();
 
@@ -337,6 +390,10 @@ function FriendsInner() {
     }
   };
 
+  // =========================================================================
+  // VIP MEDIA MESSAGE
+  // =========================================================================
+
   const sendMediaMessage = async (
     file,
     kind
@@ -346,6 +403,22 @@ function FriendsInner() {
       !activeFriend ||
       !userId
     ) {
+      return;
+    }
+
+    // -----------------------------------------------------------------------
+    // VIP GATE
+    // -----------------------------------------------------------------------
+
+    if (!hasVipAccess) {
+      const feature =
+        kind === 'voice'
+          ? 'الرسائل الصوتية'
+          : kind === 'image'
+            ? 'إرسال الصور'
+            : 'إرسال الملفات';
+
+      showVipRequired(feature);
       return;
     }
 
@@ -393,6 +466,10 @@ function FriendsInner() {
     }
   };
 
+  // =========================================================================
+  // IMAGE - VIP
+  // =========================================================================
+
   const handleImageUpload = async (
     e
   ) => {
@@ -402,6 +479,11 @@ function FriendsInner() {
     e.target.value = '';
 
     if (!file) return;
+
+    if (!hasVipAccess) {
+      showVipRequired('إرسال الصور');
+      return;
+    }
 
     if (
       !file.type.startsWith(
@@ -420,6 +502,10 @@ function FriendsInner() {
     );
   };
 
+  // =========================================================================
+  // FILE - VIP
+  // =========================================================================
+
   const handleFileUpload = async (
     e
   ) => {
@@ -430,11 +516,20 @@ function FriendsInner() {
 
     if (!file) return;
 
+    if (!hasVipAccess) {
+      showVipRequired('إرسال الملفات');
+      return;
+    }
+
     await sendMediaMessage(
       file,
       'file'
     );
   };
+
+  // =========================================================================
+  // RECORDER
+  // =========================================================================
 
   const chooseRecorderMime = () => {
     if (
@@ -469,7 +564,20 @@ function FriendsInner() {
     }
   };
 
+  // =========================================================================
+  // START VOICE - VIP
+  // =========================================================================
+
   const startRecording = async () => {
+    // -----------------------------------------------------------------------
+    // VIP GATE
+    // -----------------------------------------------------------------------
+
+    if (!hasVipAccess) {
+      showVipRequired('الرسائل الصوتية');
+      return;
+    }
+
     if (
       !activeFriend ||
       !userId ||
@@ -622,6 +730,11 @@ function FriendsInner() {
   };
 
   const toggleRecording = () => {
+    if (!hasVipAccess) {
+      showVipRequired('الرسائل الصوتية');
+      return;
+    }
+
     if (recording) {
       stopRecording();
     } else {
@@ -629,10 +742,22 @@ function FriendsInner() {
     }
   };
 
+  // =========================================================================
+  // WATCH PARTY SHARE - VIP
+  // =========================================================================
+
   const handleShareTitle = async (
     e
   ) => {
     e?.preventDefault();
+
+    if (!hasVipAccess) {
+      showVipRequired(
+        'مشاركة Watch Party'
+      );
+      setShowShareTitle(false);
+      return;
+    }
 
     const titleId =
       shareTitleId.trim();
@@ -723,6 +848,10 @@ function FriendsInner() {
     }
   };
 
+  // =========================================================================
+  // TITLE HELPERS
+  // =========================================================================
+
   const getTitleImage = (
     title,
     metadata = {}
@@ -794,6 +923,10 @@ function FriendsInner() {
       loadSharedTitle(id);
     });
   }, [messages]);
+
+  // =========================================================================
+  // PROFILE HELPERS
+  // =========================================================================
 
   const getDisplayName = (person) =>
     person?.display_name ||
@@ -918,11 +1051,46 @@ function FriendsInner() {
     );
   };
 
+  // =========================================================================
+  // RENDER MESSAGE
+  // =========================================================================
+
   const renderMessage = (m) => {
     const metadata =
       m.metadata || {};
 
+    // -----------------------------------------------------------------------
+    // IMAGE MESSAGE
+    // -----------------------------------------------------------------------
+
     if (m.kind === 'image') {
+      if (!hasVipAccess) {
+        return (
+          <div className="vip-locked-message">
+            <div className="vip-locked-icon">
+              ⭐🔒
+            </div>
+
+            <strong>
+              صورة VIP
+            </strong>
+
+            <span>
+              هذه الميزة متاحة لمشتركي VIP فقط
+            </span>
+
+            <button
+              type="button"
+              onClick={
+                goToSubscription
+              }
+            >
+              الترقية إلى VIP
+            </button>
+          </div>
+        );
+      }
+
       return (
         <a
           className="chat-media-image"
@@ -938,7 +1106,38 @@ function FriendsInner() {
       );
     }
 
+    // -----------------------------------------------------------------------
+    // VOICE MESSAGE
+    // -----------------------------------------------------------------------
+
     if (m.kind === 'voice') {
+      if (!hasVipAccess) {
+        return (
+          <div className="vip-locked-message">
+            <div className="vip-locked-icon">
+              🎙️⭐🔒
+            </div>
+
+            <strong>
+              رسالة صوتية VIP
+            </strong>
+
+            <span>
+              الرسائل الصوتية متاحة لمشتركي VIP فقط
+            </span>
+
+            <button
+              type="button"
+              onClick={
+                goToSubscription
+              }
+            >
+              الترقية إلى VIP
+            </button>
+          </div>
+        );
+      }
+
       return (
         <div className="voice-message">
           <div className="voice-icon">
@@ -955,6 +1154,10 @@ function FriendsInner() {
         </div>
       );
     }
+
+    // -----------------------------------------------------------------------
+    // WATCH PARTY INVITE
+    // -----------------------------------------------------------------------
 
     if (m.shared_party_id) {
       const title =
@@ -999,6 +1202,73 @@ function FriendsInner() {
       const partyUrl =
         `/watch-party/${m.shared_party_id}`;
 
+      if (!hasVipAccess) {
+        return (
+          <div className="watch-party-invite-card vip-watch-party-locked">
+            <div className="watch-party-invite-poster">
+              {image ? (
+                <img
+                  src={image}
+                  alt={titleName}
+                  loading="lazy"
+                />
+              ) : (
+                <div className="watch-party-invite-poster-fallback">
+                  🎬
+                </div>
+              )}
+
+              <div className="watch-party-vip-lock-overlay">
+                ⭐🔒
+              </div>
+            </div>
+
+            <div className="watch-party-invite-body">
+              <span className="watch-party-invite-label">
+                ⭐ VIP WATCH PARTY
+              </span>
+
+              <strong>
+                {titleName}
+              </strong>
+
+              <div className="watch-party-invite-meta">
+                <span>
+                  {typeLabel}
+                </span>
+
+                {year ? (
+                  <span>{year}</span>
+                ) : null}
+
+                {rating ? (
+                  <span>
+                    ⭐{' '}
+                    {Number(
+                      rating
+                    ).toFixed(1)}
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="vip-locked-text">
+                Watch Party متاحة لمشتركي VIP فقط.
+              </div>
+
+              <button
+                type="button"
+                className="watch-party-join-btn"
+                onClick={
+                  goToSubscription
+                }
+              >
+                ⭐ الترقية إلى VIP
+              </button>
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div className="watch-party-invite-card">
           <div className="watch-party-invite-poster">
@@ -1017,7 +1287,7 @@ function FriendsInner() {
 
           <div className="watch-party-invite-body">
             <span className="watch-party-invite-label">
-              🎬 دعوة مشاهدة جماعية
+              🎬 دعوة مشاهدة جماعية ⭐
             </span>
 
             <strong>
@@ -1070,6 +1340,10 @@ function FriendsInner() {
         </div>
       );
     }
+
+    // -----------------------------------------------------------------------
+    // SHARED TITLE
+    // -----------------------------------------------------------------------
 
     if (
       m.shared_title_id ||
@@ -1178,7 +1452,38 @@ function FriendsInner() {
       );
     }
 
+    // -----------------------------------------------------------------------
+    // FILE MESSAGE
+    // -----------------------------------------------------------------------
+
     if (m.kind === 'file') {
+      if (!hasVipAccess) {
+        return (
+          <div className="vip-locked-message">
+            <div className="vip-locked-icon">
+              📎⭐🔒
+            </div>
+
+            <strong>
+              ملف VIP
+            </strong>
+
+            <span>
+              إرسال الملفات متاح لمشتركي VIP فقط
+            </span>
+
+            <button
+              type="button"
+              onClick={
+                goToSubscription
+              }
+            >
+              الترقية إلى VIP
+            </button>
+          </div>
+        );
+      }
+
       return (
         <a
           className="file-message"
@@ -1220,6 +1525,10 @@ function FriendsInner() {
   const activeIsVip =
     isVip(activeFriend);
 
+  // =========================================================================
+  // UI
+  // =========================================================================
+
   return (
     <>
       <div
@@ -1230,6 +1539,11 @@ function FriendsInner() {
         }`}
       >
         <div className="app-grid">
+
+          {/* ===============================================================
+              FRIENDS SIDEBAR
+          =============================================================== */}
+
           <aside className="friends-col">
             <div className="friends-head">
               <div className="friends-heading-row">
@@ -1497,6 +1811,10 @@ function FriendsInner() {
             </div>
           </aside>
 
+          {/* ===============================================================
+              CHAT
+          =============================================================== */}
+
           <main className="chat-col">
             {!activeFriend ? (
               <div className="chat-empty">
@@ -1581,69 +1899,91 @@ function FriendsInner() {
                   <div className="chat-head-actions">
                     <button
                       type="button"
-                      className="chat-head-action share-title-trigger"
-                      onClick={() =>
+                      className={`chat-head-action share-title-trigger ${
+                        !hasVipAccess
+                          ? 'vip-locked-action'
+                          : ''
+                      }`}
+                      onClick={() => {
+                        if (
+                          !hasVipAccess
+                        ) {
+                          showVipRequired(
+                            'مشاركة Watch Party'
+                          );
+                          return;
+                        }
+
                         setShowShareTitle(
                           (value) =>
                             !value
-                        )
+                        );
+                      }}
+                      title={
+                        hasVipAccess
+                          ? 'مشاركة فيلم'
+                          : '⭐🔒 متاحة لـ VIP فقط'
                       }
-                      title="مشاركة فيلم"
                     >
-                      🎬{' '}
+                      {hasVipAccess
+                        ? '🎬'
+                        : '⭐🔒'}{' '}
                       <span>
-                        مشاركة فيلم
+                        {hasVipAccess
+                          ? 'مشاركة فيلم'
+                          : 'VIP'}
                       </span>
                     </button>
                   </div>
                 </header>
 
-                {showShareTitle && (
-                  <form
-                    className="share-title-panel"
-                    onSubmit={
-                      handleShareTitle
-                    }
-                  >
-                    <div className="share-title-panel-text">
-                      <strong>
-                        مشاركة فيلم أو مسلسل
-                      </strong>
-
-                      <span>
-                        حط ID تاع العمل من قاعدة البيانات
-                      </span>
-                    </div>
-
-                    <input
-                      value={
-                        shareTitleId
-                      }
-                      onChange={(e) =>
-                        setShareTitleId(
-                          e.target.value
-                        )
-                      }
-                      placeholder="Title ID..."
-                      autoComplete="off"
-                      disabled={
-                        sharingTitle
-                      }
-                    />
-
-                    <button
-                      type="submit"
-                      disabled={
-                        !shareTitleId.trim() ||
-                        sharingTitle
+                {showShareTitle &&
+                  hasVipAccess && (
+                    <form
+                      className="share-title-panel"
+                      onSubmit={
+                        handleShareTitle
                       }
                     >
-                      {sharingTitle
-                        ? '...'
-                        : 'مشاركة'}
-                    </button>
-                  </form>
-                )}
+                      <div className="share-title-panel-text">
+                        <strong>
+                          مشاركة فيلم أو مسلسل
+                        </strong>
+
+                        <span>
+                          حط ID تاع العمل من قاعدة البيانات
+                        </span>
+                      </div>
+
+                      <input
+                        value={
+                          shareTitleId
+                        }
+                        onChange={(e) =>
+                          setShareTitleId(
+                            e.target.value
+                          )
+                        }
+                        placeholder="Title ID..."
+                        autoComplete="off"
+                        disabled={
+                          sharingTitle
+                        }
+                      />
+
+                      <button
+                        type="submit"
+                        disabled={
+                          !shareTitleId.trim() ||
+                          sharingTitle
+                        }
+                      >
+                        {sharingTitle
+                          ? '...'
+                          : 'مشاركة'}
+                      </button>
+                    </form>
+                  )}
 
                 {error && (
                   <div className="chat-error-bar">
@@ -1716,6 +2056,7 @@ function FriendsInner() {
                 </div>
 
                 <div className="composer-wrap">
+
                   {recording && (
                     <div className="recording-state">
                       <span className="recording-dot" />
@@ -1769,34 +2110,77 @@ function FriendsInner() {
                     }
                   >
                     <div className="composer-actions">
-                      <button
-                        type="button"
-                        className="action-icon-btn"
-                        onClick={() =>
-                          imageInputRef.current?.click()
-                        }
-                        disabled={
-                          uploading ||
-                          recording
-                        }
-                        title="إرسال صورة"
-                      >
-                        ＋
-                      </button>
+
+                      {/* IMAGE - VIP */}
 
                       <button
                         type="button"
-                        className="action-icon-btn"
-                        onClick={() =>
-                          fileInputRef.current?.click()
-                        }
+                        className={`action-icon-btn ${
+                          !hasVipAccess
+                            ? 'vip-locked-action'
+                            : ''
+                        }`}
+                        onClick={() => {
+                          if (
+                            !hasVipAccess
+                          ) {
+                            showVipRequired(
+                              'إرسال الصور'
+                            );
+                            return;
+                          }
+
+                          imageInputRef.current?.click();
+                        }}
                         disabled={
                           uploading ||
                           recording
                         }
-                        title="إرسال ملف"
+                        title={
+                          hasVipAccess
+                            ? 'إرسال صورة'
+                            : '⭐🔒 إرسال الصور - VIP'
+                        }
                       >
-                        📎
+                        {hasVipAccess
+                          ? '＋'
+                          : '⭐🔒'}
+                      </button>
+
+                      {/* FILE - VIP */}
+
+                      <button
+                        type="button"
+                        className={`action-icon-btn ${
+                          !hasVipAccess
+                            ? 'vip-locked-action'
+                            : ''
+                        }`}
+                        onClick={() => {
+                          if (
+                            !hasVipAccess
+                          ) {
+                            showVipRequired(
+                              'إرسال الملفات'
+                            );
+                            return;
+                          }
+
+                          fileInputRef.current?.click();
+                        }}
+                        disabled={
+                          uploading ||
+                          recording
+                        }
+                        title={
+                          hasVipAccess
+                            ? 'إرسال ملف'
+                            : '⭐🔒 إرسال الملفات - VIP'
+                        }
+                      >
+                        {hasVipAccess
+                          ? '📎'
+                          : '⭐🔒'}
                       </button>
 
                       <input
@@ -1840,11 +2224,17 @@ function FriendsInner() {
                       }
                     />
 
+                    {/* VOICE - VIP */}
+
                     <button
                       type="button"
                       className={`voice-btn ${
                         recording
                           ? 'recording'
+                          : ''
+                      } ${
+                        !hasVipAccess
+                          ? 'vip-locked-action'
                           : ''
                       }`}
                       onClick={
@@ -1854,14 +2244,18 @@ function FriendsInner() {
                         uploading
                       }
                       title={
-                        recording
-                          ? 'إيقاف التسجيل'
-                          : 'رسالة صوتية'
+                        hasVipAccess
+                          ? recording
+                            ? 'إيقاف التسجيل'
+                            : 'رسالة صوتية'
+                          : '⭐🔒 الرسائل الصوتية - VIP'
                       }
                     >
-                      {recording
-                        ? '■'
-                        : '🎙'}
+                      {!hasVipAccess
+                        ? '⭐🔒'
+                        : recording
+                          ? '■'
+                          : '🎙'}
                     </button>
 
                     <button
