@@ -1960,3 +1960,297 @@ export function subscribeToWatchPartyInvites(
       channel
     );
 }
+// ==========================================================================
+// ADMIN / VIP / BADGES / MAINTENANCE
+// ==========================================================================
+
+/**
+ * Check whether the current authenticated user is an admin.
+ */
+export async function isCurrentUserAdmin() {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError) throw userError;
+  if (!user) return false;
+
+  const { data, error } = await supabase
+    .from('admin_users')
+    .select('user_id')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  return !!data;
+}
+
+/**
+ * Get a user's complete public profile.
+ */
+export async function fetchPublicProfile(userId) {
+  if (!userId) return null;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  return data;
+}
+
+/**
+ * Get multiple profiles at once.
+ * Useful for Friends and Chat.
+ */
+export async function fetchProfiles(userIds = []) {
+  const ids = [
+    ...new Set(
+      (userIds || []).filter(Boolean)
+    ),
+  ];
+
+  if (!ids.length) return [];
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .in('id', ids);
+
+  if (error) throw error;
+
+  return data || [];
+}
+
+/**
+ * Admin: change VIP status.
+ */
+export async function setUserVip(
+  userId,
+  isVip
+) {
+  if (!userId) {
+    throw new Error('User ID is required.');
+  }
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({
+      is_premium: !!isVip,
+    })
+    .eq('id', userId)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  return data;
+}
+
+/**
+ * Admin: give or remove a badge.
+ *
+ * Expected profiles.badges to be a JSON/JSONB array:
+ * ["verified", "vip", "og"]
+ */
+export async function setUserBadge(
+  userId,
+  badge,
+  enabled = true
+) {
+  if (!userId) {
+    throw new Error('User ID is required.');
+  }
+
+  if (!badge) {
+    throw new Error('Badge is required.');
+  }
+
+  const { data: profile, error: fetchError } =
+    await supabase
+      .from('profiles')
+      .select('badges')
+      .eq('id', userId)
+      .single();
+
+  if (fetchError) throw fetchError;
+
+  const currentBadges = Array.isArray(
+    profile?.badges
+  )
+    ? profile.badges
+    : [];
+
+  let badges;
+
+  if (enabled) {
+    badges = [
+      ...new Set([
+        ...currentBadges,
+        badge,
+      ]),
+    ];
+  } else {
+    badges = currentBadges.filter(
+      (item) => item !== badge
+    );
+  }
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({
+      badges,
+    })
+    .eq('id', userId)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  return data;
+}
+
+/**
+ * Admin: replace all badges of a user.
+ */
+export async function updateUserBadges(
+  userId,
+  badges = []
+) {
+  if (!userId) {
+    throw new Error('User ID is required.');
+  }
+
+  const cleanBadges = [
+    ...new Set(
+      (Array.isArray(badges)
+        ? badges
+        : []
+      )
+        .map((badge) =>
+          String(badge).trim()
+        )
+        .filter(Boolean)
+    ),
+  ];
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({
+      badges: cleanBadges,
+    })
+    .eq('id', userId)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  return data;
+}
+
+/**
+ * Get the current maintenance status.
+ *
+ * This expects a public.site_settings table:
+ * key TEXT PRIMARY KEY
+ * value JSONB
+ */
+export async function getMaintenanceStatus() {
+  const { data, error } = await supabase
+    .from('site_settings')
+    .select('value')
+    .eq('key', 'maintenance_mode')
+    .maybeSingle();
+
+  if (error) throw error;
+
+  return !!data?.value?.enabled;
+}
+
+/**
+ * Admin: enable/disable maintenance mode.
+ */
+export async function setMaintenanceMode(
+  enabled
+) {
+  const value = {
+    enabled: !!enabled,
+  };
+
+  const { data, error } = await supabase
+    .from('site_settings')
+    .upsert(
+      {
+        key: 'maintenance_mode',
+        value,
+        updated_at:
+          new Date().toISOString(),
+      },
+      {
+        onConflict: 'key',
+      }
+    )
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  return data;
+}
+
+/**
+ * Get a site setting.
+ */
+export async function getSiteSetting(
+  key,
+  fallback = null
+) {
+  if (!key) return fallback;
+
+  const { data, error } = await supabase
+    .from('site_settings')
+    .select('value')
+    .eq('key', key)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  return data?.value ?? fallback;
+}
+
+/**
+ * Admin: update a site setting.
+ */
+export async function updateSiteSetting(
+  key,
+  value
+) {
+  if (!key) {
+    throw new Error('Setting key is required.');
+  }
+
+  const { data, error } = await supabase
+    .from('site_settings')
+    .upsert(
+      {
+        key,
+        value,
+        updated_at:
+          new Date().toISOString(),
+      },
+      {
+        onConflict: 'key',
+      }
+    )
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  return data;
+}
