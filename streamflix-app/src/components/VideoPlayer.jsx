@@ -1,3 +1,4 @@
+```jsx
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -27,11 +28,23 @@ export default function VideoPlayer({
 
   const [error, setError] = useState('');
 
+  /*
+   * =========================================================
+   * TMDB
+   * =========================================================
+   */
+
   const realTmdb =
     tmdbId ||
     title?.tmdb_id ||
     title?.tmdbId ||
     null;
+
+  /*
+   * =========================================================
+   * CONTENT TYPE
+   * =========================================================
+   */
 
   const contentType =
     type === 'series' ||
@@ -41,6 +54,12 @@ export default function VideoPlayer({
       ? 'tv'
       : 'movie';
 
+  /*
+   * =========================================================
+   * CURRENT EPISODE
+   * =========================================================
+   */
+
   const currentEpisodeId =
     episodeId ||
     title?.current_episode_id ||
@@ -48,32 +67,35 @@ export default function VideoPlayer({
     null;
 
   const currentSeason =
-    title?.current_season ||
-    title?.season ||
-    1;
+    Number(
+      title?.current_season ||
+      title?.season ||
+      1
+    );
 
   const currentEpisodeNumber =
-    title?.current_episode_number ||
-    title?.episode_number ||
-    1;
+    Number(
+      title?.current_episode_number ||
+      title?.episode_number ||
+      1
+    );
 
   /*
    * =========================================================
-   * CURRENT EPISODE SERVER LINKS
+   * EPISODE STREAM URLS
    * =========================================================
    *
-   * episodes.stream_urls is JSONB.
-   *
-   * Example:
+   * episodes.stream_urls:
    *
    * {
-   *   "server1": "https://....",
-   *   "server2": "https://...."
+   *   "server1": "https://...",
+   *   "server2": "https://..."
    * }
    *
-   * We only use server1 from the database here.
-   * StreamSrc server2 is generated below so that it always
-   * matches the current TMDB / season / episode.
+   * Server 1 is read from the database.
+   *
+   * Server 2 is NOT taken from a direct video URL.
+   * It is generated as a complete StreamSrc player below.
    */
 
   const episodeStreamUrls =
@@ -84,23 +106,18 @@ export default function VideoPlayer({
   const databaseServer1 =
     typeof episodeStreamUrls === 'object' &&
     episodeStreamUrls !== null
-      ? episodeStreamUrls.server1 ||
-        episodeStreamUrls.stelar ||
-        episodeStreamUrls.stelar_rip ||
-        null
+      ? (
+          episodeStreamUrls.server1 ||
+          episodeStreamUrls.stelar ||
+          episodeStreamUrls.stelar_rip ||
+          null
+        )
       : null;
 
   /*
    * =========================================================
    * SERVER 1
    * =========================================================
-   *
-   * For an episode:
-   *   1. episodes.stream_urls.server1
-   *   2. title.url
-   *
-   * For a movie:
-   *   title.url
    */
 
   const server1Url =
@@ -110,30 +127,56 @@ export default function VideoPlayer({
 
   /*
    * =========================================================
-   * STREAMSRC - SERVER 2
+   * SERVER 2 — STREAMSRC
    * =========================================================
+   *
+   * IMPORTANT:
+   *
+   * StreamSrc officially documents:
    *
    * Movie:
    * https://streamsrc.cc/watch/movie/tmdbid=TMDB
    *
-   * Series episode:
-   * https://streamsrc.cc/watch/series/tmdbid=TMDB/SEASON/EPISODE
+   * Series:
+   * https://streamsrc.cc/watch/series/tmdbid=TMDB
+   *
+   * The old code was generating:
+   *
+   * /watch/series/tmdbid=TMDB/SEASON/EPISODE
+   *
+   * which is not the documented StreamSrc route and was
+   * causing the LiteSpeed page.
+   *
+   * We therefore use the official complete series player.
+   *
+   * StreamSrc itself provides the season/episode selector
+   * inside the external player.
    */
 
   const streamSrcUrl = useMemo(() => {
-    if (!realTmdb) return null;
-
-    if (contentType === 'movie') {
-      return `https://streamsrc.cc/watch/movie/tmdbid=${realTmdb}`;
+    if (!realTmdb) {
+      return null;
     }
 
-    return `https://streamsrc.cc/watch/series/tmdbid=${realTmdb}/${currentSeason}/${currentEpisodeNumber}`;
+    const encodedTmdb = encodeURIComponent(
+      String(realTmdb)
+    );
+
+    if (contentType === 'movie') {
+      return `https://streamsrc.cc/watch/movie/tmdbid=${encodedTmdb}`;
+    }
+
+    return `https://streamsrc.cc/watch/series/tmdbid=${encodedTmdb}`;
   }, [
     realTmdb,
     contentType,
-    currentSeason,
-    currentEpisodeNumber,
   ]);
+
+  /*
+   * =========================================================
+   * SERVERS
+   * =========================================================
+   */
 
   const servers = useMemo(() => {
     return [
@@ -141,21 +184,29 @@ export default function VideoPlayer({
         id: 0,
         name: 'سيرفر 1',
         url: server1Url,
+        type: 'database',
       },
       {
         id: 1,
         name: 'سيرفر 2',
         url: streamSrcUrl,
+        type: 'streamsrc',
       },
     ];
-  }, [server1Url, streamSrcUrl]);
+  }, [
+    server1Url,
+    streamSrcUrl,
+  ]);
 
-  const currentServer = servers[selectedServer];
+  const currentServer =
+    servers[selectedServer];
 
   /*
-   * If the selected server has no URL, automatically return
-   * to server 1.
+   * =========================================================
+   * SERVER FALLBACK
+   * =========================================================
    */
+
   useEffect(() => {
     if (
       selectedServer === 1 &&
@@ -170,12 +221,30 @@ export default function VideoPlayer({
 
   /*
    * =========================================================
+   * RESET ERROR WHEN SERVER CHANGES
+   * =========================================================
+   */
+
+  useEffect(() => {
+    setError('');
+  }, [
+    selectedServer,
+    realTmdb,
+    currentSeason,
+    currentEpisodeNumber,
+    currentEpisodeId,
+  ]);
+
+  /*
+   * =========================================================
    * FRIENDS
    * =========================================================
    */
 
   useEffect(() => {
-    if (!shareOpen || !user?.id) return;
+    if (!shareOpen || !user?.id) {
+      return;
+    }
 
     let cancelled = false;
 
@@ -184,7 +253,8 @@ export default function VideoPlayer({
         setLoadingFriends(true);
         setError('');
 
-        const result = await fetchFriends(user.id);
+        const result =
+          await fetchFriends(user.id);
 
         if (!cancelled) {
           setFriends(result || []);
@@ -208,7 +278,10 @@ export default function VideoPlayer({
     return () => {
       cancelled = true;
     };
-  }, [shareOpen, user?.id]);
+  }, [
+    shareOpen,
+    user?.id,
+  ]);
 
   /*
    * =========================================================
@@ -224,7 +297,10 @@ export default function VideoPlayer({
         );
       }
 
-      return [...current, friendId];
+      return [
+        ...current,
+        friendId,
+      ];
     });
   }
 
@@ -236,7 +312,9 @@ export default function VideoPlayer({
 
   async function createParty() {
     if (!user?.id) {
-      setError('يجب تسجيل الدخول أولاً');
+      setError(
+        'يجب تسجيل الدخول أولاً'
+      );
       return;
     }
 
@@ -266,7 +344,8 @@ export default function VideoPlayer({
           friendIds: selectedFriends,
         });
 
-      const party = partyResult?.party;
+      const party =
+        partyResult?.party;
 
       if (!party?.id) {
         throw new Error(
@@ -284,7 +363,6 @@ export default function VideoPlayer({
           title?.poster_url ||
           title?.poster ||
           title?.image_url ||
-          title?.backdrop_url ||
           null,
 
         release_year:
@@ -302,7 +380,8 @@ export default function VideoPlayer({
             ? 'series'
             : 'movie',
 
-        tmdb_id: realTmdb,
+        tmdb_id:
+          realTmdb,
 
         episode_id:
           currentEpisodeId,
@@ -324,26 +403,25 @@ export default function VideoPlayer({
       };
 
       /*
-       * We intentionally use title_share here.
-       * This keeps compatibility with the existing
+       * Keep compatibility with the existing
        * messages.kind constraint.
-       *
-       * The actual Watch Party is identified by
-       * shared_party_id.
        */
 
       await Promise.all(
-        selectedFriends.map((friendId) =>
-          sendMessage({
-            senderId: user.id,
-            receiverId: friendId,
-            kind: 'title_share',
-            content:
-              metadata.name,
-            sharedTitleId: title.id,
-            sharedPartyId: party.id,
-            metadata,
-          })
+        selectedFriends.map(
+          (friendId) =>
+            sendMessage({
+              senderId: user.id,
+              receiverId: friendId,
+              kind: 'title_share',
+              content:
+                metadata.name,
+              sharedTitleId:
+                title.id,
+              sharedPartyId:
+                party.id,
+              metadata,
+            })
         )
       );
 
@@ -392,6 +470,8 @@ export default function VideoPlayer({
             alignItems: 'center',
             justifyContent: 'center',
             color: '#aaa',
+            padding: '20px',
+            textAlign: 'center',
           }}
         >
           لا يوجد TMDB ID لهذا المحتوى
@@ -399,6 +479,25 @@ export default function VideoPlayer({
       </div>
     );
   }
+
+  /*
+   * =========================================================
+   * PLAYER KEY
+   * =========================================================
+   *
+   * Changing server or episode creates a new iframe.
+   * No page refresh is needed.
+   */
+
+  const playerKey =
+    [
+      selectedServer,
+      realTmdb,
+      contentType,
+      currentSeason,
+      currentEpisodeNumber,
+      currentEpisodeId || '',
+    ].join('-');
 
   /*
    * =========================================================
@@ -433,18 +532,24 @@ export default function VideoPlayer({
       >
         {currentServer?.url ? (
           <iframe
-            key={`${selectedServer}-${realTmdb}-${currentSeason}-${currentEpisodeNumber}-${currentEpisodeId || ''}`}
+            key={playerKey}
             src={currentServer.url}
             style={{
               width: '100%',
               height: '420px',
+              minHeight: '420px',
               border: 'none',
               background: '#000',
+              display: 'block',
             }}
             allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
             allowFullScreen
             referrerPolicy="no-referrer"
-            title="StreamFlix Video Player"
+            title={
+              selectedServer === 1
+                ? 'StreamSrc External Player'
+                : 'StreamFlix Video Player'
+            }
           />
         ) : (
           <div
@@ -477,9 +582,10 @@ export default function VideoPlayer({
               streamSrcUrl && (
                 <button
                   type="button"
-                  onClick={() =>
-                    setSelectedServer(1)
-                  }
+                  onClick={() => {
+                    setError('');
+                    setSelectedServer(1);
+                  }}
                   style={{
                     marginTop: '5px',
                     border:
@@ -534,7 +640,9 @@ export default function VideoPlayer({
               type="button"
               disabled={!available}
               onClick={() => {
-                if (!available) return;
+                if (!available) {
+                  return;
+                }
 
                 setError('');
                 setSelectedServer(
@@ -562,18 +670,24 @@ export default function VideoPlayer({
                       ? '#ddd'
                       : '#555',
 
-                padding: '8px 14px',
-                borderRadius: '8px',
-                cursor: available
-                  ? 'pointer'
-                  : 'not-allowed',
+                padding:
+                  '8px 14px',
+
+                borderRadius:
+                  '8px',
+
+                cursor:
+                  available
+                    ? 'pointer'
+                    : 'not-allowed',
 
                 fontSize: '12px',
                 fontWeight: 700,
 
-                opacity: available
-                  ? 1
-                  : 0.55,
+                opacity:
+                  available
+                    ? 1
+                    : 0.55,
               }}
             >
               {server.name}
@@ -593,7 +707,8 @@ export default function VideoPlayer({
             background:
               'linear-gradient(135deg,#d4af37,#b89222)',
             color: '#111',
-            padding: '8px 16px',
+            padding:
+              '8px 16px',
             borderRadius: '8px',
             cursor: 'pointer',
             fontSize: '12px',
@@ -740,7 +855,8 @@ export default function VideoPlayer({
                     background: '#222',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
+                    justifyContent:
+                      'center',
                     fontSize: '25px',
                   }}
                 >
@@ -786,8 +902,10 @@ export default function VideoPlayer({
             {error && (
               <div
                 style={{
-                  padding: '10px 12px',
-                  marginBottom: '12px',
+                  padding:
+                    '10px 12px',
+                  marginBottom:
+                    '12px',
                   borderRadius: '9px',
                   background:
                     'rgba(220,60,60,.1)',
@@ -839,118 +957,151 @@ export default function VideoPlayer({
               <div
                 style={{
                   display: 'flex',
-                  flexDirection: 'column',
+                  flexDirection:
+                    'column',
                   gap: '7px',
                   maxHeight: '300px',
                   overflowY: 'auto',
                 }}
               >
-                {friends.map((friend) => {
-                  const selected =
-                    selectedFriends.includes(
-                      friend.id
-                    );
+                {friends.map(
+                  (friend) => {
+                    const selected =
+                      selectedFriends.includes(
+                        friend.id
+                      );
 
-                  const name =
-                    friend.display_name ||
-                    friend.full_name ||
-                    friend.username ||
-                    'مستخدم';
+                    const name =
+                      friend.display_name ||
+                      friend.full_name ||
+                      friend.username ||
+                      'مستخدم';
 
-                  return (
-                    <button
-                      key={friend.id}
-                      type="button"
-                      onClick={() =>
-                        toggleFriend(
+                    return (
+                      <button
+                        key={
                           friend.id
-                        )
-                      }
-                      style={{
-                        width: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '10px',
-                        padding: '10px',
-                        borderRadius: '10px',
-                        border: selected
-                          ? '1px solid #d4af37'
-                          : '1px solid #292929',
-                        background: selected
-                          ? 'rgba(212,175,55,.08)'
-                          : '#101010',
-                        color: '#fff',
-                        cursor: 'pointer',
-                        textAlign: 'right',
-                      }}
-                    >
-                      <div
+                        }
+                        type="button"
+                        onClick={() =>
+                          toggleFriend(
+                            friend.id
+                          )
+                        }
                         style={{
-                          width: '38px',
-                          height: '38px',
-                          borderRadius: '50%',
-                          overflow: 'hidden',
-                          background: '#252525',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent:
-                            'center',
-                          color: '#d4af37',
-                          fontWeight: 900,
-                        }}
-                      >
-                        {friend.avatar_url ? (
-                          <img
-                            src={
-                              friend.avatar_url
-                            }
-                            alt=""
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              objectFit: 'cover',
-                            }}
-                          />
-                        ) : (
-                          name
-                            .charAt(0)
-                            .toUpperCase()
-                        )}
-                      </div>
-
-                      <span
-                        style={{
-                          flex: 1,
-                          fontSize: '13px',
-                        }}
-                      >
-                        {name}
-                      </span>
-
-                      <span
-                        style={{
-                          width: '23px',
-                          height: '23px',
-                          borderRadius: '50%',
-                          border: selected
-                            ? '1px solid #d4af37'
-                            : '1px solid #444',
-                          display: 'flex',
+                          width: '100%',
+                          display:
+                            'flex',
                           alignItems:
                             'center',
-                          justifyContent:
-                            'center',
-                          color: '#d4af37',
-                          fontWeight: 900,
+                          gap: '10px',
+                          padding:
+                            '10px',
+                          borderRadius:
+                            '10px',
+                          border:
+                            selected
+                              ? '1px solid #d4af37'
+                              : '1px solid #292929',
+                          background:
+                            selected
+                              ? 'rgba(212,175,55,.08)'
+                              : '#101010',
+                          color: '#fff',
+                          cursor:
+                            'pointer',
+                          textAlign:
+                            'right',
                         }}
                       >
-                        {selected
-                          ? '✓'
-                          : ''}
-                      </span>
-                    </button>
-                  );
-                })}
+                        <div
+                          style={{
+                            width: '38px',
+                            height: '38px',
+                            borderRadius:
+                              '50%',
+                            overflow:
+                              'hidden',
+                            background:
+                              '#252525',
+                            display:
+                              'flex',
+                            alignItems:
+                              'center',
+                            justifyContent:
+                              'center',
+                            color:
+                              '#d4af37',
+                            fontWeight:
+                              900,
+                          }}
+                        >
+                          {friend.avatar_url ? (
+                            <img
+                              src={
+                                friend.avatar_url
+                              }
+                              alt=""
+                              style={{
+                                width:
+                                  '100%',
+                                height:
+                                  '100%',
+                                objectFit:
+                                  'cover',
+                              }}
+                            />
+                          ) : (
+                            name
+                              .charAt(
+                                0
+                              )
+                              .toUpperCase()
+                          )}
+                        </div>
+
+                        <span
+                          style={{
+                            flex: 1,
+                            fontSize:
+                              '13px',
+                          }}
+                        >
+                          {name}
+                        </span>
+
+                        <span
+                          style={{
+                            width:
+                              '23px',
+                            height:
+                              '23px',
+                            borderRadius:
+                              '50%',
+                            border:
+                              selected
+                                ? '1px solid #d4af37'
+                                : '1px solid #444',
+                            display:
+                              'flex',
+                            alignItems:
+                              'center',
+                            justifyContent:
+                              'center',
+                            color:
+                              '#d4af37',
+                            fontWeight:
+                              900,
+                          }}
+                        >
+                          {selected
+                            ? '✓'
+                            : ''}
+                        </span>
+                      </button>
+                    );
+                  }
+                )}
               </div>
             )}
 
@@ -960,15 +1111,21 @@ export default function VideoPlayer({
               type="button"
               disabled={
                 sharing ||
-                selectedFriends.length === 0
+                selectedFriends.length ===
+                  0
               }
-              onClick={createParty}
+              onClick={
+                createParty
+              }
               style={{
                 width: '100%',
-                marginTop: '15px',
-                padding: '13px',
+                marginTop:
+                  '15px',
+                padding:
+                  '13px',
                 border: 'none',
-                borderRadius: '10px',
+                borderRadius:
+                  '10px',
                 background:
                   selectedFriends.length &&
                   !sharing
@@ -985,7 +1142,8 @@ export default function VideoPlayer({
                     ? 'pointer'
                     : 'not-allowed',
                 fontWeight: 900,
-                fontSize: '13px',
+                fontSize:
+                  '13px',
               }}
             >
               {sharing
@@ -1000,3 +1158,4 @@ export default function VideoPlayer({
     </div>
   );
 }
+```
