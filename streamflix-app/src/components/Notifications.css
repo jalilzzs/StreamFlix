@@ -1,6 +1,6 @@
 /* =========================================================
    STREAMFLIX NOTIFICATIONS
-   Completely isolated from Navbar.css
+   Isolated styles — does not modify Navbar
    ========================================================= */
 
 .sf-notification-wrap{
@@ -11,230 +11,145 @@
   width:38px;
   height:38px;
   flex:0 0 38px;
-  margin:0;
-  padding:0;
-  z-index:120;
 }
 
-/* Notification button */
+/* Button */
 
 .sf-notification-btn{
   position:relative;
-
   width:38px;
   height:38px;
-
-  margin:0;
   padding:0;
-
-  border:1px solid var(--border);
+  margin:0;
   border-radius:50%;
-
   background:var(--panel);
+  border:1px solid var(--border);
   color:var(--muted);
-
   display:flex;
   align-items:center;
   justify-content:center;
-
-  cursor:pointer;
-
-  box-sizing:border-box;
-  flex:none;
-
-  transition:
-    color .2s ease,
-    border-color .2s ease,
-    background .2s ease,
-    transform .15s ease;
+  flex:0 0 38px;
+  transition:color .2s ease,border-color .2s ease,background .2s ease;
 }
 
-.sf-notification-btn:hover,
-.sf-notification-btn[aria-expanded="true"]{
+.sf-notification-btn:hover{
   color:var(--gold);
   border-color:var(--gold-dim);
-  background:var(--panel);
-}
-
-.sf-notification-btn:active{
-  transform:scale(.95);
 }
 
 .sf-notification-btn svg{
   width:17px;
   height:17px;
   display:block;
-  flex:none;
 }
 
 /* Badge */
 
 .sf-notification-badge{
   position:absolute;
-
-  top:-3px;
-  right:-3px;
-
-  min-width:16px;
-  height:16px;
-
+  top:-4px;
+  right:-4px;
+  min-width:18px;
+  height:18px;
   padding:0 4px;
-
   border-radius:999px;
+  background:#e50914;
+  color:#fff;
   border:2px solid var(--bg);
-
-  background:var(--gold);
-  color:#1a1608;
-
   display:flex;
   align-items:center;
   justify-content:center;
-
-  font-family:Arial,sans-serif;
   font-size:9px;
-  font-weight:800;
   line-height:1;
-
-  box-sizing:border-box;
+  font-weight:800;
   pointer-events:none;
 }
 
-/* Invisible click-away layer */
+/* Outside click layer */
 
 .sf-notification-overlay{
   position:fixed;
   inset:0;
-
-  background:transparent;
-
   z-index:9998;
+  background:transparent;
 }
 
 /* Dropdown */
 
 .sf-notification-menu{
   position:absolute;
-
   top:calc(100% + 10px);
   right:0;
-
   width:360px;
   max-width:calc(100vw - 24px);
-
+  max-height:min(560px,calc(100vh - 90px));
+  overflow:hidden;
   background:var(--panel);
   color:var(--text);
-
   border:1px solid var(--border);
-  border-radius:12px;
-
-  overflow:hidden;
-
-  box-sizing:border-box;
-
+  border-radius:14px;
+  box-shadow:0 18px 50px rgba(0,0,0,.42);
   z-index:9999;
-
-  box-shadow:
-    0 18px 45px rgba(0,0,0,.35),
-    0 4px 14px rgba(0,0,0,.18);
-
-  animation:sf-notification-open .15s ease-out;
-}
-
-@keyframes sf-notification-open{
-  from{
-    opacity:0;
-    transform:translateY(-5px);
-  }
-
-  to{
-    opacity:1;
-    transform:translateY(0);
-  }
 }
 
 /* Header */
 
 .sf-notification-head{
+  min-height:58px;
+  padding:12px 14px;
   display:flex;
   align-items:center;
   justify-content:space-between;
-
   gap:12px;
-
-  padding:13px 14px;
-
   border-bottom:1px solid var(--border);
-
-  box-sizing:border-box;
 }
 
 .sf-notification-heading{
-  color:var(--text);
-
+  min-width:0;
   font-size:15px;
   font-weight:700;
-
-  line-height:20px;
+  color:var(--text);
 }
 
 .sf-notification-count{
-  margin-top:2px;
-
+  margin-inline-start:5px;
   color:var(--muted);
-
-  font-size:10px;
-  line-height:14px;
+  font-size:11px;
+  font-weight:500;
 }
 
 .sf-notification-readall{
-  margin:0;
+  flex-shrink:0;
   padding:5px 7px;
-
   border:0;
-  border-radius:6px;
-
   background:transparent;
   color:var(--gold);
-
-  font-size:10px;
+  font-family:inherit;
+  font-size:11px;
   font-weight:600;
-
   cursor:pointer;
-
-  white-space:nowrap;
 }
 
 .sf-notification-readall:hover{
-  background:var(--panel-raised);
+  color:var(--text);
 }
 
 .sf-notification-readall:disabled{
-  opacity:.5;
+  opacity:.45;
   cursor:default;
 }
 
 /* List */
 
 .sf-notification-list{
-  width:100%;
-
-  max-height:420px;
-
-  overflow-x:hidden;
+  max-height:calc(100vh - 180px);
   overflow-y:auto;
-
-  box-sizing:border-box;
-
+  overscroll-behavior:contain;
   scrollbar-width:thin;
-  scrollbar-color:var(--border) transparent;
 }
 
 .sf-notification-list::-webkit-scrollbar{
   width:5px;
-}
-
-.sf-notification-list::-webkit-scrollbar-track{
-  background:transparent;
 }
 
 .sf-notification-list::-webkit-scrollbar-thumb{
@@ -242,33 +157,50 @@
   border-radius:10px;
 }
 
+/* States */
+
+.sf-notification-state{
+  padding:34px 18px;
+  text-align:center;
+  color:var(--muted);
+  font-size:12px;
+}
+
+.sf-notification-empty{
+  padding:38px 18px;
+  text-align:center;
+}
+
+.sf-notification-empty-icon{
+  margin-bottom:8px;
+  font-size:30px;
+  line-height:1;
+}
+
+.sf-notification-empty-title{
+  margin-bottom:4px;
+  color:var(--text);
+  font-size:13px;
+  font-weight:700;
+}
+
+.sf-notification-empty-text{
+  color:var(--muted);
+  font-size:11px;
+  line-height:1.5;
+}
+
 /* Item */
 
 .sf-notification-item{
   position:relative;
-
-  width:100%;
-
-  min-height:66px;
-
-  padding:11px 38px 11px 13px;
-
   display:flex;
   align-items:flex-start;
-
   gap:10px;
-
-  border:0;
+  padding:12px 38px 12px 12px;
   border-bottom:1px solid var(--border);
-
   background:transparent;
-
-  color:var(--text);
-
-  box-sizing:border-box;
-
   cursor:pointer;
-
   transition:background .18s ease;
 }
 
@@ -280,35 +212,27 @@
   background:var(--panel-raised);
 }
 
-.sf-notification-item.is-unread{
-  background:rgba(212,168,67,.045);
+.sf-notification-item.unread{
+  background:rgba(228,200,138,.055);
 }
 
-.sf-notification-item.is-unread:hover{
-  background:rgba(212,168,67,.08);
+.sf-notification-item.unread:hover{
+  background:rgba(228,200,138,.09);
 }
 
-/* Item icon */
+/* Icon */
 
 .sf-notification-icon{
-  width:32px;
-  height:32px;
-
-  min-width:32px;
-
+  width:36px;
+  height:36px;
+  flex:0 0 36px;
+  border-radius:50%;
+  background:var(--panel-raised);
+  border:1px solid var(--border);
   display:flex;
   align-items:center;
   justify-content:center;
-
-  border-radius:50%;
-
-  background:var(--panel-raised);
-  border:1px solid var(--border);
-
-  font-size:15px;
-  line-height:1;
-
-  box-sizing:border-box;
+  font-size:17px;
 }
 
 /* Content */
@@ -316,163 +240,76 @@
 .sf-notification-content{
   min-width:0;
   flex:1;
-
-  overflow:hidden;
 }
 
 .sf-notification-title-row{
+  min-width:0;
   display:flex;
   align-items:center;
-
   gap:6px;
-
-  min-width:0;
 }
 
 .sf-notification-dot{
   width:6px;
   height:6px;
-
-  min-width:6px;
-
+  flex:0 0 6px;
   border-radius:50%;
-
-  background:var(--gold);
+  background:#e50914;
 }
 
 .sf-notification-item-title{
   min-width:0;
-
-  color:var(--text);
-
-  font-size:12.5px;
-  font-weight:650;
-
-  line-height:17px;
-
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
+  color:var(--text);
+  font-size:12px;
+  font-weight:700;
 }
 
 .sf-notification-message{
-  margin-top:2px;
-
+  margin-top:3px;
   color:var(--muted);
-
   font-size:11px;
-  line-height:15px;
-
-  display:-webkit-box;
-  -webkit-box-orient:vertical;
-  -webkit-line-clamp:2;
-
-  overflow:hidden;
+  line-height:1.45;
   word-break:break-word;
 }
 
 .sf-notification-time{
-  margin-top:3px;
-
+  margin-top:5px;
   color:var(--muted);
-
   opacity:.65;
-
-  font-size:9.5px;
-  line-height:13px;
+  font-size:9px;
 }
 
 /* Delete */
 
 .sf-notification-delete{
   position:absolute;
-
-  top:50%;
+  top:9px;
   right:7px;
-
   width:24px;
   height:24px;
-
   padding:0;
-
-  transform:translateY(-50%);
-
+  border:0;
+  border-radius:50%;
+  background:transparent;
+  color:var(--muted);
   display:flex;
   align-items:center;
   justify-content:center;
-
-  border:0;
-  border-radius:6px;
-
-  background:transparent;
-  color:var(--muted);
-
-  font-size:17px;
-  line-height:1;
-
   cursor:pointer;
-
-  opacity:0;
-
-  transition:
-    opacity .15s ease,
-    color .15s ease,
-    background .15s ease;
-}
-
-.sf-notification-item:hover .sf-notification-delete{
-  opacity:1;
+  font-size:16px;
 }
 
 .sf-notification-delete:hover{
-  color:#ef6b6b;
-  background:rgba(239,107,107,.1);
-}
-
-/* Loading / empty */
-
-.sf-notification-state{
-  min-height:140px;
-
-  padding:25px 20px;
-
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-
-  text-align:center;
-
-  color:var(--muted);
-
-  box-sizing:border-box;
-}
-
-.sf-notification-empty-icon{
-  margin-bottom:8px;
-
-  font-size:28px;
-}
-
-.sf-notification-state strong{
   color:var(--text);
-
-  font-size:13px;
-  font-weight:600;
-}
-
-.sf-notification-state span{
-  margin-top:4px;
-
-  color:var(--muted);
-
-  font-size:11px;
+  background:rgba(255,255,255,.07);
 }
 
 /* Tablet */
 
 @media(max-width:700px){
-
   .sf-notification-wrap{
     width:36px;
     height:36px;
@@ -482,13 +319,13 @@
   .sf-notification-btn{
     width:36px;
     height:36px;
+    flex-basis:36px;
   }
 }
 
-/* Mobile */
+/* Phones */
 
 @media(max-width:480px){
-
   .sf-notification-wrap{
     width:35px;
     height:35px;
@@ -498,40 +335,25 @@
   .sf-notification-btn{
     width:35px;
     height:35px;
+    flex-basis:35px;
   }
-
-  /*
-    Navbar.css hides only .icon-btn on phones.
-    Notifications therefore stays visible.
-  */
 
   .sf-notification-menu{
     position:fixed;
-
-    top:59px;
+    top:65px;
     right:10px;
-
-    width:calc(100vw - 20px);
-    max-width:none;
-
-    max-height:calc(100vh - 75px);
-
-    border-radius:12px;
+    width:360px;
+    max-width:calc(100vw - 20px);
+    max-height:calc(100vh - 80px);
+    border-radius:13px;
   }
 
   .sf-notification-list{
-    max-height:calc(100vh - 135px);
-  }
-
-  .sf-notification-delete{
-    opacity:1;
+    max-height:calc(100vh - 145px);
   }
 }
 
-/* Very small phones */
-
 @media(max-width:360px){
-
   .sf-notification-wrap{
     width:33px;
     height:33px;
@@ -541,12 +363,11 @@
   .sf-notification-btn{
     width:33px;
     height:33px;
+    flex-basis:33px;
   }
 
   .sf-notification-menu{
-    top:56px;
     right:8px;
-
-    width:calc(100vw - 16px);
+    max-width:calc(100vw - 16px);
   }
 }
