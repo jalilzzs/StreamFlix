@@ -36,8 +36,8 @@ function getVidsrcMovieUrl(tmdbId) {
 
   return `${VIDSRC_BASE_URL}/embed/movie?tmdb=${encodeURIComponent(
     tmdbId
-  }
-
+    )}`;
+}
 function getVidsrcEpisodeUrl(
   tmdbId,
   season,
