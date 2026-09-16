@@ -1,5 +1,5 @@
-```jsx
-import { useEffect, useMemo, useState } from 'react';
+
+       { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -30,7 +30,7 @@ export default function VideoPlayer({
 
   /*
    * =========================================================
-   * TMDB
+   * TMDB ID
    * =========================================================
    */
 
@@ -85,17 +85,15 @@ export default function VideoPlayer({
    * EPISODE STREAM URLS
    * =========================================================
    *
-   * episodes.stream_urls:
+   * episodes.stream_urls is JSONB.
+   *
+   * Example:
    *
    * {
-   *   "server1": "https://...",
-   *   "server2": "https://..."
+   *   "server1": "https://...."
    * }
    *
-   * Server 1 is read from the database.
-   *
-   * Server 2 is NOT taken from a direct video URL.
-   * It is generated as a complete StreamSrc player below.
+   * Server 1 is taken from the database.
    */
 
   const episodeStreamUrls =
@@ -118,6 +116,13 @@ export default function VideoPlayer({
    * =========================================================
    * SERVER 1
    * =========================================================
+   *
+   * Episode:
+   *   episodes.stream_urls.server1
+   *   then title.url
+   *
+   * Movie:
+   *   title.url
    */
 
   const server1Url =
@@ -127,12 +132,10 @@ export default function VideoPlayer({
 
   /*
    * =========================================================
-   * SERVER 2 — STREAMSRC
+   * SERVER 2 - STREAMSRC
    * =========================================================
    *
-   * IMPORTANT:
-   *
-   * StreamSrc officially documents:
+   * StreamSrc uses a complete external player.
    *
    * Movie:
    * https://streamsrc.cc/watch/movie/tmdbid=TMDB
@@ -140,37 +143,31 @@ export default function VideoPlayer({
    * Series:
    * https://streamsrc.cc/watch/series/tmdbid=TMDB
    *
-   * The old code was generating:
+   * Do NOT append /season/episode because that route is not
+   * the documented StreamSrc player route.
    *
-   * /watch/series/tmdbid=TMDB/SEASON/EPISODE
-   *
-   * which is not the documented StreamSrc route and was
-   * causing the LiteSpeed page.
-   *
-   * We therefore use the official complete series player.
-   *
-   * StreamSrc itself provides the season/episode selector
-   * inside the external player.
+   * The StreamSrc series player handles seasons and episodes
+   * itself.
    */
 
   const streamSrcUrl = useMemo(() => {
-  if (!realTmdb) {
-    return null;
-  }
+    if (!realTmdb) {
+      return null;
+    }
 
-  const encodedTmdb = encodeURIComponent(
-    String(realTmdb)
-  );
+    const encodedTmdb = encodeURIComponent(
+      String(realTmdb)
+    );
 
-  if (contentType === 'movie') {
-    return `https://streamsrc.cc/watch/movie/tmdbid=${encodedTmdb}`;
-  }
+    if (contentType === 'movie') {
+      return `https://streamsrc.cc/watch/movie/tmdbid=${encodedTmdb}`;
+    }
 
-  return `https://streamsrc.cc/watch/series/tmdbid=${encodedTmdb}`;
-}, [
-  realTmdb,
-  contentType,
-]);
+    return `https://streamsrc.cc/watch/series/tmdbid=${encodedTmdb}`;
+  }, [
+    realTmdb,
+    contentType,
+  ]);
 
   /*
    * =========================================================
@@ -184,13 +181,11 @@ export default function VideoPlayer({
         id: 0,
         name: 'سيرفر 1',
         url: server1Url,
-        type: 'database',
       },
       {
         id: 1,
         name: 'سيرفر 2',
         url: streamSrcUrl,
-        type: 'streamsrc',
       },
     ];
   }, [
@@ -221,7 +216,7 @@ export default function VideoPlayer({
 
   /*
    * =========================================================
-   * RESET ERROR WHEN SERVER CHANGES
+   * RESET ERROR
    * =========================================================
    */
 
@@ -237,7 +232,7 @@ export default function VideoPlayer({
 
   /*
    * =========================================================
-   * FRIENDS
+   * LOAD FRIENDS
    * =========================================================
    */
 
@@ -482,11 +477,17 @@ export default function VideoPlayer({
 
   /*
    * =========================================================
-   * PLAYER KEY
+   * IFRAME KEY
    * =========================================================
    *
-   * Changing server or episode creates a new iframe.
-   * No page refresh is needed.
+   * This forces only the iframe to be recreated when:
+   *
+   * - Server changes
+   * - Movie changes
+   * - Season changes
+   * - Episode changes
+   *
+   * The whole page is NOT refreshed.
    */
 
   const playerKey =
