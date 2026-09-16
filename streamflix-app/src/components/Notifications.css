@@ -1,0 +1,630 @@
+/* =========================================================
+   STREAMFLIX — NOTIFICATIONS
+   Isolated styles: does NOT modify Navbar.css
+   ========================================================= */
+
+.sf-notification-wrap{
+  position:relative;
+  display:flex;
+  align-items:center;
+  flex-shrink:0;
+  z-index:120;
+}
+
+/* =========================
+   Notification button
+   ========================= */
+
+.sf-notification-button{
+  position:relative;
+  width:38px;
+  height:38px;
+  padding:0;
+  border-radius:50%;
+  background:var(--panel);
+  border:1px solid var(--border);
+  color:var(--muted);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  transition:
+    color .2s ease,
+    border-color .2s ease,
+    background .2s ease,
+    transform .15s ease;
+  flex-shrink:0;
+}
+
+.sf-notification-button:hover{
+  color:var(--gold);
+  border-color:var(--gold-dim);
+  background:var(--panel-raised);
+}
+
+.sf-notification-button:active{
+  transform:scale(.94);
+}
+
+.sf-notification-button svg{
+  width:17px;
+  height:17px;
+  pointer-events:none;
+}
+
+/* =========================
+   Badge
+   ========================= */
+
+.sf-notification-badge{
+  position:absolute;
+  top:-3px;
+  right:-3px;
+  min-width:16px;
+  height:16px;
+  padding:0 4px;
+  border-radius:999px;
+  background:var(--gold);
+  color:#1a1608;
+  border:2px solid var(--bg);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-family:var(--sans);
+  font-size:9px;
+  font-weight:800;
+  line-height:1;
+  pointer-events:none;
+}
+
+/* =========================
+   Backdrop
+   ========================= */
+
+.sf-notification-backdrop{
+  position:fixed;
+  inset:0;
+  z-index:109;
+  background:transparent;
+  display:none;
+}
+
+.sf-notification-backdrop.show{
+  display:block;
+}
+
+/* =========================
+   Panel
+   ========================= */
+
+.sf-notification-panel{
+  position:absolute;
+  top:calc(100% + 10px);
+  right:0;
+  width:370px;
+  max-width:calc(100vw - 24px);
+  max-height:min(520px,calc(100vh - 90px));
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+
+  background:var(--panel);
+  border:1px solid var(--border);
+  border-radius:14px;
+
+  box-shadow:
+    0 18px 50px rgba(0,0,0,.35),
+    0 4px 16px rgba(0,0,0,.18);
+
+  animation:sfNotificationOpen .16s ease-out;
+  z-index:121;
+}
+
+@keyframes sfNotificationOpen{
+  from{
+    opacity:0;
+    transform:translateY(-5px) scale(.98);
+  }
+
+  to{
+    opacity:1;
+    transform:translateY(0) scale(1);
+  }
+}
+
+/* RTL */
+
+[dir="rtl"] .sf-notification-panel{
+  right:auto;
+  left:0;
+}
+
+/* =========================
+   Header
+   ========================= */
+
+.sf-notification-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+
+  padding:15px 16px 13px;
+
+  border-bottom:1px solid var(--border);
+  background:var(--panel);
+  flex-shrink:0;
+}
+
+.sf-notification-title-wrap{
+  min-width:0;
+}
+
+.sf-notification-title{
+  margin:0;
+  color:var(--text);
+  font-size:15px;
+  font-weight:700;
+  line-height:1.3;
+}
+
+.sf-notification-subtitle{
+  margin:3px 0 0;
+  color:var(--muted);
+  font-size:11px;
+  line-height:1.3;
+}
+
+.sf-notification-mark-all{
+  border:0;
+  background:transparent;
+  color:var(--gold);
+  padding:5px 6px;
+  border-radius:6px;
+  font-size:11px;
+  font-weight:600;
+  cursor:pointer;
+  white-space:nowrap;
+  transition:
+    background .2s ease,
+    color .2s ease;
+}
+
+.sf-notification-mark-all:hover{
+  background:var(--panel-raised);
+  color:var(--text);
+}
+
+/* =========================
+   List
+   ========================= */
+
+.sf-notification-list{
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  scrollbar-width:thin;
+  scrollbar-color:var(--border) transparent;
+}
+
+.sf-notification-list::-webkit-scrollbar{
+  width:5px;
+}
+
+.sf-notification-list::-webkit-scrollbar-track{
+  background:transparent;
+}
+
+.sf-notification-list::-webkit-scrollbar-thumb{
+  background:var(--border);
+  border-radius:10px;
+}
+
+/* =========================
+   Notification item
+   ========================= */
+
+.sf-notification-item{
+  position:relative;
+  width:100%;
+  display:flex;
+  align-items:flex-start;
+  gap:11px;
+
+  padding:13px 42px 13px 15px;
+
+  border:0;
+  border-bottom:1px solid var(--border);
+  background:transparent;
+
+  text-align:start;
+  color:var(--text);
+
+  cursor:pointer;
+
+  transition:
+    background .18s ease,
+    opacity .18s ease;
+}
+
+.sf-notification-item:last-child{
+  border-bottom:0;
+}
+
+.sf-notification-item:hover{
+  background:var(--panel-raised);
+}
+
+.sf-notification-item.unread{
+  background:color-mix(
+    in srgb,
+    var(--gold) 5%,
+    transparent
+  );
+}
+
+.sf-notification-item.unread:hover{
+  background:color-mix(
+    in srgb,
+    var(--gold) 9%,
+    transparent
+  );
+}
+
+/* =========================
+   Icon
+   ========================= */
+
+.sf-notification-item-icon{
+  width:34px;
+  height:34px;
+  min-width:34px;
+
+  border-radius:50%;
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  background:var(--panel-raised);
+  border:1px solid var(--border);
+  color:var(--gold);
+}
+
+.sf-notification-item-icon svg{
+  width:16px;
+  height:16px;
+}
+
+/* =========================
+   Content
+   ========================= */
+
+.sf-notification-item-content{
+  min-width:0;
+  flex:1;
+  padding-top:1px;
+}
+
+.sf-notification-item-title-row{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  min-width:0;
+}
+
+.sf-notification-item-title{
+  margin:0;
+  color:var(--text);
+  font-size:13px;
+  font-weight:650;
+  line-height:1.35;
+
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.sf-notification-unread-dot{
+  width:6px;
+  height:6px;
+  min-width:6px;
+  border-radius:50%;
+  background:var(--gold);
+}
+
+.sf-notification-item-message{
+  margin:3px 0 0;
+
+  color:var(--muted);
+  font-size:11.5px;
+  line-height:1.45;
+
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  overflow:hidden;
+}
+
+.sf-notification-item-time{
+  display:block;
+  margin-top:5px;
+
+  color:var(--muted);
+  opacity:.7;
+
+  font-size:10px;
+  line-height:1.2;
+}
+
+/* =========================
+   Delete button
+   ========================= */
+
+.sf-notification-delete{
+  position:absolute;
+  top:50%;
+  right:10px;
+  transform:translateY(-50%);
+
+  width:27px;
+  height:27px;
+
+  border:0;
+  border-radius:7px;
+
+  background:transparent;
+  color:var(--muted);
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  cursor:pointer;
+
+  opacity:0;
+  transition:
+    opacity .18s ease,
+    color .18s ease,
+    background .18s ease;
+}
+
+.sf-notification-item:hover .sf-notification-delete,
+.sf-notification-delete:focus-visible{
+  opacity:1;
+}
+
+.sf-notification-delete:hover{
+  color:#ef6b6b;
+  background:rgba(239,107,107,.1);
+}
+
+.sf-notification-delete svg{
+  width:14px;
+  height:14px;
+}
+
+/* =========================
+   Empty / loading
+   ========================= */
+
+.sf-notification-empty,
+.sf-notification-loading{
+  min-height:150px;
+
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+
+  padding:25px 20px;
+
+  color:var(--muted);
+  text-align:center;
+}
+
+.sf-notification-empty-icon{
+  width:42px;
+  height:42px;
+  margin-bottom:10px;
+
+  border-radius:50%;
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  background:var(--panel-raised);
+  border:1px solid var(--border);
+
+  color:var(--muted);
+}
+
+.sf-notification-empty-icon svg{
+  width:19px;
+  height:19px;
+}
+
+.sf-notification-empty-title{
+  margin:0;
+  color:var(--text);
+  font-size:13px;
+  font-weight:600;
+}
+
+.sf-notification-empty-text{
+  margin:5px 0 0;
+  color:var(--muted);
+  font-size:11px;
+}
+
+/* =========================
+   Loading spinner
+   ========================= */
+
+.sf-notification-spinner{
+  width:23px;
+  height:23px;
+
+  border:2px solid var(--border);
+  border-top-color:var(--gold);
+  border-radius:50%;
+
+  animation:sfNotificationSpin .7s linear infinite;
+}
+
+@keyframes sfNotificationSpin{
+  to{
+    transform:rotate(360deg);
+  }
+}
+
+/* =========================
+   Tablet
+   ========================= */
+
+@media(max-width:700px){
+
+  .sf-notification-button{
+    width:36px;
+    height:36px;
+  }
+
+  .sf-notification-button svg{
+    width:16px;
+    height:16px;
+  }
+
+  .sf-notification-panel{
+    width:350px;
+    max-width:calc(100vw - 20px);
+  }
+}
+
+/* =========================
+   Mobile
+   ========================= */
+
+@media(max-width:480px){
+
+  /*
+    Navbar.css hides .icon-btn on small phones.
+    Our notification button has its own class,
+    so it remains visible beside the avatar.
+  */
+
+  .sf-notification-wrap{
+    display:flex;
+  }
+
+  .sf-notification-button{
+    width:35px;
+    height:35px;
+  }
+
+  .sf-notification-badge{
+    top:-2px;
+    right:-2px;
+    min-width:15px;
+    height:15px;
+    font-size:8px;
+  }
+
+  .sf-notification-panel{
+    position:fixed;
+
+    top:58px;
+    right:10px;
+    left:auto;
+
+    width:min(360px,calc(100vw - 20px));
+    max-width:none;
+
+    max-height:calc(100vh - 75px);
+
+    border-radius:13px;
+  }
+
+  [dir="rtl"] .sf-notification-panel{
+    right:auto;
+    left:10px;
+  }
+
+  .sf-notification-header{
+    padding:14px 14px 12px;
+  }
+
+  .sf-notification-item{
+    padding:12px 40px 12px 13px;
+  }
+
+  .sf-notification-item-icon{
+    width:32px;
+    height:32px;
+    min-width:32px;
+  }
+
+  .sf-notification-delete{
+    opacity:1;
+    right:8px;
+  }
+}
+
+/* =========================
+   Very small phones
+   ========================= */
+
+@media(max-width:360px){
+
+  .sf-notification-button{
+    width:33px;
+    height:33px;
+  }
+
+  .sf-notification-panel{
+    top:56px;
+    right:8px;
+    width:calc(100vw - 16px);
+  }
+
+  [dir="rtl"] .sf-notification-panel{
+    right:auto;
+    left:8px;
+  }
+
+  .sf-notification-header{
+    padding:12px;
+  }
+
+  .sf-notification-item{
+    gap:9px;
+    padding:11px 38px 11px 11px;
+  }
+
+  .sf-notification-item-icon{
+    width:30px;
+    height:30px;
+    min-width:30px;
+  }
+
+  .sf-notification-item-title{
+    font-size:12px;
+  }
+
+  .sf-notification-item-message{
+    font-size:10.5px;
+  }
+}
+
+/* =========================
+   Light theme
+   ========================= */
+
+[data-theme="light"] .sf-notification-panel{
+  box-shadow:
+    0 18px 45px rgba(0,0,0,.16),
+    0 3px 12px rgba(0,0,0,.08);
+}
+
+[data-theme="light"] .sf-notification-badge{
+  border-color:var(--bg);
+}
