@@ -9,6 +9,7 @@ import WatchParty from './pages/WatchParty';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import ErrorBoundary from './components/ErrorBoundary';
+import Notifications from './components/Notifications';
 
 // Pages
 import Home from './pages/Home';
@@ -26,32 +27,164 @@ export default function App() {
   const location = useLocation();
 
   const [settings, setSettings] = useState({
-    maintenance_mode: 'false',
+    maintenance_mode: false,
     announcement_bar: '',
-    diagnostics_enabled: 'false'
+    diagnostics_enabled: false,
   });
 
   const [loading, setLoading] = useState(true);
 
-  // جلب إعدادات الموقع من Supabase
+  const [showMaintenance, setShowMaintenance] =
+    useState(false);
+
+  /*
+   * تحويل أي قيمة جاية من Supabase إلى Boolean
+   *
+   * Admin.jsx يخزن maintenance_mode هكذا:
+   * { enabled: true }
+   *
+   * لكن نخلي App يفهم أيضاً:
+   * true
+   * "true"
+   * "false"
+   * { enabled: false }
+   */
+  const parseBooleanSetting = (value) => {
+    if (
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value)
+    ) {
+      if (
+        Object.prototype.hasOwnProperty.call(
+          value,
+          'enabled'
+        )
+      ) {
+        return Boolean(value.enabled);
+      }
+
+      return false;
+    }
+
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value
+        .trim()
+        .toLowerCase();
+
+      if (
+        normalized === 'true' ||
+        normalized === '1' ||
+        normalized === 'yes'
+      ) {
+        return true;
+      }
+
+      return false;
+    }
+
+    if (typeof value === 'number') {
+      return value === 1;
+    }
+
+    return false;
+  };
+
+  /*
+   * جلب إعدادات الموقع
+   */
   useEffect(() => {
+    let mounted = true;
+
     const fetchSettings = async () => {
       try {
         const { data, error } = await supabase
           .from('site_settings')
           .select('*');
 
-        if (data && !error) {
-          const config = {};
+        if (error) {
+          console.error(
+            'فشل جلب إعدادات الموقع:',
+            error
+          );
 
-          data.forEach((item) => {
-            config[item.key] = item.value;
-          });
+          return;
+        }
 
-          setSettings((prev) => ({
-            ...prev,
-            ...config
-          }));
+        if (!mounted) return;
+
+        const config = {};
+
+        (data || []).forEach((item) => {
+          if (!item?.key) return;
+
+          let value = item.value;
+
+          /*
+           * Supabase قد يرجع JSON كـ string
+           * لذلك نحاول نفك JSON إذا كان String.
+           */
+          if (typeof value === 'string') {
+            try {
+              value = JSON.parse(value);
+            } catch {
+              // نخليها String عادي
+            }
+          }
+
+          if (item.key === 'maintenance_mode') {
+            config.maintenance_mode =
+              parseBooleanSetting(value);
+
+            return;
+          }
+
+          if (
+            item.key === 'diagnostics_enabled'
+          ) {
+            config.diagnostics_enabled =
+              parseBooleanSetting(value);
+
+            return;
+          }
+
+          if (item.key === 'announcement_bar') {
+            config.announcement_bar =
+              typeof value === 'string'
+                ? value
+                : '';
+
+            return;
+          }
+
+          config[item.key] = value;
+        });
+
+        setSettings((prev) => ({
+          ...prev,
+          ...config,
+        }));
+
+        /*
+         * إذا كانت الصيانة مفعلة:
+         * نظهر الـPopup.
+         *
+         * Admin لا يتم تعطيله.
+         */
+        const maintenanceActive =
+          Boolean(config.maintenance_mode);
+
+        if (
+          maintenanceActive &&
+          !location.pathname.startsWith('/admin')
+        ) {
+          setShowMaintenance(true);
+        } else {
+          setShowMaintenance(false);
         }
       } catch (err) {
         console.error(
@@ -59,77 +192,47 @@ export default function App() {
           err
         );
       } finally {
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchSettings();
+
+    return () => {
+      mounted = false;
+    };
   }, [location.pathname]);
 
-  // ============================================================
-  // MAINTENANCE
-  // ============================================================
+  /*
+   * إذا دخل المستخدم Admin:
+   * ما نظهروش Popup الصيانة فوق لوحة التحكم.
+   */
+  useEffect(() => {
+    if (
+      location.pathname.startsWith('/admin')
+    ) {
+      setShowMaintenance(false);
+      return;
+    }
+
+    if (settings.maintenance_mode) {
+      setShowMaintenance(true);
+    }
+  }, [
+    location.pathname,
+    settings.maintenance_mode,
+  ]);
 
   const isAdminRoute =
     location.pathname.startsWith('/admin');
 
-  const isMaintenanceActive =
-    settings.maintenance_mode === 'true' &&
-    !isAdminRoute;
-
-  if (!loading && isMaintenanceActive) {
-    return (
-      <div
-        style={{
-          background: '#0d0d0d',
-          color: '#fff',
-          minHeight: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          textAlign: 'center',
-          padding: '20px',
-          direction: 'rtl',
-          fontFamily: 'system-ui, sans-serif'
-        }}
-      >
-        <h1
-          style={{
-            fontSize: '36px',
-            color: '#e50914',
-            marginBottom: '10px'
-          }}
-        >
-          🚧 الموقع في حالة صيانة مؤقتة
-        </h1>
-
-        <p
-          style={{
-            color: '#aaa',
-            fontSize: '18px',
-            maxWidth: '500px',
-            lineHeight: '1.6'
-          }}
-        >
-          نحن نقوم بعمل بعض التحديثات
-          والإصلاحات لتطوير الخدمة. سنعود
-          للعمل قريباً جداً!
-        </p>
-      </div>
-    );
-  }
-
-  // ============================================================
-  // APP
-  // ============================================================
-
   return (
     <ErrorBoundary>
-      {/* ======================================================
+      {/* =========================
           ANNOUNCEMENT BAR
-      ====================================================== */}
-
+      ========================== */}
       {settings.announcement_bar &&
         settings.announcement_bar.trim() !== '' && (
           <div
@@ -141,23 +244,21 @@ export default function App() {
               fontWeight: 'bold',
               fontSize: '14px',
               position: 'relative',
-              zIndex: 9999
+              zIndex: 9999,
             }}
           >
             📢 {settings.announcement_bar}
           </div>
         )}
 
-      {/* ======================================================
+      {/* =========================
           NAVBAR
-      ====================================================== */}
-
+      ========================== */}
       <Navbar />
 
-      {/* ======================================================
+      {/* =========================
           ROUTES
-      ====================================================== */}
-
+      ========================== */}
       <Routes>
         <Route
           path="/"
@@ -250,31 +351,181 @@ export default function App() {
         />
       </Routes>
 
-      {/* ======================================================
+      {/* =========================
           FOOTER
-      ====================================================== */}
-
+      ========================== */}
       <Footer />
 
-      {/* ======================================================
-          DIAGNOSTICS
-      ====================================================== */}
+      {/* =========================
+          NOTIFICATIONS
+      ========================== */}
+      <Notifications />
 
-      {settings.diagnostics_enabled === 'true' && (
+      {/* =========================
+          MAINTENANCE POPUP
+      ========================== */}
+      {showMaintenance && !isAdminRoute && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 99998,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+            background:
+              'rgba(0,0,0,0.72)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter:
+              'blur(8px)',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '460px',
+              background:
+                'linear-gradient(145deg,#111827,#0b0f19)',
+              border:
+                '1px solid rgba(228,200,138,0.25)',
+              borderRadius: '22px',
+              padding: '30px 24px',
+              textAlign: 'center',
+              color: '#fff',
+              boxShadow:
+                '0 30px 100px rgba(0,0,0,.65), 0 0 50px rgba(228,200,138,.08)',
+              animation:
+                'sfMaintenancePop .3s ease-out',
+            }}
+          >
+            <div
+              style={{
+                width: '70px',
+                height: '70px',
+                margin: '0 auto 18px',
+                borderRadius: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '34px',
+                background:
+                  'linear-gradient(135deg,#e4c88a,#b79a5e)',
+                color: '#18140b',
+                boxShadow:
+                  '0 12px 35px rgba(228,200,138,.22)',
+              }}
+            >
+              🛠️
+            </div>
+
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '7px',
+                padding: '6px 12px',
+                marginBottom: '13px',
+                borderRadius: '999px',
+                background:
+                  'rgba(228,200,138,.08)',
+                border:
+                  '1px solid rgba(228,200,138,.2)',
+                color: '#e4c88a',
+                fontSize: '11px',
+                fontWeight: 800,
+                letterSpacing: '.5px',
+              }}
+            >
+              ● MAINTENANCE MODE
+            </div>
+
+            <h2
+              style={{
+                margin: '0 0 10px',
+                fontSize: '25px',
+                fontWeight: 800,
+              }}
+            >
+              الموقع في صيانة مؤقتة
+            </h2>
+
+            <p
+              style={{
+                margin: '0 auto',
+                maxWidth: '370px',
+                color: '#9ca3af',
+                fontSize: '14px',
+                lineHeight: 1.7,
+              }}
+            >
+              نقوم حالياً ببعض التحديثات
+              والتحسينات على StreamFlix.
+              يمكنك الاستمرار في استعمال الموقع،
+              وقد تكون بعض الميزات مؤقتاً غير
+              متاحة.
+            </p>
+
+            <button
+              type="button"
+              onClick={() =>
+                setShowMaintenance(false)
+              }
+              style={{
+                marginTop: '22px',
+                border: '1px solid rgba(228,200,138,.25)',
+                borderRadius: '12px',
+                padding: '11px 22px',
+                background:
+                  'rgba(228,200,138,.08)',
+                color: '#e4c88a',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              فهمت، متابعة الموقع
+            </button>
+          </div>
+
+          <style>
+            {`
+              @keyframes sfMaintenancePop {
+                from {
+                  opacity: 0;
+                  transform: translateY(12px) scale(.97);
+                }
+
+                to {
+                  opacity: 1;
+                  transform: translateY(0) scale(1);
+                }
+              }
+            `}
+          </style>
+        </div>
+      )}
+
+      {/* =========================
+          DIAGNOSTICS
+      ========================== */}
+      {settings.diagnostics_enabled ===
+        true && (
         <div
           style={{
             position: 'fixed',
             bottom: '15px',
             left: '15px',
-            background: 'rgba(0, 0, 0, 0.85)',
-            border: '1px solid #00ff00',
+            background:
+              'rgba(0, 0, 0, 0.85)',
+            border:
+              '1px solid #00ff00',
             color: '#00ff00',
             padding: '8px 12px',
             borderRadius: '8px',
             fontSize: '12px',
             zIndex: 99999,
             fontFamily: 'monospace',
-            direction: 'ltr'
+            direction: 'ltr',
           }}
         >
           <div>
@@ -288,7 +539,10 @@ export default function App() {
           </div>
 
           <div>
-            Maint: {settings.maintenance_mode}
+            Maint:{' '}
+            {String(
+              settings.maintenance_mode
+            )}
           </div>
         </div>
       )}
