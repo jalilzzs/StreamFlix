@@ -44,6 +44,13 @@ const toggleBadgeValue = (badges, type) => {
   return [...current, type];
 };
 
+const normalizeUser = (user) => ({
+  ...user,
+  badges: normalizeBadges(user.badges),
+  is_vip: user.is_premium === true,
+  is_banned: false,
+});
+
 export default function Admin() {
   const navigate = useNavigate();
 
@@ -107,7 +114,7 @@ export default function Admin() {
      LOCK SYSTEM
   ========================================================= */
 
-  const locked = () => {
+  const locked = useCallback(() => {
     if (!lockUntil) return false;
 
     if (lockUntil > Date.now()) {
@@ -125,70 +132,42 @@ export default function Admin() {
     setFailed(0);
 
     return false;
-  };
+  }, [lockUntil]);
 
-  const fail = () => {
-    const next = failed + 1;
+  const fail = useCallback(() => {
+    setFailed((previous) => {
+      const next = previous + 1;
 
-    setFailed(next);
+      if (next >= MAX_FAILED) {
+        setLockUntil(Date.now() + LOCK_MS);
 
-    if (next >= MAX_FAILED) {
-      setLockUntil(Date.now() + LOCK_MS);
+        setMsg({
+          text:
+            '🔒 تم قفل المحاولات لمدة 15 دقيقة بسبب كثرة المحاولات الفاشلة.',
+          type: 'error',
+        });
+      }
 
-      setMsg({
-        text:
-          '🔒 تم قفل المحاولات لمدة 15 دقيقة بسبب كثرة المحاولات الفاشلة.',
-        type: 'error',
-      });
-    }
-  };
+      return next;
+    });
+  }, []);
 
   /* =========================================================
      ADMIN CHECK
   ========================================================= */
 
-  const checkAdmin = useCallback(async (userId) => {
-    if (!userId) {
-      setIsAdmin(false);
-      return false;
-    }
-
-    /*
-      نستعمل is_admin() أولاً.
-      هذه هي الطريقة الأنظف لأن الدالة عندنا
-      SECURITY DEFINER ومصممة للتحقق من admin_users.
-    */
-
-    const { data: rpcData, error: rpcError } =
-      await supabase.rpc('is_admin');
-
-    if (!rpcError) {
-      const allowed = rpcData === true;
-
-      setIsAdmin(allowed);
-
-      return allowed;
-    }
-
-    /*
-      Fallback في حالة أن RPC غير متاح لأي سبب.
-    */
-
-    const { data, error } = await supabase
-      .from('admin_users')
-      .select('user_id')
-      .eq('user_id', userId)
-      .maybeSingle();
+  const checkAdmin = useCallback(async () => {
+    const { data, error } = await supabase.rpc('is_admin');
 
     if (error) {
-      console.error('Admin check error:', error);
+      console.error('is_admin RPC error:', error);
 
       setIsAdmin(false);
 
       return false;
     }
 
-    const allowed = !!data;
+    const allowed = data === true;
 
     setIsAdmin(allowed);
 
@@ -204,9 +183,7 @@ export default function Admin() {
       data: { session },
     } = await supabase.auth.getSession();
 
-    const user = session?.user;
-
-    if (!user) {
+    if (!session?.user) {
       setAuth(false);
       setIsAdmin(false);
       setStep('login');
@@ -214,7 +191,7 @@ export default function Admin() {
       return false;
     }
 
-    const allowed = await checkAdmin(user.id);
+    const allowed = await checkAdmin();
 
     if (!allowed) {
       setAuth(false);
@@ -272,7 +249,7 @@ export default function Admin() {
         return;
       }
 
-      const allowed = await checkAdmin(session.user.id);
+      const allowed = await checkAdmin();
 
       if (!mounted) return;
 
@@ -286,6 +263,7 @@ export default function Admin() {
           type: 'error',
         });
       } else {
+        setIsAdmin(true);
         setStep('pin');
       }
 
@@ -313,7 +291,7 @@ export default function Admin() {
           event === 'TOKEN_REFRESHED' ||
           event === 'USER_UPDATED'
         ) {
-          const allowed = await checkAdmin(session.user.id);
+          const allowed = await checkAdmin();
 
           if (!mounted) return;
 
@@ -332,9 +310,13 @@ export default function Admin() {
 
           setIsAdmin(true);
 
-          if (!auth) {
-            setStep('pin');
-          }
+          setStep((currentStep) => {
+            if (currentStep === 'login') {
+              return 'pin';
+            }
+
+            return currentStep;
+          });
         }
       }
     );
@@ -343,7 +325,7 @@ export default function Admin() {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [checkAdmin, auth]);
+  }, [checkAdmin]);
 
   /* =========================================================
      GOOGLE LOGIN
@@ -385,7 +367,7 @@ export default function Admin() {
      FETCH SETTINGS
   ========================================================= */
 
-  const fetchSettings = async () => {
+  const fetchSettings = useCallback(async () => {
     const { data, error } = await supabase
       .from('site_settings')
       .select('key,value');
@@ -426,7 +408,43 @@ export default function Admin() {
       vip_watch_party:
         result.vip_watch_party !== false,
     });
-  };
+  }, []);
+
+  /* =========================================================
+     UPDATE STATS
+  ========================================================= */
+
+  const calculateStats = useCallback((userList, titleList) => {
+    const us = userList || [];
+    const ts = titleList || [];
+
+    setStats({
+      totalTitles: ts.length,
+      totalUsers: us.length,
+
+      bannedUsers: 0,
+
+      vipUsers: us.filter(
+        (x) => x.is_premium === true
+      ).length,
+
+      verifiedUsers: us.filter((x) =>
+        hasBadge(x.badges, 'verification')
+      ).length,
+
+      officialUsers: us.filter((x) =>
+        hasBadge(x.badges, 'official')
+      ).length,
+
+      ownerUsers: us.filter((x) =>
+        hasBadge(x.badges, 'owner')
+      ).length,
+
+      hiddenTitles: ts.filter(
+        (x) => x.is_hidden === true
+      ).length,
+    });
+  }, []);
 
   /* =========================================================
      FETCH DATA
@@ -437,18 +455,21 @@ export default function Admin() {
 
     setLoading(true);
 
+    setMsg({
+      text: '',
+      type: '',
+    });
+
     try {
       await fetchSettings();
 
-      /*
-        مهم جداً:
-        نستعمل فقط الأعمدة التي أصبح النظام الجديد يعتمد عليها.
-        badges الآن JSONB وليس verification_badge / official_badge...
-      */
+      /* =========================
+         USERS
+      ========================= */
 
       const {
-        data: u,
-        error: ue,
+        data: userData,
+        error: userError,
       } = await supabase
         .from('profiles')
         .select(`
@@ -466,80 +487,78 @@ export default function Admin() {
           ascending: false,
         });
 
-      if (ue) throw ue;
+      if (userError) throw userError;
 
-      const normalizedUsers = (u || []).map((user) => ({
-        ...user,
-        badges: normalizeBadges(user.badges),
-        is_vip: user.is_premium === true,
-        is_banned: false,
-      }));
+      const normalizedUsers = (userData || []).map(
+        normalizeUser
+      );
 
-      setUsers(normalizedUsers);
+      /* =========================
+         CONTENT
+      ========================= */
 
       const {
-        data: t,
-        error: te,
+        data: titleData,
+        error: titleError,
       } = await supabase
         .from('titles')
         .select('*')
         .order('id', {
           ascending: false,
-        })
-        .limit(500);
+        });
 
-      if (te) throw te;
+      if (titleError) throw titleError;
 
-      setTitles(t || []);
+      const allTitles = titleData || [];
 
-      const us = normalizedUsers;
-      const ts = t || [];
+      setUsers(normalizedUsers);
+      setTitles(allTitles);
 
-      setStats({
-        totalTitles: ts.length,
-        totalUsers: us.length,
+      calculateStats(
+        normalizedUsers,
+        allTitles
+      );
 
-        /*
-          الحظر غير مربوط حالياً بالـschema الجديد.
-          نخليه 0 بدل ما نخلي fetch يطيح.
-        */
-        bannedUsers: 0,
+      log(
+        `✅ تم تحميل ${normalizedUsers.length} مستخدم و ${allTitles.length} محتوى.`
+      );
 
-        vipUsers: us.filter(
-          (x) => x.is_premium === true
-        ).length,
+      if (normalizedUsers.length === 0) {
+        log(
+          '⚠️ لم يتم العثور على أي مستخدمين في profiles.'
+        );
+      }
 
-        verifiedUsers: us.filter((x) =>
-          hasBadge(x.badges, 'verification')
-        ).length,
-
-        officialUsers: us.filter((x) =>
-          hasBadge(x.badges, 'official')
-        ).length,
-
-        ownerUsers: us.filter((x) =>
-          hasBadge(x.badges, 'owner')
-        ).length,
-
-        hiddenTitles: ts.filter(
-          (x) => x.is_hidden === true
-        ).length,
-      });
-
-      log('✅ تم تحديث بيانات لوحة الإدارة.');
+      if (allTitles.length === 0) {
+        log(
+          '⚠️ لم يتم العثور على أي محتوى في titles.'
+        );
+      }
     } catch (error) {
       console.error('Admin fetch error:', error);
 
       setMsg({
-        text: `❌ ${error.message || 'حدث خطأ أثناء جلب البيانات.'}`,
+        text: `❌ ${
+          error?.message ||
+          'حدث خطأ أثناء جلب البيانات.'
+        }`,
         type: 'error',
       });
 
-      log(`❌ فشل تحميل البيانات: ${error.message}`);
+      log(
+        `❌ فشل تحميل البيانات: ${
+          error?.message || 'Unknown error'
+        }`
+      );
     } finally {
       setLoading(false);
     }
-  }, [guardAction, log]);
+  }, [
+    guardAction,
+    fetchSettings,
+    calculateStats,
+    log,
+  ]);
 
   /* =========================================================
      PIN
@@ -597,6 +616,17 @@ export default function Admin() {
     setPin('');
     setUsers([]);
     setTitles([]);
+
+    setStats({
+      totalTitles: 0,
+      totalUsers: 0,
+      bannedUsers: 0,
+      vipUsers: 0,
+      verifiedUsers: 0,
+      officialUsers: 0,
+      ownerUsers: 0,
+      hiddenTitles: 0,
+    });
   };
 
   /* =========================================================
@@ -607,11 +637,6 @@ export default function Admin() {
     if (!(await guardAction())) return;
 
     let databaseValue = value;
-
-    /*
-      maintenance_mode عندنا مخزن JSON:
-      {"enabled":true}
-    */
 
     if (key === 'maintenance_mode') {
       databaseValue = {
@@ -648,7 +673,11 @@ export default function Admin() {
 
     log(
       `⚙️ تم تغيير إعداد ${key} إلى ${
-        value === true ? 'مفعل' : value === false ? 'معطل' : value
+        value === true
+          ? 'مفعل'
+          : value === false
+          ? 'معطل'
+          : value
       }`
     );
 
@@ -656,7 +685,7 @@ export default function Admin() {
       text:
         key === 'maintenance_mode'
           ? value
-            ? '🚧 تم تفعيل وضع الصيانة بنجاح.'
+            ? '🚧 تم تفعيل وضع الصيانة بنجاح. سيظهر كنافذة عند دخول الموقع.'
             : '✅ تم إيقاف وضع الصيانة.'
           : '✅ تم حفظ الإعداد.',
       type: 'success',
@@ -672,27 +701,28 @@ export default function Admin() {
 
     const isVip = plan !== 'none';
 
-    const oldBadges = normalizeBadges(user.badges);
+    const oldBadges = normalizeBadges(
+      user.badges
+    );
 
     let newBadges = oldBadges;
 
-    /*
-      VIP الشهري → Verified
-      VIP السنوي → Official
-      VIP اليدوي → ما نبدلوش البادجات
-      إزالة VIP → نزيل فقط badge المرتبط تلقائياً
-    */
-
     if (plan === 'month') {
-      newBadges = oldBadges.includes('verification')
-        ? oldBadges
-        : [...oldBadges, 'verification'];
+      if (!oldBadges.includes('verification')) {
+        newBadges = [
+          ...oldBadges,
+          'verification',
+        ];
+      }
     }
 
     if (plan === 'year') {
-      newBadges = oldBadges.includes('official')
-        ? oldBadges
-        : [...oldBadges, 'official'];
+      if (!oldBadges.includes('official')) {
+        newBadges = [
+          ...oldBadges,
+          'official',
+        ];
+      }
     }
 
     if (plan === 'none') {
@@ -730,7 +760,10 @@ export default function Admin() {
       .single();
 
     if (error) {
-      console.error('VIP update error:', error);
+      console.error(
+        'VIP update error:',
+        error
+      );
 
       setMsg({
         text: `❌ ${error.message}`,
@@ -740,50 +773,32 @@ export default function Admin() {
       return;
     }
 
-    const updatedUser = {
-      ...data,
-      badges: normalizeBadges(data.badges),
-      is_vip: data.is_premium === true,
-      is_banned: false,
-    };
+    const updatedUser =
+      normalizeUser(data);
 
-    setUsers((previous) =>
-      previous.map((item) =>
-        item.id === user.id
-          ? updatedUser
-          : item
-      )
-    );
-
-    setStats((previous) => {
-      const nextUsers = users.map((item) =>
-        item.id === user.id
-          ? updatedUser
-          : item
+    setUsers((previous) => {
+      const nextUsers = previous.map(
+        (item) =>
+          item.id === user.id
+            ? updatedUser
+            : item
       );
 
-      return {
-        ...previous,
-        vipUsers: nextUsers.filter(
-          (item) => item.is_premium === true
-        ).length,
-        verifiedUsers: nextUsers.filter((item) =>
-          hasBadge(item.badges, 'verification')
-        ).length,
-        officialUsers: nextUsers.filter((item) =>
-          hasBadge(item.badges, 'official')
-        ).length,
-        ownerUsers: nextUsers.filter((item) =>
-          hasBadge(item.badges, 'owner')
-        ).length,
-      };
+      calculateStats(
+        nextUsers,
+        titles
+      );
+
+      return nextUsers;
     });
 
     log(
       `⭐ تم ${
         isVip ? 'تفعيل' : 'إزالة'
       } VIP للمستخدم ${
-        user.display_name || user.user_code || user.id
+        user.display_name ||
+        user.user_code ||
+        user.id
       }`
     );
 
@@ -802,8 +817,14 @@ export default function Admin() {
   const badge = async (user, type) => {
     if (!(await guardAction())) return;
 
-    const current = normalizeBadges(user.badges);
-    const next = toggleBadgeValue(current, type);
+    const current = normalizeBadges(
+      user.badges
+    );
+
+    const next = toggleBadgeValue(
+      current,
+      type
+    );
 
     const {
       data,
@@ -829,7 +850,10 @@ export default function Admin() {
       .single();
 
     if (error) {
-      console.error('Badge update error:', error);
+      console.error(
+        'Badge update error:',
+        error
+      );
 
       setMsg({
         text: `❌ ${error.message}`,
@@ -839,54 +863,48 @@ export default function Admin() {
       return;
     }
 
-    const updatedUser = {
-      ...data,
-      badges: normalizeBadges(data.badges),
-      is_vip: data.is_premium === true,
-      is_banned: false,
-    };
+    const updatedUser =
+      normalizeUser(data);
 
-    setUsers((previous) =>
-      previous.map((item) =>
-        item.id === user.id
-          ? updatedUser
-          : item
-      )
-    );
-
-    setStats((previous) => {
-      const nextUsers = users.map((item) =>
-        item.id === user.id
-          ? updatedUser
-          : item
+    setUsers((previous) => {
+      const nextUsers = previous.map(
+        (item) =>
+          item.id === user.id
+            ? updatedUser
+            : item
       );
 
-      return {
-        ...previous,
-        verifiedUsers: nextUsers.filter((item) =>
-          hasBadge(item.badges, 'verification')
-        ).length,
-        officialUsers: nextUsers.filter((item) =>
-          hasBadge(item.badges, 'official')
-        ).length,
-        ownerUsers: nextUsers.filter((item) =>
-          hasBadge(item.badges, 'owner')
-        ).length,
-      };
+      calculateStats(
+        nextUsers,
+        titles
+      );
+
+      return nextUsers;
     });
 
-    const enabled = next.includes(type);
+    const enabled =
+      next.includes(type);
 
     log(
-      `${enabled ? '🏅 إعطاء' : '❌ نزع'} ${
+      `${
+        enabled
+          ? '🏅 إعطاء'
+          : '❌ نزع'
+      } ${
         BADGES[type]?.label || type
       } من ${
-        user.display_name || user.user_code || user.id
+        user.display_name ||
+        user.user_code ||
+        user.id
       }`
     );
 
     setMsg({
-      text: `${enabled ? '🏅 تم إعطاء' : '❌ تم نزع'} ${
+      text: `${
+        enabled
+          ? '🏅 تم إعطاء'
+          : '❌ تم نزع'
+      } ${
         BADGES[type]?.label || type
       } بنجاح.`,
       type: 'success',
@@ -897,13 +915,8 @@ export default function Admin() {
      BAN
   ========================================================= */
 
-  const ban = async (user) => {
+  const ban = async () => {
     if (!(await guardAction())) return;
-
-    /*
-      الحظر غير مربوط في SQL الجديد الذي طبقناه.
-      لذلك لا ننفذ UPDATE على عمود غير مضمون وجوده.
-    */
 
     setMsg({
       text:
@@ -943,27 +956,43 @@ export default function Admin() {
       return;
     }
 
-    setTitles((previous) =>
-      previous.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              [field]: newValue,
-            }
-          : item
-      )
-    );
+    setTitles((previous) => {
+      const nextTitles = previous.map(
+        (item) =>
+          item.id === id
+            ? {
+                ...item,
+                [field]: newValue,
+              }
+            : item
+      );
+
+      calculateStats(
+        users,
+        nextTitles
+      );
+
+      return nextTitles;
+    });
 
     log(
       `🎬 تم تحديث ${field} للمحتوى ${id}`
     );
+
+    setMsg({
+      text: '✅ تم تحديث المحتوى.',
+      type: 'success',
+    });
   };
 
   /* =========================================================
      DELETE TITLE
   ========================================================= */
 
-  const delTitle = async (id, name) => {
+  const delTitle = async (
+    id,
+    name
+  ) => {
     if (!(await guardAction())) return;
 
     if (
@@ -990,11 +1019,18 @@ export default function Admin() {
       return;
     }
 
-    setTitles((previous) =>
-      previous.filter(
+    setTitles((previous) => {
+      const nextTitles = previous.filter(
         (item) => item.id !== id
-      )
-    );
+      );
+
+      calculateStats(
+        users,
+        nextTitles
+      );
+
+      return nextTitles;
+    });
 
     log(`🗑️ حذف ${name}`);
 
@@ -1048,11 +1084,13 @@ export default function Admin() {
 
           {step === 'login' ? (
             <>
-              <h2>دخول لوحة الإدارة</h2>
+              <h2>
+                دخول لوحة الإدارة
+              </h2>
 
               <p style={S.muted}>
-                الدخول عبر حساب Google المصرح
-                به في نظام Admin
+                الدخول عبر حساب Google
+                المصرح به في نظام Admin
               </p>
 
               <button
@@ -1082,7 +1120,9 @@ export default function Admin() {
               )}
 
               <button
-                onClick={() => navigate('/')}
+                onClick={() =>
+                  navigate('/')
+                }
                 style={S.link}
               >
                 ← العودة للموقع
@@ -1090,14 +1130,18 @@ export default function Admin() {
             </>
           ) : (
             <>
-              <h2>🛡️ التحقق النهائي</h2>
+              <h2>
+                🛡️ التحقق النهائي
+              </h2>
 
               <p style={S.muted}>
                 تم التحقق من حساب Admin.
                 أدخل PIN المسؤول.
               </p>
 
-              <form onSubmit={submitPin}>
+              <form
+                onSubmit={submitPin}
+              >
                 <input
                   autoFocus
                   value={pin}
@@ -1154,7 +1198,8 @@ export default function Admin() {
      FILTERS
   ========================================================= */
 
-  const searchUser = userSearch.toLowerCase();
+  const searchUser =
+    userSearch.toLowerCase();
 
   const fu = users.filter((user) =>
     [
@@ -1169,23 +1214,26 @@ export default function Admin() {
     )
   );
 
-  const searchTitle = titleSearch.toLowerCase();
+  const searchTitle =
+    titleSearch.toLowerCase();
 
-  const ft = titles.filter((title) => {
-    const name =
-      title.title ||
-      title.name ||
-      '';
+  const ft = titles.filter(
+    (title) => {
+      const name =
+        title.title ||
+        title.name ||
+        '';
 
-    return (
-      name
-        .toLowerCase()
-        .includes(searchTitle) ||
-      String(title.tmdb_id || '').includes(
-        titleSearch
-      )
-    );
-  });
+      return (
+        name
+          .toLowerCase()
+          .includes(searchTitle) ||
+        String(
+          title.tmdb_id || ''
+        ).includes(titleSearch)
+      );
+    }
+  );
 
   /* =========================================================
      ADMIN PANEL
@@ -1217,7 +1265,9 @@ export default function Admin() {
           <div style={S.row}>
             <button
               onClick={async () => {
-                if (await guardAction()) {
+                if (
+                  await guardAction()
+                ) {
                   navigate('/import');
                 }
               }}
@@ -1228,7 +1278,9 @@ export default function Admin() {
             </button>
 
             <button
-              onClick={() => navigate('/')}
+              onClick={() =>
+                navigate('/')
+              }
               style={S.dark}
             >
               🏠 الموقع
@@ -1341,7 +1393,11 @@ export default function Admin() {
                   style={S.stat}
                   key={item[2]}
                 >
-                  <b style={{ fontSize: 28 }}>
+                  <b
+                    style={{
+                      fontSize: 28,
+                    }}
+                  >
                     {item[0]}
                   </b>
 
@@ -1365,7 +1421,8 @@ export default function Admin() {
                 style={{
                   ...S.dark,
                   opacity:
-                    loading || !isAdmin
+                    loading ||
+                    !isAdmin
                       ? 0.5
                       : 1,
                 }}
@@ -1418,7 +1475,23 @@ export default function Admin() {
                 style={S.setting}
                 key={item[0]}
               >
-                <b>{item[1]}</b>
+                <div>
+                  <b>{item[1]}</b>
+
+                  {item[0] ===
+                    'maintenance_mode' && (
+                    <div
+                      style={{
+                        ...S.small,
+                        color: '#888',
+                      }}
+                    >
+                      تظهر نافذة الصيانة
+                      للمستخدمين عند دخول
+                      الموقع.
+                    </div>
+                  )}
+                </div>
 
                 <button
                   onClick={() => {
@@ -1460,11 +1533,13 @@ export default function Admin() {
                   }
                   disabled={!isAdmin}
                   onChange={(e) =>
-                    setSettings((previous) => ({
-                      ...previous,
-                      announcement_bar:
-                        e.target.value,
-                    }))
+                    setSettings(
+                      (previous) => ({
+                        ...previous,
+                        announcement_bar:
+                          e.target.value,
+                      })
+                    )
                   }
                 />
 
@@ -1504,7 +1579,7 @@ export default function Admin() {
 
               <input
                 style={S.search}
-                placeholder="🔎 بحث بالاسم / الكود / الولاية..."
+                placeholder="🔎 بحث بالاسم / الكود / الموقع..."
                 value={userSearch}
                 onChange={(e) =>
                   setUserSearch(
@@ -1517,7 +1592,9 @@ export default function Admin() {
             <div style={S.stack}>
               {fu.length === 0 ? (
                 <div style={S.empty}>
-                  لا يوجد مستخدمون مطابقون للبحث.
+                  {users.length === 0
+                    ? '⚠️ لم يتم تحميل أي مستخدم من قاعدة البيانات.'
+                    : 'لا يوجد مستخدمون مطابقون للبحث.'}
                 </div>
               ) : (
                 fu.map((user) => {
@@ -1532,22 +1609,30 @@ export default function Admin() {
                       key={user.id}
                     >
                       <div
-                        style={S.userTop}
+                        style={
+                          S.userTop
+                        }
                       >
                         <div
-                          style={S.userInfo}
+                          style={
+                            S.userInfo
+                          }
                         >
                           {user.avatar_url ? (
                             <img
                               src={
                                 user.avatar_url
                               }
-                              style={S.avatar}
+                              style={
+                                S.avatar
+                              }
                               alt=""
                             />
                           ) : (
                             <div
-                              style={S.avatar}
+                              style={
+                                S.avatar
+                              }
                             >
                               👤
                             </div>
@@ -1575,10 +1660,13 @@ export default function Admin() {
                             </b>
 
                             <div
-                              style={S.small}
+                              style={
+                                S.small
+                              }
                             >
                               {user.user_code ||
                                 'بدون كود'}
+
                               {user.wilaya
                                 ? ` • ${user.wilaya}`
                                 : ''}
@@ -1594,7 +1682,9 @@ export default function Admin() {
                                 {userBadges.map(
                                   (type) => (
                                     <span
-                                      key={type}
+                                      key={
+                                        type
+                                      }
                                       style={
                                         S.badgePill
                                       }
@@ -1629,7 +1719,9 @@ export default function Admin() {
                                 'none'
                               )
                             }
-                            disabled={!isAdmin}
+                            disabled={
+                              !isAdmin
+                            }
                             style={{
                               ...S.smallBtn,
                               opacity:
@@ -1648,7 +1740,9 @@ export default function Admin() {
                                 'month'
                               )
                             }
-                            disabled={!isAdmin}
+                            disabled={
+                              !isAdmin
+                            }
                             style={{
                               ...S.gold,
                               opacity:
@@ -1667,7 +1761,9 @@ export default function Admin() {
                                 'year'
                               )
                             }
-                            disabled={!isAdmin}
+                            disabled={
+                              !isAdmin
+                            }
                             style={{
                               ...S.orange,
                               opacity:
@@ -1686,7 +1782,9 @@ export default function Admin() {
                                 'manual'
                               )
                             }
-                            disabled={!isAdmin}
+                            disabled={
+                              !isAdmin
+                            }
                             style={{
                               ...S.purple,
                               opacity:
@@ -1701,7 +1799,9 @@ export default function Admin() {
                       </div>
 
                       <div style={S.sub}>
-                        <b>🏅 البادجات</b>
+                        <b>
+                          🏅 البادجات
+                        </b>
 
                         <div style={S.row}>
                           {[
@@ -1718,9 +1818,14 @@ export default function Admin() {
                               '👑 Owner',
                             ],
                           ].map(
-                            ([type, label]) => (
+                            ([
+                              type,
+                              label,
+                            ]) => (
                               <button
-                                key={type}
+                                key={
+                                  type
+                                }
                                 onClick={() =>
                                   badge(
                                     user,
@@ -1787,113 +1892,139 @@ export default function Admin() {
             </div>
 
             <div style={S.stack}>
-              {ft.map((title) => (
-                <div
-                  style={S.titleCard}
-                  key={title.id}
-                >
+              {ft.length === 0 ? (
+                <div style={S.empty}>
+                  {titles.length === 0
+                    ? '⚠️ لم يتم تحميل أي محتوى من قاعدة البيانات.'
+                    : 'لا يوجد محتوى مطابق للبحث.'}
+                </div>
+              ) : (
+                ft.map((title) => (
                   <div
-                    style={S.userInfo}
+                    style={
+                      S.titleCard
+                    }
+                    key={title.id}
                   >
-                    {(title.poster_path ||
-                      title.poster_url) && (
-                      <img
-                        src={
-                          title.poster_path ||
-                          title.poster_url
-                        }
-                        style={S.poster}
-                        alt=""
-                      />
-                    )}
+                    <div
+                      style={
+                        S.userInfo
+                      }
+                    >
+                      {(title.poster_path ||
+                        title.poster_url) && (
+                        <img
+                          src={
+                            title.poster_path ||
+                            title.poster_url
+                          }
+                          style={
+                            S.poster
+                          }
+                          alt=""
+                        />
+                      )}
 
-                    <div>
-                      <b>
-                        {title.title ||
-                          title.name}
-                      </b>
+                      <div>
+                        <b>
+                          {title.title ||
+                            title.name}
+                        </b>
 
-                      <div
-                        style={S.small}
-                      >
-                        {title.type ===
-                          'series' ||
-                        title.type === 'tv'
-                          ? 'مسلسل'
-                          : 'فيلم'}{' '}
-                        • TMDB{' '}
-                        {title.tmdb_id || '-'}
+                        <div
+                          style={
+                            S.small
+                          }
+                        >
+                          {title.type ===
+                            'series' ||
+                          title.type ===
+                            'tv'
+                            ? 'مسلسل'
+                            : 'فيلم'}{' '}
+                          • TMDB{' '}
+                          {title.tmdb_id ||
+                            '-'}
+                        </div>
                       </div>
                     </div>
+
+                    <div
+                      style={S.row}
+                    >
+                      <button
+                        onClick={() =>
+                          titleAction(
+                            title.id,
+                            'is_premium',
+                            title.is_premium
+                          )
+                        }
+                        disabled={
+                          !isAdmin
+                        }
+                        style={{
+                          ...S.smallBtn,
+                          opacity:
+                            !isAdmin
+                              ? 0.5
+                              : 1,
+                        }}
+                      >
+                        {title.is_premium
+                          ? '⭐ إزالة VIP'
+                          : '⭐ جعل VIP'}
+                      </button>
+
+                      <button
+                        onClick={() =>
+                          titleAction(
+                            title.id,
+                            'is_hidden',
+                            title.is_hidden
+                          )
+                        }
+                        disabled={
+                          !isAdmin
+                        }
+                        style={{
+                          ...S.smallBtn,
+                          opacity:
+                            !isAdmin
+                              ? 0.5
+                              : 1,
+                        }}
+                      >
+                        {title.is_hidden
+                          ? '👁️ إظهار'
+                          : '🙈 إخفاء'}
+                      </button>
+
+                      <button
+                        onClick={() =>
+                          delTitle(
+                            title.id,
+                            title.title ||
+                              title.name
+                          )
+                        }
+                        disabled={
+                          !isAdmin
+                        }
+                        style={{
+                          ...S.delete,
+                          opacity:
+                            !isAdmin
+                              ? 0.5
+                              : 1,
+                        }}
+                      >
+                        🗑️ حذف
+                      </button>
+                    </div>
                   </div>
-
-                  <div style={S.row}>
-                    <button
-                      onClick={() =>
-                        titleAction(
-                          title.id,
-                          'is_premium',
-                          title.is_premium
-                        )
-                      }
-                      disabled={!isAdmin}
-                      style={{
-                        ...S.smallBtn,
-                        opacity:
-                          !isAdmin
-                            ? 0.5
-                            : 1,
-                      }}
-                    >
-                      {title.is_premium
-                        ? '⭐ إزالة VIP'
-                        : '⭐ جعل VIP'}
-                    </button>
-
-                    <button
-                      onClick={() =>
-                        titleAction(
-                          title.id,
-                          'is_hidden',
-                          title.is_hidden
-                        )
-                      }
-                      disabled={!isAdmin}
-                      style={{
-                        ...S.smallBtn,
-                        opacity:
-                          !isAdmin
-                            ? 0.5
-                            : 1,
-                      }}
-                    >
-                      {title.is_hidden
-                        ? '👁️ إظهار'
-                        : '🙈 إخفاء'}
-                    </button>
-
-                    <button
-                      onClick={() =>
-                        delTitle(
-                          title.id,
-                          title.title ||
-                            title.name
-                        )
-                      }
-                      disabled={!isAdmin}
-                      style={{
-                        ...S.delete,
-                        opacity:
-                          !isAdmin
-                            ? 0.5
-                            : 1,
-                      }}
-                    >
-                      🗑️ حذف
-                    </button>
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         )}
@@ -1912,11 +2043,13 @@ export default function Admin() {
                   لا توجد سجلات بعد.
                 </div>
               ) : (
-                logs.map((item, index) => (
-                  <div key={index}>
-                    {item}
-                  </div>
-                ))
+                logs.map(
+                  (item, index) => (
+                    <div key={index}>
+                      {item}
+                    </div>
+                  )
+                )
               )}
             </div>
           </div>
