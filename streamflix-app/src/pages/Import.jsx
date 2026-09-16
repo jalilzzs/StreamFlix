@@ -1307,7 +1307,7 @@ export default function Import() {
           ...(countrySort ===
           'rating'
             ? {
-                vote_count.gte:
+                'vote_count.gte':
                   20,
               }
             : {}),
