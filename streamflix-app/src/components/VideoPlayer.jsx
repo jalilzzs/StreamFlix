@@ -36,8 +36,9 @@ function getVidsrcMovieUrl(tmdbId) {
 
   return `${VIDSRC_BASE_URL}/embed/movie?tmdb=${encodeURIComponent(
     tmdbId
-    )}`;
+  )}`;
 }
+
 function getVidsrcEpisodeUrl(
   tmdbId,
   season,
@@ -110,7 +111,9 @@ function getVidlinkEpisodeUrl(
 function getYapgridMovieUrl(tmdbId) {
   if (!tmdbId) return null;
 
-  return `${YAPGRID_BASE_URL}/embed/movie/${encodeURIComponent(tmdbId)}?server=x`;
+  return `${YAPGRID_BASE_URL}/embed/movie/${encodeURIComponent(
+    tmdbId
+  )}?server=x`;
 }
 
 function getYapgridEpisodeUrl(
@@ -128,6 +131,7 @@ function getYapgridEpisodeUrl(
     episode
   )}?server=x`;
 }
+
 /* =========================================================
    COMPONENT
    ========================================================= */
@@ -138,7 +142,11 @@ export default function VideoPlayer({
   title,
   episodeId = null,
 }) {
-  const { user } = useAuth();
+  const {
+    user,
+    isPremium,
+  } = useAuth();
+
   const navigate = useNavigate();
 
   const [
@@ -149,6 +157,11 @@ export default function VideoPlayer({
   const [
     shareOpen,
     setShareOpen,
+  ] = useState(false);
+
+  const [
+    vipModalOpen,
+    setVipModalOpen,
   ] = useState(false);
 
   const [
@@ -173,6 +186,13 @@ export default function VideoPlayer({
 
   const [error, setError] =
     useState('');
+
+  /* =========================================================
+     PREMIUM STATUS
+     ========================================================= */
+
+  const hasVipAccess =
+    Boolean(isPremium);
 
   /* =========================================================
      REAL TMDB ID
@@ -222,6 +242,7 @@ export default function VideoPlayer({
   /* =========================================================
      SERVER 1
      VIDSRC
+     FREE
      ========================================================= */
 
   const server1Url = useMemo(() => {
@@ -250,6 +271,7 @@ export default function VideoPlayer({
   /* =========================================================
      SERVER 2
      STELLAR
+     FREE
      ========================================================= */
 
   const server2Url = useMemo(() => {
@@ -278,6 +300,7 @@ export default function VideoPlayer({
   /* =========================================================
      SERVER 3
      VIDLINK
+     FREE
      ========================================================= */
 
   const server3Url = useMemo(() => {
@@ -305,7 +328,8 @@ export default function VideoPlayer({
 
   /* =========================================================
      SERVER 4
-     YAPGRID — VIP
+     YAPGRID
+     VIP
      ========================================================= */
 
   const server4Url = useMemo(() => {
@@ -360,7 +384,7 @@ export default function VideoPlayer({
       },
       {
         id: 3,
-        name: 'سيرفر 4 • VIP',
+        name: 'سيرفر 4',
         provider: 'YapGrid',
         url: server4Url,
         vip: true,
@@ -383,6 +407,18 @@ export default function VideoPlayer({
      ========================================================= */
 
   useEffect(() => {
+    /*
+     * إذا السيرفر المحدد VIP والمستخدم Free،
+     * نرجعو تلقائياً للسيرفر الأول.
+     */
+    if (
+      currentServer?.vip &&
+      !hasVipAccess
+    ) {
+      setSelectedServer(0);
+      return;
+    }
+
     if (currentServer?.url) {
       return;
     }
@@ -390,7 +426,9 @@ export default function VideoPlayer({
     const firstAvailable =
       servers.find(
         (server) =>
-          Boolean(server.url)
+          Boolean(server.url) &&
+          (!server.vip ||
+            hasVipAccess)
       );
 
     if (
@@ -406,6 +444,7 @@ export default function VideoPlayer({
     currentServer,
     selectedServer,
     servers,
+    hasVipAccess,
   ]);
 
   /* =========================================================
@@ -500,6 +539,32 @@ export default function VideoPlayer({
           friendId,
         ];
       }
+    );
+  }
+
+  /* =========================================================
+     VIP SERVER CLICK
+     ========================================================= */
+
+  function handleServerClick(
+    server
+  ) {
+    if (server.vip && !hasVipAccess) {
+      setError('');
+      setVipModalOpen(true);
+      return;
+    }
+
+    if (!server.url) {
+      setError(
+        'لا يوجد رابط لهذا السيرفر'
+      );
+      return;
+    }
+
+    setError('');
+    setSelectedServer(
+      server.id
     );
   }
 
@@ -828,6 +893,15 @@ export default function VideoPlayer({
                 server.url
               );
 
+            const locked =
+              server.vip &&
+              !hasVipAccess;
+
+            const active =
+              selectedServer ===
+                server.id &&
+              !locked;
+
             return (
               <button
                 key={
@@ -837,20 +911,22 @@ export default function VideoPlayer({
                 disabled={
                   !available
                 }
-                onClick={() => {
-                  setError('');
-
-                  setSelectedServer(
-                    server.id
-                  );
-                }}
+                onClick={() =>
+                  handleServerClick(
+                    server
+                  )
+                }
                 style={{
                   position:
                     'relative',
 
+                  minWidth:
+                    server.vip
+                      ? '125px'
+                      : 'auto',
+
                   border:
-                    selectedServer ===
-                    server.id
+                    active
                       ? server.vip
                         ? '1px solid #ffd700'
                         : '1px solid #d4af37'
@@ -859,8 +935,7 @@ export default function VideoPlayer({
                         : '1px solid #333',
 
                   background:
-                    selectedServer ===
-                    server.id
+                    active
                       ? server.vip
                         ? 'linear-gradient(135deg,#ffd700,#d4af37)'
                         : '#d4af37'
@@ -869,14 +944,13 @@ export default function VideoPlayer({
                         : '#181818',
 
                   color:
-                    selectedServer ===
-                    server.id
+                    active
                       ? '#111'
-                      : available
-                        ? server.vip
-                          ? '#ffd700'
-                          : '#ddd'
-                        : '#555',
+                      : locked
+                        ? '#ffd700'
+                        : available
+                          ? '#ddd'
+                          : '#555',
 
                   padding:
                     '8px 14px',
@@ -885,9 +959,11 @@ export default function VideoPlayer({
                     '8px',
 
                   cursor:
-                    available
+                    locked
                       ? 'pointer'
-                      : 'not-allowed',
+                      : available
+                        ? 'pointer'
+                        : 'not-allowed',
 
                   fontSize:
                     '12px',
@@ -901,10 +977,12 @@ export default function VideoPlayer({
                       : 0.55,
 
                   boxShadow:
-                    server.vip &&
-                    selectedServer ===
-                      server.id
-                      ? '0 0 15px rgba(255,215,0,.25)'
+                    server.vip
+                      ? locked
+                        ? '0 0 12px rgba(255,215,0,.08)'
+                        : active
+                          ? '0 0 15px rgba(255,215,0,.25)'
+                          : 'none'
                       : 'none',
                 }}
               >
@@ -915,11 +993,64 @@ export default function VideoPlayer({
                         '5px',
                     }}
                   >
-                    👑
+                    ⭐
                   </span>
                 )}
 
                 {server.name}
+
+                {server.vip && (
+                  <span
+                    style={{
+                      marginRight:
+                        '6px',
+                      fontSize:
+                        '10px',
+                      opacity:
+                        locked
+                          ? 1
+                          : 0.85,
+                    }}
+                  >
+                    {locked
+                      ? '🔒'
+                      : '👑'}
+                  </span>
+                )}
+
+                {server.vip &&
+                  locked && (
+                    <span
+                      style={{
+                        position:
+                          'absolute',
+                        top:
+                          '-8px',
+                        left:
+                          '50%',
+                        transform:
+                          'translateX(-50%)',
+                        padding:
+                          '2px 7px',
+                        borderRadius:
+                          '999px',
+                        background:
+                          '#ffd700',
+                        color:
+                          '#171100',
+                        fontSize:
+                          '8px',
+                        fontWeight:
+                          900,
+                        whiteSpace:
+                          'nowrap',
+                        boxShadow:
+                          '0 3px 10px rgba(0,0,0,.35)',
+                      }}
+                    >
+                      VIP
+                    </span>
+                  )}
               </button>
             );
           }
@@ -952,6 +1083,238 @@ export default function VideoPlayer({
           🎬 مشاركة
         </button>
       </div>
+
+      {/* =====================================================
+          VIP LOCK MODAL
+          ===================================================== */}
+
+      {vipModalOpen && (
+        <div
+          onClick={() =>
+            setVipModalOpen(
+              false
+            )
+          }
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100000,
+            background:
+              'rgba(0,0,0,.78)',
+            backdropFilter:
+              'blur(8px)',
+            WebkitBackdropFilter:
+              'blur(8px)',
+            display: 'flex',
+            alignItems:
+              'center',
+            justifyContent:
+              'center',
+            padding: '20px',
+          }}
+        >
+          <div
+            onClick={(event) =>
+              event.stopPropagation()
+            }
+            style={{
+              width: '100%',
+              maxWidth: '410px',
+              background:
+                'linear-gradient(145deg,#171717,#0c0c0c)',
+              border:
+                '1px solid rgba(255,215,0,.3)',
+              borderRadius:
+                '20px',
+              padding:
+                '28px 22px',
+              textAlign:
+                'center',
+              color: '#fff',
+              boxShadow:
+                '0 25px 100px rgba(0,0,0,.7), 0 0 45px rgba(255,215,0,.08)',
+            }}
+          >
+            <div
+              style={{
+                width: '70px',
+                height: '70px',
+                margin:
+                  '0 auto 15px',
+                borderRadius:
+                  '20px',
+                background:
+                  'linear-gradient(135deg,#ffd700,#b8860b)',
+                display: 'flex',
+                alignItems:
+                  'center',
+                justifyContent:
+                  'center',
+                fontSize:
+                  '34px',
+                boxShadow:
+                  '0 10px 30px rgba(255,215,0,.2)',
+              }}
+            >
+              ⭐
+            </div>
+
+            <div
+              style={{
+                color: '#ffd700',
+                fontSize: '11px',
+                fontWeight: 900,
+                letterSpacing:
+                  '1px',
+                marginBottom:
+                  '8px',
+              }}
+            >
+              VIP SERVER
+            </div>
+
+            <h3
+              style={{
+                margin:
+                  '0 0 10px',
+                fontSize: '22px',
+                fontWeight: 900,
+              }}
+            >
+              هذا السيرفر خاص بـ VIP
+            </h3>
+
+            <p
+              style={{
+                margin: 0,
+                color: '#999',
+                fontSize: '13px',
+                lineHeight: 1.7,
+              }}
+            >
+              سيرفر YapGrid متاح فقط
+              للمشتركين في باقة VIP الشهرية
+              أو السنوية.
+            </p>
+
+            <div
+              style={{
+                display: 'flex',
+                gap: '8px',
+                marginTop: '18px',
+                justifyContent:
+                  'center',
+                flexWrap: 'wrap',
+              }}
+            >
+              <span
+                style={{
+                  padding:
+                    '6px 11px',
+                  borderRadius:
+                    '999px',
+                  background:
+                    'rgba(255,215,0,.08)',
+                  border:
+                    '1px solid rgba(255,215,0,.2)',
+                  color: '#ffd700',
+                  fontSize:
+                    '11px',
+                  fontWeight:
+                    700,
+                }}
+              >
+                ⭐ VIP شهري
+              </span>
+
+              <span
+                style={{
+                  padding:
+                    '6px 11px',
+                  borderRadius:
+                    '999px',
+                  background:
+                    'rgba(255,215,0,.08)',
+                  border:
+                    '1px solid rgba(255,215,0,.2)',
+                  color: '#ffd700',
+                  fontSize:
+                    '11px',
+                  fontWeight:
+                    700,
+                }}
+              >
+                ⭐ VIP سنوي
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setVipModalOpen(
+                  false
+                );
+                navigate(
+                  '/subscription'
+                );
+              }}
+              style={{
+                width: '100%',
+                marginTop:
+                  '20px',
+                padding:
+                  '13px',
+                border:
+                  'none',
+                borderRadius:
+                  '11px',
+                background:
+                  'linear-gradient(135deg,#ffd700,#b8860b)',
+                color: '#171100',
+                fontWeight:
+                  900,
+                cursor:
+                  'pointer',
+                fontSize:
+                  '13px',
+              }}
+            >
+              ⭐ اشترك في VIP
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                setVipModalOpen(
+                  false
+                )
+              }
+              style={{
+                width: '100%',
+                marginTop:
+                  '8px',
+                padding:
+                  '11px',
+                border:
+                  '1px solid #333',
+                borderRadius:
+                  '11px',
+                background:
+                  '#171717',
+                color: '#aaa',
+                fontWeight:
+                  700,
+                cursor:
+                  'pointer',
+                fontSize:
+                  '12px',
+              }}
+            >
+              إغلاق
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* =====================================================
           SHARE MODAL
