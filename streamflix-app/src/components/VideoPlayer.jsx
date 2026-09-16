@@ -17,6 +17,7 @@ import {
    ========================================================= */
 
 const VIDSRC_BASE_URL = 'https://vidsrc.me';
+const BACKEND_URL = 'https://streamflix-api-x0ku.onrender.co';
 
 /* =========================================================
    URL BUILDERS
@@ -32,7 +33,7 @@ function getVidsrcEpisodeUrl(tmdbId, season, episode) {
   return `${VIDSRC_BASE_URL}/embed/tv?tmdb=${encodeURIComponent(tmdbId)}&season=${encodeURIComponent(season)}&episode=${encodeURIComponent(episode)}`;
 }
 
-// رابط سيرفر Pirate Bay (مجهز للربط مع الباك إند مستقبلاً)
+// رابط سيرفر Pirate Bay المربوط مباشرة بالباك إند
 function getPirateBayUrl(query, type = 'movie', season = 1, episode = 1) {
   if (!query) return null;
 
@@ -43,7 +44,7 @@ function getPirateBayUrl(query, type = 'movie', season = 1, episode = 1) {
     episode: String(episode),
   });
 
-  return `https://streamflix-api-x0ku.onrender.com/api/piratebay?${params.toString()}`;
+  return `${BACKEND_URL}/api/piratebay?${params.toString()}`;
 }
 
 
@@ -110,25 +111,25 @@ export default function VideoPlayer({
 
   // سيرفر 2: Pirate Bay
   const server2Url = useMemo(() => {
-  if (!contentTitleName) return null;
+    if (!contentTitleName) return null;
 
-  return getPirateBayUrl(
-    contentTitleName,
-    contentType,
-    currentSeason,
-    currentEpisodeNumber
-  );
-}, [contentTitleName, contentType, currentSeason, currentEpisodeNumber]);
+    return getPirateBayUrl(
+      contentTitleName,
+      contentType,
+      currentSeason,
+      currentEpisodeNumber
+    );
+  }, [contentTitleName, contentType, currentSeason, currentEpisodeNumber]);
 
 
   /* =========================================================
-     SERVERS LIST (سيرفر 1 وسيرفر 2 فقط)
+     SERVERS LIST (تم تحويل isIframe إلى true لسيرفر 2)
      ========================================================= */
 
   const servers = useMemo(
     () => [
       { id: 0, name: 'سيرفر 1', provider: 'Vidsrc', url: server1Url, vip: false, isIframe: true },
-      { id: 1, name: 'سيرفر 2', provider: 'Pirate Bay', url: server2Url, vip: false, isIframe: false },
+      { id: 1, name: 'سيرفر 2', provider: 'Pirate Bay', url: server2Url, vip: false, isIframe: true },
     ],
     [server1Url, server2Url]
   );
@@ -220,7 +221,6 @@ export default function VideoPlayer({
     setError('');
     setSelectedServer(server.id);
 
-    // افتراضياً يفتح رابط البحث إذا لم يكن iframe (حتى تقوم بربط الباك إند)
     if (!server.isIframe && server.url) {
       window.open(server.url, '_blank', 'noopener,noreferrer');
     }
@@ -383,7 +383,7 @@ export default function VideoPlayer({
                   : server.vip ? '1px solid rgba(255,215,0,.45)' : '1px solid #333',
                 background: active
                   ? server.vip ? 'linear-gradient(135deg,#ffd700,#d4af37)' : '#d4af37'
-                  : server.vip ? 'linear-gradient(135deg,#211b00,#181818)' : '#181818',
+                  : server.vip ? '#181818' : '#181818',
                 color: active ? '#111' : locked ? '#ffd700' : available ? '#ddd' : '#555',
                 padding: '8px 14px',
                 borderRadius: '8px',
