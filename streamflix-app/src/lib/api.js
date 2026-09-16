@@ -144,6 +144,52 @@ export async function fetchRecommendations(
   return data || [];
 }
 
+// ---- StreamSrc ------------------------------------------------------------
+
+export function getStreamSrcUrl({
+  tmdbId,
+  type = 'movie',
+} = {}) {
+  if (!tmdbId) return '';
+
+  const normalizedType =
+    type === 'series' || type === 'tv'
+      ? 'series'
+      : 'movie';
+
+  return `https://streamsrc.cc/watch/${normalizedType}/tmdbid=${encodeURIComponent(
+    tmdbId
+  )}`;
+}
+
+export function getStreamSrcJsonUrl(tmdbId) {
+  if (!tmdbId) return '';
+
+  return `https://streamsrc.cc/tmdb=${encodeURIComponent(
+    tmdbId
+  )}&json=1`;
+}
+
+export async function fetchStreamSrcData(tmdbId) {
+  if (!tmdbId) {
+    throw new Error('TMDB ID is required.');
+  }
+
+  const response = await fetch(
+    getStreamSrcJsonUrl(tmdbId)
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `StreamSrc request failed: ${response.status}`
+    );
+  }
+
+  const data = await response.json();
+
+  return data;
+}
+
 // ---- Ratings --------------------------------------------------------------
 
 export async function rateTitle(userId, titleId, score) {
@@ -682,8 +728,6 @@ export function subscribeToMessages(
 // WATCH PARTY
 // ==========================================================================
 
-// ---- Create Watch Party --------------------------------------------------
-
 export async function createWatchParty({
   hostId,
   titleId,
@@ -729,8 +773,6 @@ export async function createWatchParty({
   return data;
 }
 
-// ---- Create Invitations --------------------------------------------------
-
 export async function createWatchPartyInvites({
   partyId,
   hostId,
@@ -775,8 +817,6 @@ export async function createWatchPartyInvites({
   return data || [];
 }
 
-// ---- Create Party + Invitations -----------------------------------------
-
 export async function createWatchPartyWithInvites({
   hostId,
   titleId,
@@ -817,8 +857,6 @@ export async function createWatchPartyWithInvites({
   }
 }
 
-// ---- Get Party -----------------------------------------------------------
-
 export async function getWatchParty(partyId) {
   if (!partyId) {
     throw new Error('Watch Party ID is required.');
@@ -834,8 +872,6 @@ export async function getWatchParty(partyId) {
 
   return data;
 }
-
-// ---- Get Party Members ---------------------------------------------------
 
 export async function fetchWatchPartyMembers(
   partyId
@@ -857,8 +893,6 @@ export async function fetchWatchPartyMembers(
   return data || [];
 }
 
-// ---- Get My Invitations --------------------------------------------------
-
 export async function fetchWatchPartyInvites(
   userId
 ) {
@@ -879,8 +913,6 @@ export async function fetchWatchPartyInvites(
   return data || [];
 }
 
-// ---- Check Invitation ----------------------------------------------------
-
 export async function getWatchPartyInvite(
   partyId,
   userId
@@ -898,8 +930,6 @@ export async function getWatchPartyInvite(
 
   return data;
 }
-
-// ---- Accept Invitation + Join -------------------------------------------
 
 export async function acceptWatchPartyInvite(
   inviteId,
@@ -1006,8 +1036,6 @@ export async function acceptWatchPartyInvite(
   return party;
 }
 
-// ---- Decline Invitation -------------------------------------------------
-
 export async function declineWatchPartyInvite(
   inviteId,
   userId
@@ -1034,8 +1062,6 @@ export async function declineWatchPartyInvite(
 
   return data;
 }
-
-// ---- Join Party ----------------------------------------------------------
 
 export async function joinWatchParty(
   partyId,
@@ -1068,7 +1094,6 @@ export async function joinWatchParty(
     );
   }
 
-  // Host is always allowed to enter his own room.
   if (party.host_id !== userId) {
     const { data: invite, error: inviteError } =
       await supabase
@@ -1113,8 +1138,6 @@ export async function joinWatchParty(
   return party;
 }
 
-// ---- Leave Party ---------------------------------------------------------
-
 export async function leaveWatchParty(
   partyId,
   userId
@@ -1145,7 +1168,6 @@ export async function leaveWatchParty(
 
   if (memberError) throw memberError;
 
-  // If the host leaves, end the party.
   if (party.host_id === userId) {
     const { error } = await supabase
       .from('watch_parties')
@@ -1160,7 +1182,6 @@ export async function leaveWatchParty(
     return;
   }
 
-  // If nobody remains, end the party.
   const { count, error: countError } =
     await supabase
       .from('watch_party_members')
@@ -1184,8 +1205,6 @@ export async function leaveWatchParty(
     if (error) throw error;
   }
 }
-
-// ---- Playback ------------------------------------------------------------
 
 export async function updatePartyPlayback(
   partyId,
@@ -1219,8 +1238,6 @@ export async function updatePartyPlayback(
   if (error) throw error;
 }
 
-// ---- Party Realtime ------------------------------------------------------
-
 export function subscribeToParty(
   partyId,
   onUpdate
@@ -1246,8 +1263,6 @@ export function subscribeToParty(
   return () =>
     supabase.removeChannel(channel);
 }
-
-// ---- Party Members Realtime ---------------------------------------------
 
 export function subscribeToPartyMembers(
   partyId,
@@ -1278,19 +1293,6 @@ export function subscribeToPartyMembers(
 // ==========================================================================
 // WATCH PARTY PRESENCE
 // ==========================================================================
-//
-// This is what makes people inside the same Watch Party see each other
-// in real time.
-//
-// It uses Supabase Realtime Presence, so no extra database table is needed.
-// Every connected user tracks:
-//   - user_id
-//   - display_name
-//   - avatar_url
-//   - joined_at
-//
-// onPresence receives an array of currently connected members.
-//
 
 export function subscribeToPartyPresence({
   partyId,
