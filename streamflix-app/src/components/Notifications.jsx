@@ -22,23 +22,23 @@ import { supabase } from '../lib/supabaseClient';
 // ============================================================
 
 function NotificationIcon({ type }) {
-  if (type === 'friend_request') {
-    return '👤';
-  }
+  switch (type) {
+    case 'friend_request':
+      return '👤';
 
-  if (type === 'friend_accepted') {
-    return '🤝';
-  }
+    case 'friend_accepted':
+      return '🤝';
 
-  if (type === 'watch_party') {
-    return '🎬';
-  }
+    case 'watch_party_invite':
+    case 'watch_party':
+      return '🎬';
 
-  if (type === 'message') {
-    return '💬';
-  }
+    case 'message':
+      return '💬';
 
-  return '🔔';
+    default:
+      return '🔔';
+  }
 }
 
 // ============================================================
@@ -49,6 +49,11 @@ function formatTime(dateString) {
   if (!dateString) return '';
 
   const date = new Date(dateString);
+
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
   const now = new Date();
 
   const diff = Math.floor(
@@ -85,6 +90,36 @@ function formatTime(dateString) {
 }
 
 // ============================================================
+// NORMALIZE
+// ============================================================
+
+function normalizeNotification(notification) {
+  const data =
+    notification?.data &&
+    typeof notification.data === 'object'
+      ? notification.data
+      : {};
+
+  const isRead =
+    notification?.is_read === true ||
+    Boolean(notification?.read_at);
+
+  return {
+    ...notification,
+    data,
+    message:
+      notification?.message ||
+      notification?.body ||
+      '',
+    is_read: isRead,
+    link:
+      data?.link ||
+      notification?.link ||
+      null,
+  };
+}
+
+// ============================================================
 // COMPONENT
 // ============================================================
 
@@ -108,20 +143,31 @@ export default function Notifications() {
   const [processing, setProcessing] =
     useState(false);
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // GET USER
-  // ----------------------------------------------------------
+  // ==========================================================
 
   useEffect(() => {
     let mounted = true;
 
     const loadUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
 
-      if (mounted) {
-        setUser(user || null);
+        if (mounted) {
+          setUser(user || null);
+        }
+      } catch (error) {
+        console.error(
+          'Failed to get current user:',
+          error
+        );
+
+        if (mounted) {
+          setUser(null);
+        }
       }
     };
 
@@ -143,9 +189,9 @@ export default function Notifications() {
     };
   }, []);
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // LOAD
-  // ----------------------------------------------------------
+  // ==========================================================
 
   const loadNotifications =
     useCallback(async () => {
@@ -163,17 +209,27 @@ export default function Notifications() {
           notificationData,
           count,
         ] = await Promise.all([
-          fetchNotifications(user.id, 50),
+          fetchNotifications(
+            user.id,
+            50
+          ),
           fetchUnreadNotificationCount(
             user.id
           ),
         ]);
 
-        setNotifications(
-          notificationData
-        );
+        const normalized =
+          Array.isArray(notificationData)
+            ? notificationData.map(
+                normalizeNotification
+              )
+            : [];
 
-        setUnreadCount(count);
+        setNotifications(normalized);
+
+        setUnreadCount(
+          Number(count) || 0
+        );
       } catch (error) {
         console.error(
           'Failed to load notifications:',
@@ -188,9 +244,9 @@ export default function Notifications() {
     loadNotifications();
   }, [loadNotifications]);
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // REALTIME
-  // ----------------------------------------------------------
+  // ==========================================================
 
   useEffect(() => {
     if (!user?.id) return;
@@ -198,34 +254,43 @@ export default function Notifications() {
     const unsubscribe =
       subscribeToNotifications(
         user.id,
-        (notification) => {
+        (incoming) => {
+          if (!incoming) return;
+
+          const notification =
+            normalizeNotification(
+              incoming
+            );
+
+          // DELETE
           if (
-            notification.__event ===
+            incoming.__event ===
             'DELETE'
           ) {
             setNotifications((prev) =>
               prev.filter(
                 (item) =>
                   item.id !==
-                  notification.id
+                  incoming.id
               )
             );
 
             return;
           }
 
+          // UPDATE
           if (
-            notification.__event ===
+            incoming.__event ===
             'UPDATE'
           ) {
             setNotifications((prev) =>
               prev.map((item) =>
                 item.id ===
                 notification.id
-                  ? {
+                  ? normalizeNotification({
                       ...item,
                       ...notification,
-                    }
+                    })
                   : item
               )
             );
@@ -233,6 +298,7 @@ export default function Notifications() {
             return;
           }
 
+          // INSERT
           setNotifications((prev) => [
             notification,
             ...prev.filter(
@@ -242,7 +308,7 @@ export default function Notifications() {
             ),
           ]);
 
-          if (!notification.read_at) {
+          if (!notification.is_read) {
             setUnreadCount(
               (count) => count + 1
             );
@@ -262,7 +328,7 @@ export default function Notifications() {
                   'StreamFlix',
                 {
                   body:
-                    notification.body ||
+                    notification.message ||
                     'You have a new notification.',
                   icon: '/favicon.ico',
                 }
@@ -274,31 +340,41 @@ export default function Notifications() {
         }
       );
 
-    return unsubscribe;
+    return () => {
+      if (
+        typeof unsubscribe ===
+        'function'
+      ) {
+        unsubscribe();
+      }
+    };
   }, [user?.id]);
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // OPEN
-  // ----------------------------------------------------------
+  // ==========================================================
 
   const handleOpen = () => {
     setOpen((value) => !value);
   };
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // CLICK
-  // ----------------------------------------------------------
+  // ==========================================================
 
   const handleNotificationClick =
     async (notification) => {
       if (!user?.id) return;
 
       try {
-        if (!notification.read_at) {
+        if (!notification.is_read) {
           await markNotificationAsRead(
             notification.id,
             user.id
           );
+
+          const now =
+            new Date().toISOString();
 
           setNotifications((prev) =>
             prev.map((item) =>
@@ -306,8 +382,9 @@ export default function Notifications() {
               notification.id
                 ? {
                     ...item,
-                    read_at:
-                      new Date().toISOString(),
+                    is_read: true,
+                    isRead: true,
+                    read_at: now,
                   }
                 : item
             )
@@ -320,7 +397,10 @@ export default function Notifications() {
 
         if (notification.link) {
           setOpen(false);
-          navigate(notification.link);
+
+          navigate(
+            notification.link
+          );
         }
       } catch (error) {
         console.error(
@@ -330,45 +410,53 @@ export default function Notifications() {
       }
     };
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // MARK ALL
-  // ----------------------------------------------------------
+  // ==========================================================
 
-  const handleMarkAllRead = async () => {
-    if (!user?.id || !unreadCount) return;
+  const handleMarkAllRead =
+    async () => {
+      if (
+        !user?.id ||
+        unreadCount === 0
+      ) {
+        return;
+      }
 
-    try {
-      setProcessing(true);
+      try {
+        setProcessing(true);
 
-      await markAllNotificationsAsRead(
-        user.id
-      );
+        await markAllNotificationsAsRead(
+          user.id
+        );
 
-      const now =
-        new Date().toISOString();
+        const now =
+          new Date().toISOString();
 
-      setNotifications((prev) =>
-        prev.map((item) => ({
-          ...item,
-          read_at:
-            item.read_at || now,
-        }))
-      );
+        setNotifications((prev) =>
+          prev.map((item) => ({
+            ...item,
+            is_read: true,
+            isRead: true,
+            read_at:
+              item.read_at || now,
+          }))
+        );
 
-      setUnreadCount(0);
-    } catch (error) {
-      console.error(
-        'Failed to mark notifications as read:',
-        error
-      );
-    } finally {
-      setProcessing(false);
-    }
-  };
+        setUnreadCount(0);
+      } catch (error) {
+        console.error(
+          'Failed to mark notifications as read:',
+          error
+        );
+      } finally {
+        setProcessing(false);
+      }
+    };
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // DELETE
-  // ----------------------------------------------------------
+  // ==========================================================
 
   const handleDelete = async (
     event,
@@ -387,11 +475,12 @@ export default function Notifications() {
       setNotifications((prev) =>
         prev.filter(
           (item) =>
-            item.id !== notification.id
+            item.id !==
+            notification.id
         )
       );
 
-      if (!notification.read_at) {
+      if (!notification.is_read) {
         setUnreadCount((count) =>
           Math.max(0, count - 1)
         );
@@ -404,9 +493,9 @@ export default function Notifications() {
     }
   };
 
-  // ----------------------------------------------------------
-  // REQUEST BROWSER PERMISSION
-  // ----------------------------------------------------------
+  // ==========================================================
+  // BROWSER PERMISSION
+  // ==========================================================
 
   useEffect(() => {
     if (
@@ -426,63 +515,48 @@ export default function Notifications() {
     }
   }, []);
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // NOT LOGGED IN
-  // ----------------------------------------------------------
+  // ==========================================================
 
   if (!user) {
     return null;
   }
 
+  // ==========================================================
+  // RENDER
+  // ==========================================================
+
   return (
-    <>
+    <div className="notification-wrap">
+      {/* ====================================================
+          BUTTON
+      ==================================================== */}
+
       <button
         type="button"
+        className="notification-button"
         onClick={handleOpen}
         aria-label="Notifications"
-        style={{
-          position: 'fixed',
-          right: '20px',
-          bottom: '20px',
-          width: '52px',
-          height: '52px',
-          borderRadius: '50%',
-          border: '1px solid rgba(255,255,255,0.12)',
-          background: '#171717',
-          color: '#fff',
-          cursor: 'pointer',
-          zIndex: 100000,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '22px',
-          boxShadow:
-            '0 10px 30px rgba(0,0,0,0.45)',
-        }}
+        aria-expanded={open}
+        title="Notifications"
       >
-        🔔
+        <svg
+          width="17"
+          height="17"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+          <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+        </svg>
 
         {unreadCount > 0 && (
-          <span
-            style={{
-              position: 'absolute',
-              top: '-3px',
-              right: '-3px',
-              minWidth: '21px',
-              height: '21px',
-              padding: '0 5px',
-              borderRadius: '999px',
-              background: '#e50914',
-              color: '#fff',
-              fontSize: '11px',
-              fontWeight: '800',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              border:
-                '2px solid #0d0d0d',
-            }}
-          >
+          <span className="notification-badge">
             {unreadCount > 99
               ? '99+'
               : unreadCount}
@@ -490,69 +564,29 @@ export default function Notifications() {
         )}
       </button>
 
+      {/* ====================================================
+          DROPDOWN
+      ==================================================== */}
+
       {open && (
         <>
           <div
-            onClick={() => setOpen(false)}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 99998,
-              background:
-                'rgba(0,0,0,0.25)',
-            }}
+            className="notification-backdrop"
+            onClick={() =>
+              setOpen(false)
+            }
           />
 
-          <div
-            style={{
-              position: 'fixed',
-              right: '20px',
-              bottom: '84px',
-              width:
-                'min(390px, calc(100vw - 40px))',
-              maxHeight:
-                'min(600px, calc(100vh - 120px))',
-              background: '#151515',
-              border:
-                '1px solid rgba(255,255,255,0.10)',
-              borderRadius: '18px',
-              overflow: 'hidden',
-              zIndex: 99999,
-              boxShadow:
-                '0 20px 60px rgba(0,0,0,0.55)',
-              color: '#fff',
-            }}
-          >
+          <div className="notification-panel">
             {/* HEADER */}
 
-            <div
-              style={{
-                padding: '16px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent:
-                  'space-between',
-                borderBottom:
-                  '1px solid rgba(255,255,255,0.08)',
-              }}
-            >
+            <div className="notification-header">
               <div>
-                <div
-                  style={{
-                    fontSize: '18px',
-                    fontWeight: '800',
-                  }}
-                >
+                <div className="notification-title">
                   Notifications
                 </div>
 
-                <div
-                  style={{
-                    color: '#888',
-                    fontSize: '12px',
-                    marginTop: '3px',
-                  }}
-                >
+                <div className="notification-subtitle">
                   {unreadCount > 0
                     ? `${unreadCount} unread`
                     : 'All caught up'}
@@ -562,22 +596,11 @@ export default function Notifications() {
               {unreadCount > 0 && (
                 <button
                   type="button"
+                  className="notification-mark-all"
                   onClick={
                     handleMarkAllRead
                   }
                   disabled={processing}
-                  style={{
-                    border: 0,
-                    background:
-                      'transparent',
-                    color: '#e50914',
-                    cursor:
-                      processing
-                        ? 'default'
-                        : 'pointer',
-                    fontSize: '12px',
-                    fontWeight: '700',
-                  }}
                 >
                   Mark all read
                 </button>
@@ -586,55 +609,25 @@ export default function Notifications() {
 
             {/* BODY */}
 
-            <div
-              style={{
-                maxHeight:
-                  'calc(100vh - 230px)',
-                overflowY: 'auto',
-              }}
-            >
+            <div className="notification-list">
               {loading ? (
-                <div
-                  style={{
-                    padding: '40px 20px',
-                    textAlign: 'center',
-                    color: '#888',
-                  }}
-                >
-                  Loading notifications...
+                <div className="notification-empty">
+                  <div className="notification-loading">
+                    Loading notifications...
+                  </div>
                 </div>
               ) : notifications.length ===
                 0 ? (
-                <div
-                  style={{
-                    padding: '55px 20px',
-                    textAlign: 'center',
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: '38px',
-                      marginBottom: '12px',
-                    }}
-                  >
+                <div className="notification-empty">
+                  <div className="notification-empty-icon">
                     🔔
                   </div>
 
-                  <div
-                    style={{
-                      fontWeight: '700',
-                      marginBottom: '5px',
-                    }}
-                  >
+                  <div className="notification-empty-title">
                     No notifications
                   </div>
 
-                  <div
-                    style={{
-                      color: '#777',
-                      fontSize: '13px',
-                    }}
-                  >
+                  <div className="notification-empty-text">
                     You're all caught up.
                   </div>
                 </div>
@@ -642,51 +635,23 @@ export default function Notifications() {
                 notifications.map(
                   (notification) => (
                     <div
-                      key={notification.id}
+                      key={
+                        notification.id
+                      }
+                      className={`notification-item ${
+                        notification.is_read
+                          ? ''
+                          : 'unread'
+                      }`}
                       onClick={() =>
                         handleNotificationClick(
                           notification
                         )
                       }
-                      style={{
-                        position:
-                          'relative',
-                        display: 'flex',
-                        gap: '12px',
-                        padding:
-                          '14px 42px 14px 14px',
-                        cursor: 'pointer',
-                        background:
-                          notification.read_at
-                            ? 'transparent'
-                            : 'rgba(229,9,20,0.08)',
-                        borderBottom:
-                          '1px solid rgba(255,255,255,0.06)',
-                        transition:
-                          'background 0.2s ease',
-                      }}
                     >
                       {/* ICON */}
 
-                      <div
-                        style={{
-                          flex:
-                            '0 0 40px',
-                          width: '40px',
-                          height: '40px',
-                          borderRadius:
-                            '50%',
-                          background:
-                            'rgba(255,255,255,0.07)',
-                          display:
-                            'flex',
-                          alignItems:
-                            'center',
-                          justifyContent:
-                            'center',
-                          fontSize: '19px',
-                        }}
-                      >
+                      <div className="notification-item-icon">
                         <NotificationIcon
                           type={
                             notification.type
@@ -696,87 +661,24 @@ export default function Notifications() {
 
                       {/* CONTENT */}
 
-                      <div
-                        style={{
-                          minWidth: 0,
-                          flex: 1,
-                        }}
-                      >
-                        <div
-                          style={{
-                            display:
-                              'flex',
-                            alignItems:
-                              'center',
-                            gap: '7px',
-                          }}
-                        >
-                          {!notification.read_at && (
-                            <span
-                              style={{
-                                width:
-                                  '7px',
-                                height:
-                                  '7px',
-                                borderRadius:
-                                  '50%',
-                                background:
-                                  '#e50914',
-                                flex:
-                                  '0 0 7px',
-                              }}
-                            />
+                      <div className="notification-item-content">
+                        <div className="notification-item-title-row">
+                          {!notification.is_read && (
+                            <span className="notification-unread-dot" />
                           )}
 
-                          <div
-                            style={{
-                              fontWeight:
-                                '750',
-                              fontSize:
-                                '14px',
-                              overflow:
-                                'hidden',
-                              textOverflow:
-                                'ellipsis',
-                              whiteSpace:
-                                'nowrap',
-                            }}
-                          >
-                            {
-                              notification.title
-                            }
+                          <div className="notification-item-title">
+                            {notification.title ||
+                              'Notification'}
                           </div>
                         </div>
 
-                        <div
-                          style={{
-                            color:
-                              '#aaa',
-                            fontSize:
-                              '13px',
-                            lineHeight:
-                              '1.45',
-                            marginTop:
-                              '3px',
-                            wordBreak:
-                              'break-word',
-                          }}
-                        >
-                          {
-                            notification.body
-                          }
+                        <div className="notification-item-message">
+                          {notification.message ||
+                            ''}
                         </div>
 
-                        <div
-                          style={{
-                            color:
-                              '#666',
-                            fontSize:
-                              '11px',
-                            marginTop:
-                              '6px',
-                          }}
-                        >
+                        <div className="notification-item-time">
                           {formatTime(
                             notification.created_at
                           )}
@@ -787,31 +689,16 @@ export default function Notifications() {
 
                       <button
                         type="button"
-                        onClick={(event) =>
+                        className="notification-delete"
+                        onClick={(
+                          event
+                        ) =>
                           handleDelete(
                             event,
                             notification
                           )
                         }
                         aria-label="Delete notification"
-                        style={{
-                          position:
-                            'absolute',
-                          top: '12px',
-                          right: '10px',
-                          width: '25px',
-                          height: '25px',
-                          border: 0,
-                          borderRadius:
-                            '50%',
-                          background:
-                            'transparent',
-                          color: '#666',
-                          cursor:
-                            'pointer',
-                          fontSize:
-                            '14px',
-                        }}
                       >
                         ×
                       </button>
@@ -823,6 +710,6 @@ export default function Notifications() {
           </div>
         </>
       )}
-    </>
+    </div>
   );
 }
