@@ -24,6 +24,9 @@ const STELLAR_BASE_URL =
 const VIDLINK_BASE_URL =
   'https://vidlink.pro';
 
+const YAPGRID_BASE_URL =
+  'https://yapgrid.com';
+
 /* =========================================================
    URL BUILDERS
    ========================================================= */
@@ -92,6 +95,35 @@ function getVidlinkEpisodeUrl(
   if (!tmdbId) return null;
 
   return `${VIDLINK_BASE_URL}/tv/${encodeURIComponent(
+    tmdbId
+  )}/${encodeURIComponent(
+    season
+  )}/${encodeURIComponent(
+    episode
+  )}`;
+}
+
+/* =========================================================
+   YAPGRID
+   VIP SERVER
+   ========================================================= */
+
+function getYapgridMovieUrl(tmdbId) {
+  if (!tmdbId) return null;
+
+  return `${YAPGRID_BASE_URL}/embed/movie/${encodeURIComponent(
+    tmdbId
+  )}`;
+}
+
+function getYapgridEpisodeUrl(
+  tmdbId,
+  season,
+  episode
+) {
+  if (!tmdbId) return null;
+
+  return `${YAPGRID_BASE_URL}/embed/tv/${encodeURIComponent(
     tmdbId
   )}/${encodeURIComponent(
     season
@@ -192,13 +224,8 @@ export default function VideoPlayer({
     );
 
   /* =========================================================
-     SERVER URLS
-     
-     IMPORTANT:
-     We intentionally DO NOT use old database URLs here.
-     
-     This prevents old StreamSrc links from appearing again.
-     Every server is generated live.
+     SERVER 1
+     VIDSRC
      ========================================================= */
 
   const server1Url = useMemo(() => {
@@ -224,6 +251,11 @@ export default function VideoPlayer({
     currentEpisodeNumber,
   ]);
 
+  /* =========================================================
+     SERVER 2
+     STELLAR
+     ========================================================= */
+
   const server2Url = useMemo(() => {
     if (!realTmdb) {
       return null;
@@ -246,6 +278,11 @@ export default function VideoPlayer({
     currentSeason,
     currentEpisodeNumber,
   ]);
+
+  /* =========================================================
+     SERVER 3
+     VIDLINK
+     ========================================================= */
 
   const server3Url = useMemo(() => {
     if (!realTmdb) {
@@ -271,6 +308,34 @@ export default function VideoPlayer({
   ]);
 
   /* =========================================================
+     SERVER 4
+     YAPGRID — VIP
+     ========================================================= */
+
+  const server4Url = useMemo(() => {
+    if (!realTmdb) {
+      return null;
+    }
+
+    if (contentType === 'movie') {
+      return getYapgridMovieUrl(
+        realTmdb
+      );
+    }
+
+    return getYapgridEpisodeUrl(
+      realTmdb,
+      currentSeason,
+      currentEpisodeNumber
+    );
+  }, [
+    realTmdb,
+    contentType,
+    currentSeason,
+    currentEpisodeNumber,
+  ]);
+
+  /* =========================================================
      SERVERS
      ========================================================= */
 
@@ -281,24 +346,35 @@ export default function VideoPlayer({
         name: 'سيرفر 1',
         provider: 'Vidsrc',
         url: server1Url,
+        vip: false,
       },
       {
         id: 1,
         name: 'سيرفر 2',
         provider: 'Stellar',
         url: server2Url,
+        vip: false,
       },
       {
         id: 2,
         name: 'سيرفر 3',
         provider: 'VidLink',
         url: server3Url,
+        vip: false,
+      },
+      {
+        id: 3,
+        name: 'سيرفر 4 • VIP',
+        provider: 'YapGrid',
+        url: server4Url,
+        vip: true,
       },
     ],
     [
       server1Url,
       server2Url,
       server3Url,
+      server4Url,
     ]
   );
 
@@ -773,24 +849,37 @@ export default function VideoPlayer({
                   );
                 }}
                 style={{
+                  position:
+                    'relative',
+
                   border:
                     selectedServer ===
                     server.id
-                      ? '1px solid #d4af37'
-                      : '1px solid #333',
+                      ? server.vip
+                        ? '1px solid #ffd700'
+                        : '1px solid #d4af37'
+                      : server.vip
+                        ? '1px solid rgba(255,215,0,.45)'
+                        : '1px solid #333',
 
                   background:
                     selectedServer ===
                     server.id
-                      ? '#d4af37'
-                      : '#181818',
+                      ? server.vip
+                        ? 'linear-gradient(135deg,#ffd700,#d4af37)'
+                        : '#d4af37'
+                      : server.vip
+                        ? 'linear-gradient(135deg,#211b00,#181818)'
+                        : '#181818',
 
                   color:
                     selectedServer ===
                     server.id
                       ? '#111'
                       : available
-                        ? '#ddd'
+                        ? server.vip
+                          ? '#ffd700'
+                          : '#ddd'
                         : '#555',
 
                   padding:
@@ -814,8 +903,26 @@ export default function VideoPlayer({
                     available
                       ? 1
                       : 0.55,
+
+                  boxShadow:
+                    server.vip &&
+                    selectedServer ===
+                      server.id
+                      ? '0 0 15px rgba(255,215,0,.25)'
+                      : 'none',
                 }}
               >
+                {server.vip && (
+                  <span
+                    style={{
+                      marginLeft:
+                        '5px',
+                    }}
+                  >
+                    👑
+                  </span>
+                )}
+
                 {server.name}
               </button>
             );
@@ -1065,13 +1172,23 @@ export default function VideoPlayer({
 
                 <span
                   style={{
-                    color: '#666',
+                    color:
+                      currentServer?.vip
+                        ? '#ffd700'
+                        : '#666',
                     fontSize:
                       '10px',
                     direction:
                       'ltr',
+                    fontWeight:
+                      currentServer?.vip
+                        ? 800
+                        : 400,
                   }}
                 >
+                  {currentServer?.vip
+                    ? '👑 VIP • '
+                    : ''}
                   {currentServer?.provider ||
                     ''}
                 </span>
