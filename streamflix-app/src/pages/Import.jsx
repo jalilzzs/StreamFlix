@@ -14,6 +14,7 @@ import { supabase } from '../lib/supabaseClient';
   - Series / episodes import
   - Database repair tools
   - 🌍 Bulk import by country
+  - 🌎 All countries
   - Movies / Series / Both
   - Custom number of items
   - Newest / Popular / Rating sorting
@@ -125,7 +126,6 @@ const COUNTRIES = [
   { code: 'CA', name: '🇨🇦 كندا' },
   { code: 'ZA', name: '🇿🇦 جنوب أفريقيا' },
   { code: 'NG', name: '🇳🇬 نيجيريا' },
-  { code: 'PK', name: '🇵🇰 باكستان' },
 ];
 
 /* ============================================================
@@ -135,6 +135,12 @@ const COUNTRIES = [
 function normalizeType(type) {
   return type === 'tv' || type === 'series'
     ? 'series'
+    : 'movie';
+}
+
+function getTmdbEndpoint(type) {
+  return normalizeType(type) === 'series'
+    ? 'tv'
     : 'movie';
 }
 
@@ -163,21 +169,55 @@ function getTitle(item) {
 }
 
 function getPoster(item) {
-  return item?.poster_path
-    ? `${TMDB_IMAGE_BASE}/w500${item.poster_path}`
-    : null;
+  if (!item?.poster_path) {
+    return null;
+  }
+
+  if (
+    String(item.poster_path).startsWith(
+      'http://'
+    ) ||
+    String(item.poster_path).startsWith(
+      'https://'
+    )
+  ) {
+    return item.poster_path;
+  }
+
+  return `${TMDB_IMAGE_BASE}/w500${item.poster_path}`;
 }
 
 function getBackdrop(item) {
-  return item?.backdrop_path
-    ? `${TMDB_IMAGE_BASE}/w1280${item.backdrop_path}`
-    : null;
+  if (!item?.backdrop_path) {
+    return null;
+  }
+
+  if (
+    String(item.backdrop_path).startsWith(
+      'http://'
+    ) ||
+    String(item.backdrop_path).startsWith(
+      'https://'
+    )
+  ) {
+    return item.backdrop_path;
+  }
+
+  return `${TMDB_IMAGE_BASE}/w1280${item.backdrop_path}`;
 }
 
 function getGenres(item) {
   if (Array.isArray(item?.genres)) {
     return item.genres
-      .map((genre) => genre?.name)
+      .map((genre) => {
+        if (
+          typeof genre === 'string'
+        ) {
+          return genre;
+        }
+
+        return genre?.name;
+      })
       .filter(Boolean);
   }
 
@@ -189,7 +229,9 @@ function getGenres(item) {
 }
 
 function getRating(item) {
-  const value = Number(item?.vote_average);
+  const value = Number(
+    item?.vote_average
+  );
 
   return Number.isFinite(value)
     ? Number(value.toFixed(1))
@@ -226,7 +268,7 @@ export default function Import() {
 
   /* ============================================================
      SEARCH
-  ============================================================ */
+============================================================ */
 
   const [searchQuery, setSearchQuery] =
     useState('');
@@ -242,7 +284,7 @@ export default function Import() {
 
   /* ============================================================
      BULK IMPORT
-  ============================================================ */
+============================================================ */
 
   const [bulkType, setBulkType] =
     useState('both');
@@ -255,7 +297,7 @@ export default function Import() {
 
   /* ============================================================
      COUNTRY IMPORT
-  ============================================================ */
+============================================================ */
 
   const [countryCode, setCountryCode] =
     useState('TR');
@@ -291,7 +333,7 @@ export default function Import() {
 
   /* ============================================================
      TRENDING
-  ============================================================ */
+============================================================ */
 
   const [
     isTrendingLoading,
@@ -300,7 +342,7 @@ export default function Import() {
 
   /* ============================================================
      SERIES EPISODES
-  ============================================================ */
+============================================================ */
 
   const [seriesTmdbId, setSeriesTmdbId] =
     useState('');
@@ -320,14 +362,14 @@ export default function Import() {
 
   /* ============================================================
      TOOLS
-  ============================================================ */
+============================================================ */
 
   const [isToolLoading, setIsToolLoading] =
     useState(false);
 
   /* ============================================================
      LOGS / STATS
-  ============================================================ */
+============================================================ */
 
   const [logs, setLogs] = useState([]);
 
@@ -351,7 +393,7 @@ export default function Import() {
 
   /* ============================================================
      AUTH
-  ============================================================ */
+============================================================ */
 
   useEffect(() => {
     let mounted = true;
@@ -396,7 +438,7 @@ export default function Import() {
 
   /* ============================================================
      ADMIN CHECK
-  ============================================================ */
+============================================================ */
 
   useEffect(() => {
     let mounted = true;
@@ -461,7 +503,7 @@ export default function Import() {
 
   /* ============================================================
      LOGGING
-  ============================================================ */
+============================================================ */
 
   const addLog = (
     message,
@@ -509,11 +551,12 @@ export default function Import() {
 
   /* ============================================================
      TMDB REQUEST
-  ============================================================ */
+============================================================ */
 
   const tmdbFetch = async (
     path,
-    params = {}
+    params = {},
+    retryCount = 0
   ) => {
     if (!TMDB_API_KEY) {
       throw new Error(
@@ -562,6 +605,31 @@ export default function Import() {
       data = null;
     }
 
+    if (
+      response.status === 429 &&
+      retryCount < 3
+    ) {
+      const retryAfter =
+        Number(
+          response.headers.get(
+            'retry-after'
+          )
+        ) || 2;
+
+      await sleep(
+        Math.max(
+          1000,
+          retryAfter * 1000
+        )
+      );
+
+      return tmdbFetch(
+        path,
+        params,
+        retryCount + 1
+      );
+    }
+
     if (!response.ok) {
       const message =
         data?.status_message ||
@@ -570,6 +638,12 @@ export default function Import() {
       if (response.status === 401) {
         throw new Error(
           'TMDB API Key غير صالحة أو لم يتم تحميل المفتاح الجديد. تأكد من VITE_TMDB_API_KEY ثم أعد Build جديد.'
+        );
+      }
+
+      if (response.status === 429) {
+        throw new Error(
+          'TMDB رفض الطلبات مؤقتاً بسبب كثرتها. انتظر قليلاً ثم أعد العملية.'
         );
       }
 
@@ -589,8 +663,35 @@ export default function Import() {
   };
 
   /* ============================================================
+     GET FULL TMDB DETAILS
+============================================================ */
+
+  const getFullTmdbDetails =
+    async (
+      tmdbId,
+      type
+    ) => {
+      if (!tmdbId) {
+        throw new Error(
+          'TMDB ID غير موجود.'
+        );
+      }
+
+      const endpoint =
+        getTmdbEndpoint(type);
+
+      return tmdbFetch(
+        `/${endpoint}/${tmdbId}`,
+        {
+          append_to_response:
+            'credits',
+        }
+      );
+    };
+
+  /* ============================================================
      DATABASE
-  ============================================================ */
+============================================================ */
 
   const findExistingTitle =
     async (tmdbId) => {
@@ -673,16 +774,9 @@ export default function Import() {
             : false,
       };
 
-      /*
-        Keep legacy titles.url compatible
-        with the existing database.
-
-        VideoPlayer does NOT depend on it anymore.
-      */
-
       if (
         normalizedType === 'movie' &&
-        !existing.url
+        item.id
       ) {
         updateData.url =
           VIDSRC_MOVIE(item.id);
@@ -758,7 +852,7 @@ export default function Import() {
 
   /* ============================================================
      EPISODES
-  ============================================================ */
+============================================================ */
 
   const saveEpisodesForTitle =
     async (
@@ -924,7 +1018,7 @@ export default function Import() {
 
   /* ============================================================
      INDIVIDUAL SEARCH
-  ============================================================ */
+============================================================ */
 
   const handleSingleSearch =
     async (event) => {
@@ -1008,7 +1102,7 @@ export default function Import() {
 
   /* ============================================================
      INDIVIDUAL IMPORT
-  ============================================================ */
+============================================================ */
 
   const importSingleItem =
     async (item) => {
@@ -1026,41 +1120,40 @@ export default function Import() {
           `استيراد ${getTitle(item)}`
         );
 
+        const details =
+          await getFullTmdbDetails(
+            item.id,
+            type
+          );
+
         const result =
           await saveTitle(
-            item,
+            details,
             type
           );
 
         updateStats({
           imported:
-            stats.imported +
-            (result.created
+            result.created
               ? 1
-              : 0),
+              : 0,
 
           updated:
-            stats.updated +
-            (result.created
+            result.created
               ? 0
-              : 1),
+              : 1,
         });
 
         addLog(
           result.created
-            ? `🎉 تم إنشاء "${getTitle(item)}".`
-            : `🔄 تم تحديث "${getTitle(item)}".`,
+            ? `🎉 تم إنشاء "${getTitle(details)}".`
+            : `🔄 تم تحديث "${getTitle(details)}".`,
           'success'
         );
 
         if (
           type === 'series'
         ) {
-          const details =
-            await tmdbFetch(
-              `/tv/${item.id}`
-            );
-
           const seasons =
             Array.isArray(
               details?.seasons
@@ -1075,13 +1168,13 @@ export default function Import() {
           if (seasons.length) {
             await saveEpisodesForTitle(
               result.title.id,
-              item.id,
+              details.id,
               seasons,
               9999
             );
 
             addLog(
-              `🎞️ تم تحديث حلقات "${getTitle(item)}".`,
+              `🎞️ تم تحديث حلقات "${getTitle(details)}".`,
               'success'
             );
           }
@@ -1105,7 +1198,7 @@ export default function Import() {
 
   /* ============================================================
      BULK IMPORT
-  ============================================================ */
+============================================================ */
 
   const getBulkTypes = () => {
     if (bulkType === 'movie') {
@@ -1175,9 +1268,15 @@ export default function Import() {
               processed++;
 
               try {
+                const details =
+                  await getFullTmdbDetails(
+                    item.id,
+                    type
+                  );
+
                 const result =
                   await saveTitle(
-                    item,
+                    details,
                     type
                   );
 
@@ -1222,6 +1321,8 @@ export default function Import() {
                   'error'
                 );
               }
+
+              await sleep(80);
             }
 
             await sleep(150);
@@ -1259,7 +1360,7 @@ export default function Import() {
 
   /* ============================================================
      🌍 COUNTRY IMPORT
-  ============================================================ */
+============================================================ */
 
   const getCountrySort = (
     type
@@ -1288,10 +1389,17 @@ export default function Import() {
 
       return {
         path: endpoint,
+
         params: {
           page,
-          with_origin_country:
-            countryCode,
+
+          ...(countryCode !== 'ALL'
+            ? {
+                with_origin_country:
+                  countryCode,
+              }
+            : {}),
+
           sort_by:
             getCountrySort(type),
 
@@ -1299,11 +1407,6 @@ export default function Import() {
 
           include_video: false,
 
-          /*
-            For rating sorting, don't let
-            titles with almost no votes
-            dominate the list.
-          */
           ...(countrySort ===
           'rating'
             ? {
@@ -1324,14 +1427,6 @@ export default function Import() {
       const seen = new Set();
 
       let page = 1;
-
-      /*
-        TMDB returns roughly 20 results
-        per page.
-
-        Continue until we collect the
-        requested amount or TMDB ends.
-      */
 
       while (
         results.length <
@@ -1421,28 +1516,10 @@ export default function Import() {
           )}`
         );
 
-        /*
-          Fetch the full TMDB details
-          before saving.
-
-          This gives us:
-          - full overview
-          - genres
-          - poster
-          - release year
-          - rating
-          - TMDB ID
-        */
-
-        const endpoint =
-          normalizedType ===
-          'series'
-            ? 'tv'
-            : 'movie';
-
         const details =
-          await tmdbFetch(
-            `/${endpoint}/${item.id}`
+          await getFullTmdbDetails(
+            item.id,
+            normalizedType
           );
 
         const result =
@@ -1486,11 +1563,6 @@ export default function Import() {
               )}`,
           'success'
         );
-
-        /*
-          Automatically import episodes
-          for country-imported TV shows.
-        */
 
         if (
           normalizedType ===
@@ -1589,8 +1661,10 @@ export default function Import() {
           );
 
         const countryName =
-          selectedCountry?.name ||
-          countryCode;
+          countryCode === 'ALL'
+            ? '🌎 جميع الدول'
+            : selectedCountry?.name ||
+              countryCode;
 
         addLog(
           `🌍 بدء استيراد ${count} عمل من ${countryName}.`,
@@ -1615,12 +1689,6 @@ export default function Import() {
             'tv',
           ];
         }
-
-        /*
-          When "both" is selected,
-          count means total requested
-          across both types.
-        */
 
         const perType =
           types.length === 1
@@ -1650,11 +1718,6 @@ export default function Import() {
             });
           }
         }
-
-        /*
-          Keep the requested global
-          count when both is selected.
-        */
 
         const selectedItems =
           allItems.slice(
@@ -1720,7 +1783,7 @@ export default function Import() {
 
   /* ============================================================
      TRENDING
-  ============================================================ */
+============================================================ */
 
   const handleTrendingImport =
     async () => {
@@ -1775,9 +1838,15 @@ export default function Import() {
                 ? 'series'
                 : 'movie';
 
+            const details =
+              await getFullTmdbDetails(
+                item.id,
+                type
+              );
+
             const result =
               await saveTitle(
-                item,
+                details,
                 type
               );
 
@@ -1811,10 +1880,12 @@ export default function Import() {
               `✅ ${
                 index + 1
               }/${results.length} — ${getTitle(
-                item
+                details
               )}`,
               'success'
             );
+
+            await sleep(100);
           } catch (error) {
             setStats((prev) => ({
               ...prev,
@@ -1849,7 +1920,7 @@ export default function Import() {
 
   /* ============================================================
      SERIES / EPISODES MANUAL
-  ============================================================ */
+============================================================ */
 
   const handleSeriesEpisodesImport =
     async () => {
@@ -2118,7 +2189,7 @@ export default function Import() {
 
   /* ============================================================
      FIX URLS
-  ============================================================ */
+============================================================ */
 
   const handleFixUrls =
     async () => {
@@ -2134,7 +2205,9 @@ export default function Import() {
         } =
           await supabase
             .from('titles')
-            .select('*');
+            .select(
+              'id,tmdb_id,name,type,url'
+            );
 
         if (error) throw error;
 
@@ -2157,26 +2230,42 @@ export default function Import() {
             list[index];
 
           try {
+            if (!item.tmdb_id) {
+              setProgress(
+                Math.round(
+                  ((index + 1) /
+                    Math.max(
+                      list.length,
+                      1
+                    )) *
+                    100
+                )
+              );
+
+              continue;
+            }
+
             const normalizedType =
               normalizeType(
                 item.type
               );
 
-            const updateData = {};
+            const updateData = {
+              type:
+                normalizedType,
+            };
 
-            if (
-              normalizedType !==
-              item.type
-            ) {
-              updateData.type =
-                normalizedType;
-            }
+            /*
+              The legacy titles.url field is
+              maintained for movie records.
+
+              Series playback is generated
+              from TMDB ID by VideoPlayer.
+            */
 
             if (
               normalizedType ===
-                'movie' &&
-              !item.url &&
-              item.tmdb_id
+              'movie'
             ) {
               updateData.url =
                 VIDSRC_MOVIE(
@@ -2184,31 +2273,25 @@ export default function Import() {
                 );
             }
 
-            if (
-              Object.keys(
-                updateData
-              ).length
-            ) {
-              const {
-                error:
-                  updateError,
-              } =
-                await supabase
-                  .from('titles')
-                  .update(
-                    updateData
-                  )
-                  .eq(
-                    'id',
-                    item.id
-                  );
+            const {
+              error:
+                updateError,
+            } =
+              await supabase
+                .from('titles')
+                .update(
+                  updateData
+                )
+                .eq(
+                  'id',
+                  item.id
+                );
 
-              if (updateError) {
-                throw updateError;
-              }
-
-              fixed++;
+            if (updateError) {
+              throw updateError;
             }
+
+            fixed++;
 
             setProgress(
               Math.round(
@@ -2220,6 +2303,8 @@ export default function Import() {
                   100
               )
             );
+
+            await sleep(60);
           } catch (error) {
             setStats((prev) => ({
               ...prev,
@@ -2228,7 +2313,7 @@ export default function Import() {
             }));
 
             addLog(
-              `❌ فشل إصلاح ${item.name}: ${error.message}`,
+              `❌ فشل إصلاح URL لـ ${item.name}: ${error.message}`,
               'error'
             );
           }
@@ -2241,7 +2326,7 @@ export default function Import() {
         });
 
         addLog(
-          `✅ انتهى الإصلاح. تم تعديل ${fixed} سجل.`,
+          `🔗 انتهى إصلاح الروابط. تم تحديث ${fixed} سجل.`,
           'success'
         );
       } catch (error) {
@@ -2257,7 +2342,7 @@ export default function Import() {
 
   /* ============================================================
      POSTERS
-  ============================================================ */
+============================================================ */
 
   const handleFixPosters =
     async () => {
@@ -2297,21 +2382,26 @@ export default function Import() {
           const item =
             list[index];
 
-          if (!item.tmdb_id) {
-            continue;
-          }
-
           try {
-            const endpoint =
-              normalizeType(
-                item.type
-              ) === 'series'
-                ? 'tv'
-                : 'movie';
+            if (!item.tmdb_id) {
+              setProgress(
+                Math.round(
+                  ((index + 1) /
+                    Math.max(
+                      list.length,
+                      1
+                    )) *
+                    100
+                )
+              );
+
+              continue;
+            }
 
             const tmdbItem =
-              await tmdbFetch(
-                `/${endpoint}/${item.tmdb_id}`
+              await getFullTmdbDetails(
+                item.tmdb_id,
+                item.type
               );
 
             const posterUrl =
@@ -2319,11 +2409,12 @@ export default function Import() {
                 tmdbItem
               );
 
-            if (
-              posterUrl &&
-              posterUrl !==
-                item.poster_url
-            ) {
+            /*
+              Update even when the current
+              poster_url is broken or outdated.
+            */
+
+            if (posterUrl) {
               const {
                 error:
                   updateError,
@@ -2344,6 +2435,11 @@ export default function Import() {
               }
 
               fixed++;
+            } else {
+              addLog(
+                `⚠️ لا توجد Poster في TMDB لـ ${item.name}.`,
+                'warning'
+              );
             }
 
             setProgress(
@@ -2356,6 +2452,8 @@ export default function Import() {
                   100
               )
             );
+
+            await sleep(80);
           } catch (error) {
             setStats((prev) => ({
               ...prev,
@@ -2377,7 +2475,7 @@ export default function Import() {
         });
 
         addLog(
-          `🖼️ اكتمل إصلاح Posters: ${fixed} سجل.`,
+          `🖼️ اكتمل إصلاح Posters: تم تحديث ${fixed} سجل.`,
           'success'
         );
       } catch (error) {
@@ -2387,12 +2485,13 @@ export default function Import() {
         );
       } finally {
         setIsToolLoading(false);
+        setCurrentOperation('');
       }
     };
 
   /* ============================================================
      RATINGS
-  ============================================================ */
+============================================================ */
 
   const handleUpdateRatings =
     async () => {
@@ -2432,21 +2531,31 @@ export default function Import() {
           const item =
             list[index];
 
-          if (!item.tmdb_id) {
-            continue;
-          }
-
           try {
-            const endpoint =
-              normalizeType(
-                item.type
-              ) === 'series'
-                ? 'tv'
-                : 'movie';
+            if (!item.tmdb_id) {
+              setProgress(
+                Math.round(
+                  ((index + 1) /
+                    Math.max(
+                      list.length,
+                      1
+                    )) *
+                    100
+                )
+              );
+
+              continue;
+            }
 
             const tmdbItem =
-              await tmdbFetch(
-                `/${endpoint}/${item.tmdb_id}`
+              await getFullTmdbDetails(
+                item.tmdb_id,
+                item.type
+              );
+
+            const rating =
+              getRating(
+                tmdbItem
               );
 
             const {
@@ -2457,9 +2566,7 @@ export default function Import() {
                 .from('titles')
                 .update({
                   rating_avg:
-                    getRating(
-                      tmdbItem
-                    ),
+                    rating,
                 })
                 .eq(
                   'id',
@@ -2482,6 +2589,8 @@ export default function Import() {
                   100
               )
             );
+
+            await sleep(80);
           } catch (error) {
             setStats((prev) => ({
               ...prev,
@@ -2513,12 +2622,13 @@ export default function Import() {
         );
       } finally {
         setIsToolLoading(false);
+        setCurrentOperation('');
       }
     };
 
   /* ============================================================
      FULL INFO
-  ============================================================ */
+============================================================ */
 
   const handleUpdateInfo =
     async () => {
@@ -2535,7 +2645,7 @@ export default function Import() {
           await supabase
             .from('titles')
             .select(
-              'id,tmdb_id,name,type,url'
+              'id,tmdb_id,name,type,url,poster_url,release_year,genres,rating_avg,synopsis'
             );
 
         if (error) throw error;
@@ -2558,25 +2668,31 @@ export default function Import() {
           const item =
             list[index];
 
-          if (!item.tmdb_id) {
-            continue;
-          }
-
           try {
+            if (!item.tmdb_id) {
+              setProgress(
+                Math.round(
+                  ((index + 1) /
+                    Math.max(
+                      list.length,
+                      1
+                    )) *
+                    100
+                )
+              );
+
+              continue;
+            }
+
             const normalizedType =
               normalizeType(
                 item.type
               );
 
-            const endpoint =
-              normalizedType ===
-              'series'
-                ? 'tv'
-                : 'movie';
-
             const tmdbItem =
-              await tmdbFetch(
-                `/${endpoint}/${item.tmdb_id}`
+              await getFullTmdbDetails(
+                item.tmdb_id,
+                normalizedType
               );
 
             const updateData = {
@@ -2613,10 +2729,14 @@ export default function Import() {
                 ),
             };
 
+            /*
+              Repair legacy movie URL
+              every time, not only when empty.
+            */
+
             if (
               normalizedType ===
-                'movie' &&
-              !item.url
+              'movie'
             ) {
               updateData.url =
                 VIDSRC_MOVIE(
@@ -2654,6 +2774,8 @@ export default function Import() {
                   100
               )
             );
+
+            await sleep(100);
           } catch (error) {
             setStats((prev) => ({
               ...prev,
@@ -2685,12 +2807,13 @@ export default function Import() {
         );
       } finally {
         setIsToolLoading(false);
+        setCurrentOperation('');
       }
     };
 
   /* ============================================================
      UI HELPERS
-  ============================================================ */
+============================================================ */
 
   const clearLogs = () => {
     setLogs([]);
@@ -2732,7 +2855,7 @@ export default function Import() {
 
   /* ============================================================
      LOADING
-  ============================================================ */
+============================================================ */
 
   if (
     authLoading ||
@@ -2841,7 +2964,7 @@ export default function Import() {
 
   /* ============================================================
      DASHBOARD
-  ============================================================ */
+============================================================ */
 
   return (
     <div style={styles.page}>
@@ -3077,7 +3200,7 @@ export default function Import() {
           <SectionTitle
             icon="🌍"
             title="استيراد جماعي حسب الدولة"
-            description="جيب أحدث الأفلام أو المسلسلات من دولة تختارها، بعدد أنت تحدده، مع المعلومات والبوسترات وTMDB ID."
+            description="جيب أحدث الأفلام أو المسلسلات من دولة تختارها، أو اختر جميع الدول، بعدد أنت تحدده، مع المعلومات والبوسترات وTMDB ID."
           />
 
           <div style={styles.countryHero}>
@@ -3087,7 +3210,7 @@ export default function Import() {
               </strong>
 
               <p>
-                مثال: اختر تركيا + أفلام + 50 + الأحدث، وسيتم جلب 50 فيلم تركي حسب بيانات TMDB.
+                اختر دولة لجلب أعمالها فقط، أو اختر 🌎 جميع الدول لإزالة فلتر بلد المنشأ بالكامل.
               </p>
             </div>
 
@@ -3113,6 +3236,10 @@ export default function Import() {
                 style={styles.selectFull}
                 disabled={busy}
               >
+                <option value="ALL">
+                  🌎 جميع الدول
+                </option>
+
                 {COUNTRIES.map(
                   (country) => (
                     <option
@@ -3810,6 +3937,7 @@ function ToolButton({
       style={styles.toolButton}
       onClick={onClick}
       disabled={disabled}
+      type="button"
     >
       <span>
         {icon}
