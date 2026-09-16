@@ -6,43 +6,26 @@ import { supabase } from '../lib/supabaseClient';
   StreamFlix - Secure Import Dashboard
   ============================================================
 
-  Security model:
-  - Supabase Auth identifies the user.
-  - admin_users determines who is an administrator.
-  - Database RLS protects INSERT / UPDATE / DELETE.
-  - No PIN is used.
+  Features:
+  - Supabase Auth + admin_users
+  - Individual TMDB search/import
+  - Bulk popular import
+  - Trending import
+  - Series / episodes import
+  - Database repair tools
+  - 🌍 Bulk import by country
+  - Movies / Series / Both
+  - Custom number of items
+  - Newest / Popular / Rating sorting
+  - Full TMDB metadata
+  - Duplicate protection using tmdb_id
 
-  TMDB:
-  - API key is read from VITE_TMDB_API_KEY
-  - NEVER hardcode the TMDB API key in this file.
-
-  Database:
-  titles:
-    id
-    type
-    name
-    synopsis
-    poster_url
-    release_year
-    genres
-    rating_avg
-    is_premium
-    created_at
-    url
-    tmdb_id
-
-  episodes:
-    id
-    title_id
-    season
-    episode_number
-    name
-    duration_seconds
-    stream_urls
-
-  Servers:
-    Server 1 = Vidsrc
-    Server 2 = Stellar
+  Playback:
+  - VideoPlayer generates servers live from TMDB ID
+  - Vidsrc
+  - Stellar
+  - VidLink
+  - YapGrid VIP
 */
 
 /* ============================================================
@@ -86,18 +69,73 @@ const sleep = (ms) =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 /* ============================================================
+   COUNTRY LIST
+============================================================ */
+
+const COUNTRIES = [
+  { code: 'TR', name: '🇹🇷 تركيا' },
+  { code: 'DZ', name: '🇩🇿 الجزائر' },
+  { code: 'EG', name: '🇪🇬 مصر' },
+  { code: 'SA', name: '🇸🇦 السعودية' },
+  { code: 'AE', name: '🇦🇪 الإمارات' },
+  { code: 'MA', name: '🇲🇦 المغرب' },
+  { code: 'TN', name: '🇹🇳 تونس' },
+  { code: 'IQ', name: '🇮🇶 العراق' },
+  { code: 'SY', name: '🇸🇾 سوريا' },
+  { code: 'JO', name: '🇯🇴 الأردن' },
+  { code: 'LB', name: '🇱🇧 لبنان' },
+  { code: 'PS', name: '🇵🇸 فلسطين' },
+  { code: 'KW', name: '🇰🇼 الكويت' },
+  { code: 'QA', name: '🇶🇦 قطر' },
+  { code: 'BH', name: '🇧🇭 البحرين' },
+  { code: 'OM', name: '🇴🇲 عُمان' },
+  { code: 'YE', name: '🇾🇪 اليمن' },
+  { code: 'IR', name: '🇮🇷 إيران' },
+  { code: 'IN', name: '🇮🇳 الهند' },
+  { code: 'PK', name: '🇵🇰 باكستان' },
+  { code: 'KR', name: '🇰🇷 كوريا الجنوبية' },
+  { code: 'JP', name: '🇯🇵 اليابان' },
+  { code: 'CN', name: '🇨🇳 الصين' },
+  { code: 'TH', name: '🇹🇭 تايلاند' },
+  { code: 'ID', name: '🇮🇩 إندونيسيا' },
+  { code: 'MY', name: '🇲🇾 ماليزيا' },
+  { code: 'PH', name: '🇵🇭 الفلبين' },
+  { code: 'US', name: '🇺🇸 الولايات المتحدة' },
+  { code: 'GB', name: '🇬🇧 بريطانيا' },
+  { code: 'FR', name: '🇫🇷 فرنسا' },
+  { code: 'DE', name: '🇩🇪 ألمانيا' },
+  { code: 'IT', name: '🇮🇹 إيطاليا' },
+  { code: 'ES', name: '🇪🇸 إسبانيا' },
+  { code: 'PT', name: '🇵🇹 البرتغال' },
+  { code: 'NL', name: '🇳🇱 هولندا' },
+  { code: 'BE', name: '🇧🇪 بلجيكا' },
+  { code: 'SE', name: '🇸🇪 السويد' },
+  { code: 'NO', name: '🇳🇴 النرويج' },
+  { code: 'DK', name: '🇩🇰 الدنمارك' },
+  { code: 'FI', name: '🇫🇮 فنلندا' },
+  { code: 'PL', name: '🇵🇱 بولندا' },
+  { code: 'RU', name: '🇷🇺 روسيا' },
+  { code: 'UA', name: '🇺🇦 أوكرانيا' },
+  { code: 'BR', name: '🇧🇷 البرازيل' },
+  { code: 'MX', name: '🇲🇽 المكسيك' },
+  { code: 'AR', name: '🇦🇷 الأرجنتين' },
+  { code: 'CO', name: '🇨🇴 كولومبيا' },
+  { code: 'CL', name: '🇨🇱 تشيلي' },
+  { code: 'AU', name: '🇦🇺 أستراليا' },
+  { code: 'CA', name: '🇨🇦 كندا' },
+  { code: 'ZA', name: '🇿🇦 جنوب أفريقيا' },
+  { code: 'NG', name: '🇳🇬 نيجيريا' },
+  { code: 'PK', name: '🇵🇰 باكستان' },
+];
+
+/* ============================================================
    HELPERS
 ============================================================ */
 
 function normalizeType(type) {
-  if (
-    type === 'tv' ||
-    type === 'series'
-  ) {
-    return 'series';
-  }
-
-  return 'movie';
+  return type === 'tv' || type === 'series'
+    ? 'series'
+    : 'movie';
 }
 
 function getYear(item) {
@@ -137,19 +175,21 @@ function getBackdrop(item) {
 }
 
 function getGenres(item) {
-  if (!Array.isArray(item?.genres)) {
-    return [];
+  if (Array.isArray(item?.genres)) {
+    return item.genres
+      .map((genre) => genre?.name)
+      .filter(Boolean);
   }
 
-  return item.genres
-    .map((genre) => genre?.name)
-    .filter(Boolean);
+  if (Array.isArray(item?.genre_ids)) {
+    return item.genre_ids.map(String);
+  }
+
+  return [];
 }
 
 function getRating(item) {
-  const value = Number(
-    item?.vote_average
-  );
+  const value = Number(item?.vote_average);
 
   return Number.isFinite(value)
     ? Number(value.toFixed(1))
@@ -214,6 +254,42 @@ export default function Import() {
     useState(false);
 
   /* ============================================================
+     COUNTRY IMPORT
+  ============================================================ */
+
+  const [countryCode, setCountryCode] =
+    useState('TR');
+
+  const [countryType, setCountryType] =
+    useState('movie');
+
+  const [countryCount, setCountryCount] =
+    useState(50);
+
+  const [countrySort, setCountrySort] =
+    useState('newest');
+
+  const [
+    countryImportEpisodes,
+    setCountryImportEpisodes,
+  ] = useState(true);
+
+  const [
+    countrySeasonLimit,
+    setCountrySeasonLimit,
+  ] = useState(100);
+
+  const [
+    countryEpisodesLimit,
+    setCountryEpisodesLimit,
+  ] = useState(500);
+
+  const [
+    isCountryLoading,
+    setIsCountryLoading,
+  ] = useState(false);
+
+  /* ============================================================
      TRENDING
   ============================================================ */
 
@@ -274,7 +350,7 @@ export default function Import() {
     useState(0);
 
   /* ============================================================
-     AUTH CHECK
+     AUTH
   ============================================================ */
 
   useEffect(() => {
@@ -308,7 +384,6 @@ export default function Import() {
       supabase.auth.onAuthStateChange(
         (_event, session) => {
           if (!mounted) return;
-
           setUser(session?.user || null);
         }
       );
@@ -344,9 +419,7 @@ export default function Import() {
             .eq('user_id', user.id)
             .maybeSingle();
 
-        if (error) {
-          throw error;
-        }
+        if (error) throw error;
 
         if (!mounted) return;
 
@@ -356,15 +429,12 @@ export default function Import() {
 
         setIsAdmin(false);
 
-        const message =
-          String(
-            error?.message || ''
-          ).toLowerCase();
+        const message = String(
+          error?.message || ''
+        ).toLowerCase();
 
         if (
-          message.includes(
-            'admin_users'
-          )
+          message.includes('admin_users')
         ) {
           setAdminError(
             'تعذر الوصول إلى جدول صلاحيات الإدارة. تأكد من تطبيق SQL الحماية في Supabase.'
@@ -497,9 +567,7 @@ export default function Import() {
         data?.status_message ||
         `TMDB HTTP ${response.status}`;
 
-      if (
-        response.status === 401
-      ) {
+      if (response.status === 401) {
         throw new Error(
           'TMDB API Key غير صالحة أو لم يتم تحميل المفتاح الجديد. تأكد من VITE_TMDB_API_KEY ثم أعد Build جديد.'
         );
@@ -521,7 +589,7 @@ export default function Import() {
   };
 
   /* ============================================================
-     DATABASE HELPERS
+     DATABASE
   ============================================================ */
 
   const findExistingTitle =
@@ -537,9 +605,7 @@ export default function Import() {
           .limit(1)
           .maybeSingle();
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       return data || null;
     };
@@ -548,11 +614,8 @@ export default function Import() {
     item,
     type
   ) => {
-    const normalizedType =
-      normalizeType(type);
-
     return {
-      type: normalizedType,
+      type: normalizeType(type),
       name: getTitle(item),
       synopsis:
         item?.overview || null,
@@ -610,6 +673,13 @@ export default function Import() {
             : false,
       };
 
+      /*
+        Keep legacy titles.url compatible
+        with the existing database.
+
+        VideoPlayer does NOT depend on it anymore.
+      */
+
       if (
         normalizedType === 'movie' &&
         !existing.url
@@ -631,9 +701,7 @@ export default function Import() {
         .select('*')
         .single();
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       return {
         title: data,
@@ -689,7 +757,7 @@ export default function Import() {
   };
 
   /* ============================================================
-     SAVE EPISODES
+     EPISODES
   ============================================================ */
 
   const saveEpisodesForTitle =
@@ -699,15 +767,13 @@ export default function Import() {
       seasons,
       maxEpisodesPerSeason
     ) => {
-      let insertedOrUpdated = 0;
+      let count = 0;
 
       for (const season of seasons) {
         const seasonNumber =
           season.season_number;
 
-        if (
-          seasonNumber === 0
-        ) {
+        if (seasonNumber === 0) {
           continue;
         }
 
@@ -723,15 +789,13 @@ export default function Import() {
             ? detail.episodes
             : [];
 
-        const selectedEpisodes =
+        const selected =
           episodes.slice(
             0,
             maxEpisodesPerSeason
           );
 
-        for (
-          const episode of selectedEpisodes
-        ) {
+        for (const episode of selected) {
           const episodeNumber =
             episode.episode_number;
 
@@ -810,9 +874,7 @@ export default function Import() {
                 updateError,
             } =
               await supabase
-                .from(
-                  'episodes'
-                )
+                .from('episodes')
                 .update({
                   name:
                     episodeData.name,
@@ -837,9 +899,7 @@ export default function Import() {
                 insertError,
             } =
               await supabase
-                .from(
-                  'episodes'
-                )
+                .from('episodes')
                 .insert(
                   episodeData
                 );
@@ -849,7 +909,7 @@ export default function Import() {
             }
           }
 
-          insertedOrUpdated++;
+          count++;
 
           setStats((prev) => ({
             ...prev,
@@ -859,7 +919,7 @@ export default function Import() {
         }
       }
 
-      return insertedOrUpdated;
+      return count;
     };
 
   /* ============================================================
@@ -927,19 +987,14 @@ export default function Import() {
             results
           );
 
-          if (
+          addLog(
             results.length
-          ) {
-            addLog(
-              `✅ تم العثور على ${results.length} نتيجة.`,
-              'success'
-            );
-          } else {
-            addLog(
-              '⚠️ لا توجد نتائج.',
-              'warning'
-            );
-          }
+              ? `✅ تم العثور على ${results.length} نتيجة.`
+              : '⚠️ لا توجد نتائج.',
+            results.length
+              ? 'success'
+              : 'warning'
+          );
         }
       } catch (error) {
         addLog(
@@ -968,16 +1023,7 @@ export default function Import() {
             : 'movie';
 
         setCurrentOperation(
-          `استيراد ${getTitle(
-            item
-          )}`
-        );
-
-        addLog(
-          `⏳ بدء استيراد "${getTitle(
-            item
-          )}"...`,
-          'info'
+          `استيراد ${getTitle(item)}`
         );
 
         const result =
@@ -986,41 +1032,26 @@ export default function Import() {
             type
           );
 
-        if (
+        updateStats({
+          imported:
+            stats.imported +
+            (result.created
+              ? 1
+              : 0),
+
+          updated:
+            stats.updated +
+            (result.created
+              ? 0
+              : 1),
+        });
+
+        addLog(
           result.created
-        ) {
-          setStats(
-            (prev) => ({
-              ...prev,
-              imported:
-                prev.imported +
-                1,
-            })
-          );
-
-          addLog(
-            `🎉 تم إنشاء "${getTitle(
-              item
-            )}" بنجاح.`,
-            'success'
-          );
-        } else {
-          setStats(
-            (prev) => ({
-              ...prev,
-              updated:
-                prev.updated +
-                1,
-            })
-          );
-
-          addLog(
-            `🔄 تم تحديث "${getTitle(
-              item
-            )}".`,
-            'success'
-          );
-        }
+            ? `🎉 تم إنشاء "${getTitle(item)}".`
+            : `🔄 تم تحديث "${getTitle(item)}".`,
+          'success'
+        );
 
         if (
           type === 'series'
@@ -1034,52 +1065,36 @@ export default function Import() {
             Array.isArray(
               details?.seasons
             )
-              ? details.seasons
+              ? details.seasons.filter(
+                  (season) =>
+                    season.season_number >
+                    0
+                )
               : [];
 
-          const validSeasons =
-            seasons.filter(
-              (season) =>
-                season.season_number >
-                0
-            );
-
-          if (
-            validSeasons.length
-          ) {
-            addLog(
-              `📺 المسلسل يحتوي على ${validSeasons.length} موسم.`,
-              'info'
-            );
-
+          if (seasons.length) {
             await saveEpisodesForTitle(
               result.title.id,
               item.id,
-              validSeasons,
+              seasons,
               9999
             );
 
             addLog(
-              `🎞️ تم تحديث حلقات "${getTitle(
-                item
-              )}".`,
+              `🎞️ تم تحديث حلقات "${getTitle(item)}".`,
               'success'
             );
           }
         }
       } catch (error) {
-        setStats(
-          (prev) => ({
-            ...prev,
-            failed:
-              prev.failed + 1,
-          })
-        );
+        setStats((prev) => ({
+          ...prev,
+          failed:
+            prev.failed + 1,
+        }));
 
         addLog(
-          `❌ فشل استيراد "${getTitle(
-            item
-          )}": ${error.message}`,
+          `❌ فشل الاستيراد: ${error.message}`,
           'error'
         );
       } finally {
@@ -1089,32 +1104,20 @@ export default function Import() {
     };
 
   /* ============================================================
-     BULK HELPERS
+     BULK IMPORT
   ============================================================ */
 
-  const getBulkTypes =
-    () => {
-      if (
-        bulkType === 'movie'
-      ) {
-        return ['movie'];
-      }
+  const getBulkTypes = () => {
+    if (bulkType === 'movie') {
+      return ['movie'];
+    }
 
-      if (
-        bulkType === 'series'
-      ) {
-        return ['tv'];
-      }
+    if (bulkType === 'series') {
+      return ['tv'];
+    }
 
-      return [
-        'movie',
-        'tv',
-      ];
-    };
-
-  const getPopularEndpoint =
-    (type, page) =>
-      `/${type}/popular`;
+    return ['movie', 'tv'];
+  };
 
   const importBulkPages =
     async ({
@@ -1130,11 +1133,6 @@ export default function Import() {
         const types =
           getBulkTypes();
 
-        addLog(
-          `🚀 بدء ${label}. النوع: ${bulkType}. الصفحات: ${pageCount}.`,
-          'info'
-        );
-
         const estimatedTotal =
           Number(pageCount) *
           20 *
@@ -1147,9 +1145,7 @@ export default function Import() {
 
         let processed = 0;
 
-        for (
-          const type of types
-        ) {
+        for (const type of types) {
           for (
             let page = 1;
             page <=
@@ -1161,16 +1157,7 @@ export default function Import() {
                 type === 'movie'
                   ? 'أفلام'
                   : 'مسلسلات'
-              } — الصفحة ${page}/${pageCount}`
-            );
-
-            addLog(
-              `📥 جلب ${
-                type === 'movie'
-                  ? 'الأفلام'
-                  : 'المسلسلات'
-              } — الصفحة ${page}/${pageCount}...`,
-              'info'
+              } — ${page}/${pageCount}`
             );
 
             const data =
@@ -1184,14 +1171,7 @@ export default function Import() {
             const results =
               data?.results || [];
 
-            addLog(
-              `📦 الصفحة ${page}: ${results.length} عنصر.`,
-              'info'
-            );
-
-            for (
-              const item of results
-            ) {
+            for (const item of results) {
               processed++;
 
               try {
@@ -1201,22 +1181,20 @@ export default function Import() {
                     type
                   );
 
-                setStats(
-                  (prev) => ({
-                    ...prev,
-                    imported:
-                      prev.imported +
-                      (result.created
-                        ? 1
-                        : 0),
-                    updated:
-                      prev.updated +
-                      (result.created
-                        ? 0
-                        : 1),
-                    processed,
-                  })
-                );
+                setStats((prev) => ({
+                  ...prev,
+                  imported:
+                    prev.imported +
+                    (result.created
+                      ? 1
+                      : 0),
+                  updated:
+                    prev.updated +
+                    (result.created
+                      ? 0
+                      : 1),
+                  processed,
+                }));
 
                 setProgress(
                   Math.min(
@@ -1232,29 +1210,19 @@ export default function Import() {
                   )
                 );
               } catch (error) {
-                setStats(
-                  (prev) => ({
-                    ...prev,
-                    failed:
-                      prev.failed +
-                      1,
-                    processed,
-                  })
-                );
+                setStats((prev) => ({
+                  ...prev,
+                  failed:
+                    prev.failed + 1,
+                  processed,
+                }));
 
                 addLog(
-                  `❌ فشل "${getTitle(
-                    item
-                  )}": ${error.message}`,
+                  `❌ ${getTitle(item)}: ${error.message}`,
                   'error'
                 );
               }
             }
-
-            addLog(
-              `✅ انتهت الصفحة ${page}/${pageCount}.`,
-              'success'
-            );
 
             await sleep(150);
           }
@@ -1277,23 +1245,477 @@ export default function Import() {
       }
     };
 
-  /* ============================================================
-     POPULAR
-  ============================================================ */
-
   const handleBulkPopularImport =
     () => {
       importBulkPages({
         endpointFactory:
           (type, page) =>
-            getPopularEndpoint(
-              type,
-              page
-            ),
+            `/${type}/popular?page=${page}`,
 
         label:
           'استيراد الأعمال الشائعة',
       });
+    };
+
+  /* ============================================================
+     🌍 COUNTRY IMPORT
+  ============================================================ */
+
+  const getCountrySort = (
+    type
+  ) => {
+    if (countrySort === 'popular') {
+      return 'popularity.desc';
+    }
+
+    if (countrySort === 'rating') {
+      return 'vote_average.desc';
+    }
+
+    if (type === 'movie') {
+      return 'primary_release_date.desc';
+    }
+
+    return 'first_air_date.desc';
+  };
+
+  const getCountryEndpoint =
+    (type, page) => {
+      const endpoint =
+        type === 'movie'
+          ? '/discover/movie'
+          : '/discover/tv';
+
+      return {
+        path: endpoint,
+        params: {
+          page,
+          with_origin_country:
+            countryCode,
+          sort_by:
+            getCountrySort(type),
+
+          include_adult: false,
+
+          include_video: false,
+
+          /*
+            For rating sorting, don't let
+            titles with almost no votes
+            dominate the list.
+          */
+          ...(countrySort ===
+          'rating'
+            ? {
+                vote_count.gte:
+                  20,
+              }
+            : {}),
+        },
+      };
+    };
+
+  const getCountryResults =
+    async (
+      type,
+      requiredCount
+    ) => {
+      const results = [];
+      const seen = new Set();
+
+      let page = 1;
+
+      /*
+        TMDB returns roughly 20 results
+        per page.
+
+        Continue until we collect the
+        requested amount or TMDB ends.
+      */
+
+      while (
+        results.length <
+          requiredCount &&
+        page <= 500
+      ) {
+        const request =
+          getCountryEndpoint(
+            type,
+            page
+          );
+
+        const data =
+          await tmdbFetch(
+            request.path,
+            request.params
+          );
+
+        const pageResults =
+          Array.isArray(
+            data?.results
+          )
+            ? data.results
+            : [];
+
+        if (!pageResults.length) {
+          break;
+        }
+
+        for (
+          const item of pageResults
+        ) {
+          if (
+            !item?.id ||
+            seen.has(
+              String(item.id)
+            )
+          ) {
+            continue;
+          }
+
+          seen.add(
+            String(item.id)
+          );
+
+          results.push(item);
+
+          if (
+            results.length >=
+            requiredCount
+          ) {
+            break;
+          }
+        }
+
+        if (
+          page >=
+          Number(
+            data?.total_pages || 1
+          )
+        ) {
+          break;
+        }
+
+        page++;
+
+        await sleep(100);
+      }
+
+      return results;
+    };
+
+  const importCountryItem =
+    async (
+      item,
+      type,
+      index,
+      total
+    ) => {
+      const normalizedType =
+        normalizeType(type);
+
+      try {
+        setCurrentOperation(
+          `🌍 ${index}/${total} — ${getTitle(
+            item
+          )}`
+        );
+
+        /*
+          Fetch the full TMDB details
+          before saving.
+
+          This gives us:
+          - full overview
+          - genres
+          - poster
+          - release year
+          - rating
+          - TMDB ID
+        */
+
+        const endpoint =
+          normalizedType ===
+          'series'
+            ? 'tv'
+            : 'movie';
+
+        const details =
+          await tmdbFetch(
+            `/${endpoint}/${item.id}`
+          );
+
+        const result =
+          await saveTitle(
+            details,
+            normalizedType
+          );
+
+        setStats((prev) => ({
+          ...prev,
+          imported:
+            prev.imported +
+            (result.created
+              ? 1
+              : 0),
+
+          updated:
+            prev.updated +
+            (result.created
+              ? 0
+              : 1),
+
+          processed:
+            prev.processed + 1,
+        }));
+
+        setProgress(
+          Math.round(
+            (index / total) *
+              100
+          )
+        );
+
+        addLog(
+          result.created
+            ? `🎬 ${index}/${total} — تم استيراد ${getTitle(
+                details
+              )}`
+            : `🔄 ${index}/${total} — تم تحديث ${getTitle(
+                details
+              )}`,
+          'success'
+        );
+
+        /*
+          Automatically import episodes
+          for country-imported TV shows.
+        */
+
+        if (
+          normalizedType ===
+            'series' &&
+          countryImportEpisodes
+        ) {
+          const seasons =
+            Array.isArray(
+              details?.seasons
+            )
+              ? details.seasons.filter(
+                  (season) =>
+                    season.season_number >
+                    0
+                )
+              : [];
+
+          const limitedSeasons =
+            seasons.slice(
+              0,
+              Math.max(
+                1,
+                Number(
+                  countrySeasonLimit
+                )
+              )
+            );
+
+          if (
+            limitedSeasons.length
+          ) {
+            await saveEpisodesForTitle(
+              result.title.id,
+              details.id,
+              limitedSeasons,
+              Math.max(
+                1,
+                Number(
+                  countryEpisodesLimit
+                )
+              )
+            );
+
+            addLog(
+              `📺 تم تحديث حلقات ${getTitle(
+                details
+              )}.`,
+              'success'
+            );
+          }
+        }
+
+        return true;
+      } catch (error) {
+        setStats((prev) => ({
+          ...prev,
+          failed:
+            prev.failed + 1,
+          processed:
+            prev.processed + 1,
+        }));
+
+        addLog(
+          `❌ فشل ${getTitle(
+            item
+          )}: ${error.message}`,
+          'error'
+        );
+
+        return false;
+      }
+    };
+
+  const handleCountryImport =
+    async () => {
+      if (!isAdmin) return;
+
+      const count = Math.max(
+        1,
+        Math.min(
+          5000,
+          Number(countryCount) ||
+            1
+        )
+      );
+
+      setIsCountryLoading(true);
+      resetOperationStats();
+
+      try {
+        const selectedCountry =
+          COUNTRIES.find(
+            (country) =>
+              country.code ===
+              countryCode
+          );
+
+        const countryName =
+          selectedCountry?.name ||
+          countryCode;
+
+        addLog(
+          `🌍 بدء استيراد ${count} عمل من ${countryName}.`,
+          'info'
+        );
+
+        let types = [];
+
+        if (
+          countryType ===
+          'movie'
+        ) {
+          types = ['movie'];
+        } else if (
+          countryType ===
+          'series'
+        ) {
+          types = ['tv'];
+        } else {
+          types = [
+            'movie',
+            'tv',
+          ];
+        }
+
+        /*
+          When "both" is selected,
+          count means total requested
+          across both types.
+        */
+
+        const perType =
+          types.length === 1
+            ? count
+            : Math.ceil(
+                count /
+                  types.length
+              );
+
+        const allItems = [];
+
+        for (
+          const type of types
+        ) {
+          const items =
+            await getCountryResults(
+              type,
+              perType
+            );
+
+          for (
+            const item of items
+          ) {
+            allItems.push({
+              item,
+              type,
+            });
+          }
+        }
+
+        /*
+          Keep the requested global
+          count when both is selected.
+        */
+
+        const selectedItems =
+          allItems.slice(
+            0,
+            count
+          );
+
+        updateStats({
+          total:
+            selectedItems.length,
+        });
+
+        if (
+          !selectedItems.length
+        ) {
+          addLog(
+            `⚠️ لم نجد أعمالاً من ${countryName} حسب الفلاتر الحالية.`,
+            'warning'
+          );
+          return;
+        }
+
+        addLog(
+          `📦 TMDB أعاد ${selectedItems.length} عمل للاستيراد.`,
+          'info'
+        );
+
+        for (
+          let index = 0;
+          index <
+          selectedItems.length;
+          index++
+        ) {
+          const entry =
+            selectedItems[index];
+
+          await importCountryItem(
+            entry.item,
+            entry.type,
+            index + 1,
+            selectedItems.length
+          );
+
+          await sleep(120);
+        }
+
+        setProgress(100);
+
+        addLog(
+          `🎉 اكتمل الاستيراد حسب الدولة: ${countryName}.`,
+          'success'
+        );
+      } catch (error) {
+        addLog(
+          `❌ فشل الاستيراد حسب الدولة: ${error.message}`,
+          'error'
+        );
+      } finally {
+        setIsCountryLoading(false);
+        setCurrentOperation('');
+      }
     };
 
   /* ============================================================
@@ -1338,16 +1760,6 @@ export default function Import() {
             results.length,
         });
 
-        if (
-          !results.length
-        ) {
-          addLog(
-            '⚠️ لم يتم العثور على أعمال Trending.',
-            'warning'
-          );
-          return;
-        }
-
         for (
           let index = 0;
           index < results.length;
@@ -1369,23 +1781,23 @@ export default function Import() {
                 type
               );
 
-            setStats(
-              (prev) => ({
-                ...prev,
-                imported:
-                  prev.imported +
-                  (result.created
-                    ? 1
-                    : 0),
-                updated:
-                  prev.updated +
-                  (result.created
-                    ? 0
-                    : 1),
-                processed:
-                  index + 1,
-              })
-            );
+            setStats((prev) => ({
+              ...prev,
+              imported:
+                prev.imported +
+                (result.created
+                  ? 1
+                  : 0),
+
+              updated:
+                prev.updated +
+                (result.created
+                  ? 0
+                  : 1),
+
+              processed:
+                index + 1,
+            }));
 
             setProgress(
               Math.round(
@@ -1398,21 +1810,19 @@ export default function Import() {
             addLog(
               `✅ ${
                 index + 1
-              }/20 — ${getTitle(
+              }/${results.length} — ${getTitle(
                 item
               )}`,
               'success'
             );
           } catch (error) {
-            setStats(
-              (prev) => ({
-                ...prev,
-                failed:
-                  prev.failed + 1,
-                processed:
-                  index + 1,
-              })
-            );
+            setStats((prev) => ({
+              ...prev,
+              failed:
+                prev.failed + 1,
+              processed:
+                index + 1,
+            }));
 
             addLog(
               `❌ ${getTitle(
@@ -1438,7 +1848,7 @@ export default function Import() {
     };
 
   /* ============================================================
-     SERIES / EPISODE IMPORT
+     SERIES / EPISODES MANUAL
   ============================================================ */
 
   const handleSeriesEpisodesImport =
@@ -1462,15 +1872,6 @@ export default function Import() {
       resetOperationStats();
 
       try {
-        setCurrentOperation(
-          `جلب معلومات المسلسل ${tmdbId}`
-        );
-
-        addLog(
-          `📺 جاري جلب المسلسل TMDB ${tmdbId}...`,
-          'info'
-        );
-
         const series =
           await tmdbFetch(
             `/tv/${tmdbId}`
@@ -1482,45 +1883,40 @@ export default function Import() {
             'series'
           );
 
-        if (
-          titleResult.created
-        ) {
-          updateStats({
-            imported: 1,
-          });
-        } else {
-          updateStats({
-            updated: 1,
-          });
-        }
+        updateStats({
+          imported:
+            titleResult.created
+              ? 1
+              : 0,
 
-        const allSeasons =
+          updated:
+            titleResult.created
+              ? 0
+              : 1,
+        });
+
+        const seasons =
           Array.isArray(
             series?.seasons
           )
             ? series.seasons
+                .filter(
+                  (season) =>
+                    season.season_number >
+                    0
+                )
+                .slice(
+                  0,
+                  Math.max(
+                    1,
+                    Number(
+                      seasonCount
+                    )
+                  )
+                )
             : [];
 
-        const seasons =
-          allSeasons
-            .filter(
-              (season) =>
-                season.season_number >
-                0
-            )
-            .slice(
-              0,
-              Math.max(
-                1,
-                Number(
-                  seasonCount
-                )
-              )
-            );
-
-        if (
-          !seasons.length
-        ) {
+        if (!seasons.length) {
           addLog(
             '⚠️ لا توجد مواسم متاحة.',
             'warning'
@@ -1529,7 +1925,7 @@ export default function Import() {
         }
 
         addLog(
-          `📚 سيتم استيراد ${seasons.length} موسم، بحد أقصى ${episodesPerSeason} حلقة لكل موسم.`,
+          `📚 سيتم استيراد ${seasons.length} موسم.`,
           'info'
         );
 
@@ -1547,11 +1943,6 @@ export default function Import() {
             `الموسم ${season.season_number} — ${
               index + 1
             }/${seasons.length}`
-          );
-
-          addLog(
-            `📥 جلب الموسم ${season.season_number}...`,
-            'info'
           );
 
           const detail =
@@ -1599,8 +1990,7 @@ export default function Import() {
 
               const episodeData = {
                 title_id:
-                  titleResult
-                    .title.id,
+                  titleResult.title.id,
 
                 season:
                   season.season_number,
@@ -1630,14 +2020,11 @@ export default function Import() {
                   findError,
               } =
                 await supabase
-                  .from(
-                    'episodes'
-                  )
+                  .from('episodes')
                   .select('id')
                   .eq(
                     'title_id',
-                    titleResult
-                      .title.id
+                    titleResult.title.id
                   )
                   .eq(
                     'season',
@@ -1654,35 +2041,22 @@ export default function Import() {
                 throw findError;
               }
 
-              if (
-                existingEpisode
-              ) {
+              if (existingEpisode) {
                 const {
                   error:
                     updateError,
                 } =
                   await supabase
-                    .from(
-                      'episodes'
+                    .from('episodes')
+                    .update(
+                      episodeData
                     )
-                    .update({
-                      name:
-                        episodeData.name,
-
-                      duration_seconds:
-                        episodeData.duration_seconds,
-
-                      stream_urls:
-                        episodeData.stream_urls,
-                    })
                     .eq(
                       'id',
                       existingEpisode.id
                     );
 
-                if (
-                  updateError
-                ) {
+                if (updateError) {
                   throw updateError;
                 }
               } else {
@@ -1691,50 +2065,31 @@ export default function Import() {
                     insertError,
                 } =
                   await supabase
-                    .from(
-                      'episodes'
-                    )
+                    .from('episodes')
                     .insert(
                       episodeData
                     );
 
-                if (
-                  insertError
-                ) {
+                if (insertError) {
                   throw insertError;
                 }
               }
 
               episodeTotal++;
 
-              setStats(
-                (prev) => ({
-                  ...prev,
-                  episodes:
-                    prev.episodes +
-                    1,
-                  processed:
-                    prev.processed +
-                    1,
-                })
-              );
-
-              addLog(
-                `🎞️ S${season.season_number} E${episodeNumber} — ${
-                  episode.name ||
-                  `الحلقة ${episodeNumber}`
-                }`,
-                'success'
-              );
+              setStats((prev) => ({
+                ...prev,
+                episodes:
+                  prev.episodes + 1,
+                processed:
+                  prev.processed + 1,
+              }));
             } catch (error) {
-              setStats(
-                (prev) => ({
-                  ...prev,
-                  failed:
-                    prev.failed +
-                    1,
-                })
-              );
+              setStats((prev) => ({
+                ...prev,
+                failed:
+                  prev.failed + 1,
+              }));
 
               addLog(
                 `❌ فشل S${season.season_number} E${episode.episode_number}: ${error.message}`,
@@ -1773,15 +2128,6 @@ export default function Import() {
       resetOperationStats();
 
       try {
-        setCurrentOperation(
-          'فحص وإصلاح الروابط'
-        );
-
-        addLog(
-          '🛠️ بدء فحص وإصلاح بيانات الروابط...',
-          'info'
-        );
-
         const {
           data: titles,
           error,
@@ -1790,32 +2136,25 @@ export default function Import() {
             .from('titles')
             .select('*');
 
-        if (error) {
-          throw error;
-        }
+        if (error) throw error;
 
-        if (!titles?.length) {
-          addLog(
-            'ℹ️ قاعدة البيانات فارغة.',
-            'info'
-          );
-          return;
-        }
+        const list =
+          titles || [];
 
         updateStats({
           total:
-            titles.length,
+            list.length,
         });
 
         let fixed = 0;
 
         for (
           let index = 0;
-          index < titles.length;
+          index < list.length;
           index++
         ) {
           const item =
-            titles[index];
+            list[index];
 
           try {
             const normalizedType =
@@ -1874,19 +2213,19 @@ export default function Import() {
             setProgress(
               Math.round(
                 ((index + 1) /
-                  titles.length) *
+                  Math.max(
+                    list.length,
+                    1
+                  )) *
                   100
               )
             );
           } catch (error) {
-            setStats(
-              (prev) => ({
-                ...prev,
-                failed:
-                  prev.failed +
-                  1,
-              })
-            );
+            setStats((prev) => ({
+              ...prev,
+              failed:
+                prev.failed + 1,
+            }));
 
             addLog(
               `❌ فشل إصلاح ${item.name}: ${error.message}`,
@@ -1898,7 +2237,7 @@ export default function Import() {
         updateStats({
           updated: fixed,
           processed:
-            titles.length,
+            list.length,
         });
 
         addLog(
@@ -1917,7 +2256,7 @@ export default function Import() {
     };
 
   /* ============================================================
-     POSTER REPAIR
+     POSTERS
   ============================================================ */
 
   const handleFixPosters =
@@ -1928,11 +2267,6 @@ export default function Import() {
       resetOperationStats();
 
       try {
-        addLog(
-          '🖼️ بدء إصلاح Posters...',
-          'info'
-        );
-
         const {
           data: titles,
           error,
@@ -1943,9 +2277,7 @@ export default function Import() {
               'id,tmdb_id,name,type,poster_url'
             );
 
-        if (error) {
-          throw error;
-        }
+        if (error) throw error;
 
         const list =
           titles || [];
@@ -2025,14 +2357,11 @@ export default function Import() {
               )
             );
           } catch (error) {
-            setStats(
-              (prev) => ({
-                ...prev,
-                failed:
-                  prev.failed +
-                  1,
-              })
-            );
+            setStats((prev) => ({
+              ...prev,
+              failed:
+                prev.failed + 1,
+            }));
 
             addLog(
               `❌ Poster ${item.name}: ${error.message}`,
@@ -2062,7 +2391,7 @@ export default function Import() {
     };
 
   /* ============================================================
-     RATING UPDATE
+     RATINGS
   ============================================================ */
 
   const handleUpdateRatings =
@@ -2073,11 +2402,6 @@ export default function Import() {
       resetOperationStats();
 
       try {
-        addLog(
-          '⭐ بدء تحديث التقييمات من TMDB...',
-          'info'
-        );
-
         const {
           data: titles,
           error,
@@ -2088,9 +2412,7 @@ export default function Import() {
               'id,tmdb_id,name,type,rating_avg'
             );
 
-        if (error) {
-          throw error;
-        }
+        if (error) throw error;
 
         const list =
           titles || [];
@@ -2127,11 +2449,6 @@ export default function Import() {
                 `/${endpoint}/${item.tmdb_id}`
               );
 
-            const rating =
-              getRating(
-                tmdbItem
-              );
-
             const {
               error:
                 updateError,
@@ -2140,7 +2457,9 @@ export default function Import() {
                 .from('titles')
                 .update({
                   rating_avg:
-                    rating,
+                    getRating(
+                      tmdbItem
+                    ),
                 })
                 .eq(
                   'id',
@@ -2164,14 +2483,11 @@ export default function Import() {
               )
             );
           } catch (error) {
-            setStats(
-              (prev) => ({
-                ...prev,
-                failed:
-                  prev.failed +
-                  1,
-              })
-            );
+            setStats((prev) => ({
+              ...prev,
+              failed:
+                prev.failed + 1,
+            }));
 
             addLog(
               `❌ Rating ${item.name}: ${error.message}`,
@@ -2201,7 +2517,7 @@ export default function Import() {
     };
 
   /* ============================================================
-     FULL INFO UPDATE
+     FULL INFO
   ============================================================ */
 
   const handleUpdateInfo =
@@ -2212,11 +2528,6 @@ export default function Import() {
       resetOperationStats();
 
       try {
-        addLog(
-          '📝 بدء تحديث معلومات الأعمال...',
-          'info'
-        );
-
         const {
           data: titles,
           error,
@@ -2227,9 +2538,7 @@ export default function Import() {
               'id,tmdb_id,name,type,url'
             );
 
-        if (error) {
-          throw error;
-        }
+        if (error) throw error;
 
         const list =
           titles || [];
@@ -2346,14 +2655,11 @@ export default function Import() {
               )
             );
           } catch (error) {
-            setStats(
-              (prev) => ({
-                ...prev,
-                failed:
-                  prev.failed +
-                  1,
-              })
-            );
+            setStats((prev) => ({
+              ...prev,
+              failed:
+                prev.failed + 1,
+            }));
 
             addLog(
               `❌ Info ${item.name}: ${error.message}`,
@@ -2383,23 +2689,20 @@ export default function Import() {
     };
 
   /* ============================================================
-     LOG CLEAR
+     UI HELPERS
   ============================================================ */
 
   const clearLogs = () => {
     setLogs([]);
   };
 
-  /* ============================================================
-     MEMO
-  ============================================================ */
-
   const busy =
     isSearching ||
     isBulkLoading ||
     isTrendingLoading ||
     isEpisodeLoading ||
-    isToolLoading;
+    isToolLoading ||
+    isCountryLoading;
 
   const statusText =
     useMemo(() => {
@@ -2428,7 +2731,7 @@ export default function Import() {
     ]);
 
   /* ============================================================
-     LOADING / AUTH UI
+     LOADING
   ============================================================ */
 
   if (
@@ -2437,12 +2740,8 @@ export default function Import() {
   ) {
     return (
       <div style={styles.centerPage}>
-        <div
-          style={styles.loadingCard}
-        >
-          <div
-            style={styles.spinner}
-          />
+        <div style={styles.loadingCard}>
+          <div style={styles.spinner} />
 
           <h2>
             🔐 {statusText}
@@ -2460,12 +2759,8 @@ export default function Import() {
   if (!user) {
     return (
       <div style={styles.centerPage}>
-        <div
-          style={styles.deniedCard}
-        >
-          <div
-            style={styles.deniedIcon}
-          >
+        <div style={styles.deniedCard}>
+          <div style={styles.deniedIcon}>
             🔒
           </div>
 
@@ -2480,15 +2775,11 @@ export default function Import() {
           </p>
 
           <button
-            style={
-              styles.primaryButton
-            }
+            style={styles.primaryButton}
             onClick={() =>
               supabase.auth.signInWithOAuth(
                 {
-                  provider:
-                    'google',
-
+                  provider: 'google',
                   options: {
                     redirectTo:
                       window.location
@@ -2509,12 +2800,8 @@ export default function Import() {
   if (!isAdmin) {
     return (
       <div style={styles.centerPage}>
-        <div
-          style={styles.deniedCard}
-        >
-          <div
-            style={styles.deniedIcon}
-          >
+        <div style={styles.deniedCard}>
+          <div style={styles.deniedIcon}>
             ⛔
           </div>
 
@@ -2532,9 +2819,7 @@ export default function Import() {
           </strong>
 
           {adminError && (
-            <div
-              style={styles.errorBox}
-            >
+            <div style={styles.errorBox}>
               {adminError}
             </div>
           )}
@@ -2555,68 +2840,45 @@ export default function Import() {
   }
 
   /* ============================================================
-     MAIN DASHBOARD
+     DASHBOARD
   ============================================================ */
 
   return (
     <div style={styles.page}>
-      <div
-        style={styles.container}
-      >
+      <div style={styles.container}>
+
         {/* HEADER */}
 
-        <header
-          style={styles.header}
-        >
+        <header style={styles.header}>
           <div>
-            <div
-              style={styles.badge}
-            >
+            <div style={styles.badge}>
               🔐 ADMIN
             </div>
 
-            <h1
-              style={styles.title}
-            >
-              StreamFlix Import
-              Center
+            <h1 style={styles.title}>
+              StreamFlix Import Center
             </h1>
 
-            <p
-              style={styles.subtitle}
-            >
-              لوحة الإدارة والاستيراد
-              الآمنة
+            <p style={styles.subtitle}>
+              لوحة الإدارة والاستيراد الآمنة
             </p>
           </div>
 
-          <div
-            style={styles.userCard}
-          >
-            <div
-              style={
-                styles.onlineDot
-              }
-            />
+          <div style={styles.userCard}>
+            <div style={styles.onlineDot} />
 
             <div>
               <strong>
                 {user.email}
               </strong>
 
-              <small
-                style={
-                  styles.userRole
-                }
-              >
+              <small style={styles.userRole}>
                 صلاحيات Admin
               </small>
             </div>
 
             <button
-              style={
-                styles.logoutButton
-              }
+              style={styles.logoutButton}
               onClick={async () => {
                 await supabase.auth.signOut();
               }}
@@ -2626,28 +2888,15 @@ export default function Import() {
           </div>
         </header>
 
-        {/* CURRENT OPERATION */}
+        {/* OPERATION */}
 
         {currentOperation && (
-          <div
-            style={
-              styles.operationBar
-            }
-          >
-            <div>
-              <strong>
-                ⚙️{' '}
-                {
-                  currentOperation
-                }
-              </strong>
-            </div>
+          <div style={styles.operationBar}>
+            <strong>
+              ⚙️ {currentOperation}
+            </strong>
 
-            <div
-              style={
-                styles.progressTrack
-              }
-            >
+            <div style={styles.progressTrack}>
               <div
                 style={{
                   ...styles.progressFill,
@@ -2664,63 +2913,47 @@ export default function Import() {
 
         {/* STATS */}
 
-        <section
-          style={styles.statsGrid}
-        >
+        <section style={styles.statsGrid}>
           <StatCard
             icon="🎬"
             label="مستورد"
-            value={
-              stats.imported
-            }
+            value={stats.imported}
           />
 
           <StatCard
             icon="🔄"
             label="محدث"
-            value={
-              stats.updated
-            }
+            value={stats.updated}
           />
 
           <StatCard
             icon="🎞️"
             label="الحلقات"
-            value={
-              stats.episodes
-            }
+            value={stats.episodes}
           />
 
           <StatCard
             icon="❌"
             label="فشل"
-            value={
-              stats.failed
-            }
+            value={stats.failed}
           />
 
           <StatCard
             icon="📊"
             label="معالج"
-            value={
-              stats.processed
-            }
+            value={stats.processed}
           />
 
           <StatCard
             icon="📦"
             label="الإجمالي"
-            value={
-              stats.total
-            }
+            value={stats.total}
           />
         </section>
 
         {/* SEARCH */}
 
-        <section
-          style={styles.card}
-        >
+        <section style={styles.card}>
           <SectionTitle
             icon="🔎"
             title="استيراد فردي"
@@ -2731,38 +2964,28 @@ export default function Import() {
             onSubmit={
               handleSingleSearch
             }
-            style={
-              styles.searchRow
-            }
+            style={styles.searchRow}
           >
             <input
-              value={
-                searchQuery
-              }
+              value={searchQuery}
               onChange={(e) =>
                 setSearchQuery(
                   e.target.value
                 )
               }
               placeholder="اسم الفيلم / المسلسل أو TMDB ID"
-              style={
-                styles.input
-              }
+              style={styles.input}
               disabled={busy}
             />
 
             <select
-              value={
-                searchType
-              }
+              value={searchType}
               onChange={(e) =>
                 setSearchType(
                   e.target.value
                 )
               }
-              style={
-                styles.select
-              }
+              style={styles.select}
               disabled={busy}
             >
               <option value="movie">
@@ -2776,9 +2999,7 @@ export default function Import() {
 
             <button
               type="submit"
-              style={
-                styles.primaryButton
-              }
+              style={styles.primaryButton}
               disabled={busy}
             >
               {isSearching
@@ -2787,28 +3008,19 @@ export default function Import() {
             </button>
           </form>
 
-          {searchResults.length >
-            0 && (
-            <div
-              style={
-                styles.resultsGrid
-              }
-            >
+          {searchResults.length > 0 && (
+            <div style={styles.resultsGrid}>
               {searchResults.map(
                 (item) => (
                   <div
                     key={`${item.id}-${item.media_type || searchType}`}
-                    style={
-                      styles.resultCard
-                    }
+                    style={styles.resultCard}
                   >
                     {item.poster_path ? (
                       <img
                         src={`${TMDB_IMAGE_BASE}/w185${item.poster_path}`}
                         alt=""
-                        style={
-                          styles.poster
-                        }
+                        style={styles.poster}
                       />
                     ) : (
                       <div
@@ -2826,30 +3038,23 @@ export default function Import() {
                       }
                     >
                       <strong>
-                        {getTitle(
-                          item
-                        )}
+                        {getTitle(item)}
                       </strong>
 
                       <small>
-                        TMDB:{' '}
-                        {item.id}
+                        TMDB: {item.id}
                       </small>
 
                       <small>
                         ⭐{' '}
-                        {getRating(
-                          item
-                        )}
+                        {getRating(item)}
                       </small>
 
                       <button
                         style={
                           styles.smallButton
                         }
-                        disabled={
-                          busy
-                        }
+                        disabled={busy}
                         onClick={() =>
                           importSingleItem(
                             item
@@ -2866,43 +3071,319 @@ export default function Import() {
           )}
         </section>
 
-        {/* BULK IMPORT */}
+        {/* 🌍 COUNTRY IMPORT */}
 
-        <section
-          style={styles.card}
-        >
+        <section style={styles.countryCard}>
+          <SectionTitle
+            icon="🌍"
+            title="استيراد جماعي حسب الدولة"
+            description="جيب أحدث الأفلام أو المسلسلات من دولة تختارها، بعدد أنت تحدده، مع المعلومات والبوسترات وTMDB ID."
+          />
+
+          <div style={styles.countryHero}>
+            <div>
+              <strong>
+                🌍 استيراد المحتوى حسب بلد المنشأ
+              </strong>
+
+              <p>
+                مثال: اختر تركيا + أفلام + 50 + الأحدث، وسيتم جلب 50 فيلم تركي حسب بيانات TMDB.
+              </p>
+            </div>
+
+            <div style={styles.countryIcon}>
+              🌍
+            </div>
+          </div>
+
+          <div style={styles.controlsGrid}>
+
+            <div>
+              <label style={styles.label}>
+                الدولة
+              </label>
+
+              <select
+                value={countryCode}
+                onChange={(e) =>
+                  setCountryCode(
+                    e.target.value
+                  )
+                }
+                style={styles.selectFull}
+                disabled={busy}
+              >
+                {COUNTRIES.map(
+                  (country) => (
+                    <option
+                      key={country.code}
+                      value={country.code}
+                    >
+                      {country.name}
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+
+            <div>
+              <label style={styles.label}>
+                نوع المحتوى
+              </label>
+
+              <select
+                value={countryType}
+                onChange={(e) =>
+                  setCountryType(
+                    e.target.value
+                  )
+                }
+                style={styles.selectFull}
+                disabled={busy}
+              >
+                <option value="movie">
+                  🎬 أفلام فقط
+                </option>
+
+                <option value="series">
+                  📺 مسلسلات فقط
+                </option>
+
+                <option value="both">
+                  🎬📺 أفلام + مسلسلات
+                </option>
+              </select>
+            </div>
+
+            <div>
+              <label style={styles.label}>
+                عدد الأعمال
+              </label>
+
+              <input
+                type="number"
+                min="1"
+                max="5000"
+                value={countryCount}
+                onChange={(e) =>
+                  setCountryCount(
+                    Math.max(
+                      1,
+                      Math.min(
+                        5000,
+                        Number(
+                          e.target.value
+                        ) || 1
+                      )
+                    )
+                  )
+                }
+                style={styles.input}
+                disabled={busy}
+              />
+            </div>
+
+            <div>
+              <label style={styles.label}>
+                ترتيب النتائج
+              </label>
+
+              <select
+                value={countrySort}
+                onChange={(e) =>
+                  setCountrySort(
+                    e.target.value
+                  )
+                }
+                style={styles.selectFull}
+                disabled={busy}
+              >
+                <option value="newest">
+                  🆕 الأحدث
+                </option>
+
+                <option value="popular">
+                  🔥 الأكثر شعبية
+                </option>
+
+                <option value="rating">
+                  ⭐ الأعلى تقييماً
+                </option>
+              </select>
+            </div>
+          </div>
+
+          {/* SERIES OPTIONS */}
+
+          {countryType !== 'movie' && (
+            <div
+              style={
+                styles.countryOptions
+              }
+            >
+              <div
+                style={
+                  styles.checkboxRow
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={
+                    countryImportEpisodes
+                  }
+                  onChange={(e) =>
+                    setCountryImportEpisodes(
+                      e.target.checked
+                    )
+                  }
+                  disabled={busy}
+                />
+
+                <span>
+                  📺 استيراد مواسم وحلقات المسلسلات تلقائياً
+                </span>
+              </div>
+
+              {countryImportEpisodes && (
+                <div
+                  style={
+                    styles.controlsGrid
+                  }
+                >
+                  <div>
+                    <label
+                      style={
+                        styles.label
+                      }
+                    >
+                      أقصى عدد مواسم لكل مسلسل
+                    </label>
+
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={
+                        countrySeasonLimit
+                      }
+                      onChange={(e) =>
+                        setCountrySeasonLimit(
+                          Math.max(
+                            1,
+                            Math.min(
+                              100,
+                              Number(
+                                e.target
+                                  .value
+                              ) || 1
+                            )
+                          )
+                        )
+                      }
+                      style={
+                        styles.input
+                      }
+                      disabled={busy}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      style={
+                        styles.label
+                      }
+                    >
+                      أقصى حلقات لكل موسم
+                    </label>
+
+                    <input
+                      type="number"
+                      min="1"
+                      max="500"
+                      value={
+                        countryEpisodesLimit
+                      }
+                      onChange={(e) =>
+                        setCountryEpisodesLimit(
+                          Math.max(
+                            1,
+                            Math.min(
+                              500,
+                              Number(
+                                e.target
+                                  .value
+                              ) || 1
+                            )
+                          )
+                        )
+                      }
+                      style={
+                        styles.input
+                      }
+                      disabled={busy}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <button
+            style={
+              styles.countryButton
+            }
+            disabled={busy}
+            onClick={
+              handleCountryImport
+            }
+          >
+            {isCountryLoading
+              ? '🌍 جاري جلب واستيراد المحتوى...'
+              : '🌍 بدء الاستيراد حسب الدولة'}
+          </button>
+
+          <div
+            style={
+              styles.countryInfo
+            }
+          >
+            <span>
+              🖼️ Posters + معلومات كاملة
+            </span>
+
+            <span>
+              🆔 TMDB ID
+            </span>
+
+            <span>
+              🎥 Vidsrc / Stellar / VidLink / YapGrid
+            </span>
+          </div>
+        </section>
+
+        {/* BULK */}
+
+        <section style={styles.card}>
           <SectionTitle
             icon="📦"
             title="الاستيراد الجماعي"
             description="اختر النوع وعدد صفحات TMDB."
           />
 
-          <div
-            style={
-              styles.controlsGrid
-            }
-          >
+          <div style={styles.controlsGrid}>
             <div>
-              <label
-                style={
-                  styles.label
-                }
-              >
+              <label style={styles.label}>
                 نوع المحتوى
               </label>
 
               <select
-                value={
-                  bulkType
-                }
+                value={bulkType}
                 onChange={(e) =>
                   setBulkType(
                     e.target.value
                   )
                 }
-                style={
-                  styles.selectFull
-                }
+                style={styles.selectFull}
                 disabled={busy}
               >
                 <option value="both">
@@ -2920,11 +3401,7 @@ export default function Import() {
             </div>
 
             <div>
-              <label
-                style={
-                  styles.label
-                }
-              >
+              <label style={styles.label}>
                 عدد الصفحات
               </label>
 
@@ -2932,9 +3409,7 @@ export default function Import() {
                 type="number"
                 min="1"
                 max="500"
-                value={
-                  pageCount
-                }
+                value={pageCount}
                 onChange={(e) =>
                   setPageCount(
                     Math.max(
@@ -2942,16 +3417,13 @@ export default function Import() {
                       Math.min(
                         500,
                         Number(
-                          e.target
-                            .value
+                          e.target.value
                         ) || 1
                       )
                     )
                   )
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
                 disabled={busy}
               />
             </div>
@@ -2972,9 +3444,7 @@ export default function Import() {
 
         {/* TRENDING */}
 
-        <section
-          style={styles.card}
-        >
+        <section style={styles.card}>
           <SectionTitle
             icon="🔥"
             title="Trending"
@@ -2982,9 +3452,7 @@ export default function Import() {
           />
 
           <button
-            style={
-              styles.trendingButton
-            }
+            style={styles.trendingButton}
             disabled={busy}
             onClick={
               handleTrendingImport
@@ -2996,54 +3464,36 @@ export default function Import() {
           </button>
         </section>
 
-        {/* SERIES EPISODES */}
+        {/* EPISODES */}
 
-        <section
-          style={styles.card}
-        >
+        <section style={styles.card}>
           <SectionTitle
             icon="📺"
             title="المواسم والحلقات"
-            description="استيراد عدد محدد من المواسم والحلقات مع Vidsrc + Stellar."
+            description="استيراد عدد محدد من المواسم والحلقات."
           />
 
-          <div
-            style={
-              styles.controlsGrid
-            }
-          >
+          <div style={styles.controlsGrid}>
             <div>
-              <label
-                style={
-                  styles.label
-                }
-              >
+              <label style={styles.label}>
                 TMDB ID للمسلسل
               </label>
 
               <input
-                value={
-                  seriesTmdbId
-                }
+                value={seriesTmdbId}
                 onChange={(e) =>
                   setSeriesTmdbId(
                     e.target.value
                   )
                 }
                 placeholder="مثال: 108978"
-                style={
-                  styles.input
-                }
+                style={styles.input}
                 disabled={busy}
               />
             </div>
 
             <div>
-              <label
-                style={
-                  styles.label
-                }
-              >
+              <label style={styles.label}>
                 عدد المواسم
               </label>
 
@@ -3051,9 +3501,7 @@ export default function Import() {
                 type="number"
                 min="1"
                 max="100"
-                value={
-                  seasonCount
-                }
+                value={seasonCount}
                 onChange={(e) =>
                   setSeasonCount(
                     Math.max(
@@ -3061,26 +3509,19 @@ export default function Import() {
                       Math.min(
                         100,
                         Number(
-                          e.target
-                            .value
+                          e.target.value
                         ) || 1
                       )
                     )
                   )
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
                 disabled={busy}
               />
             </div>
 
             <div>
-              <label
-                style={
-                  styles.label
-                }
-              >
+              <label style={styles.label}>
                 الحلقات لكل موسم
               </label>
 
@@ -3098,16 +3539,13 @@ export default function Import() {
                       Math.min(
                         500,
                         Number(
-                          e.target
-                            .value
+                          e.target.value
                         ) || 1
                       )
                     )
                   )
                 }
-                style={
-                  styles.input
-                }
+                style={styles.input}
                 disabled={busy}
               />
             </div>
@@ -3128,20 +3566,14 @@ export default function Import() {
 
         {/* TOOLS */}
 
-        <section
-          style={styles.card}
-        >
+        <section style={styles.card}>
           <SectionTitle
             icon="🛠️"
             title="أدوات قاعدة البيانات"
             description="عمليات مستقلة لتحديث وإصلاح البيانات."
           />
 
-          <div
-            style={
-              styles.toolsGrid
-            }
-          >
+          <div style={styles.toolsGrid}>
             <ToolButton
               icon="🛠️"
               text="إصلاح الروابط"
@@ -3182,80 +3614,45 @@ export default function Import() {
 
         {/* SERVERS */}
 
-        <section
-          style={styles.card}
-        >
+        <section style={styles.card}>
           <SectionTitle
             icon="🎥"
             title="نظام المشغلات"
-            description="المصادر التي يتم إنشاؤها أثناء الاستيراد."
+            description="المشغلات تعتمد على TMDB ID ويتم توليد الروابط أثناء التشغيل."
           />
 
-          <div
-            style={
-              styles.serverGrid
-            }
-          >
-            <div
-              style={
-                styles.serverCard
-              }
-            >
-              <div
-                style={
-                  styles.serverNumber
-                }
-              >
-                1
-              </div>
+          <div style={styles.serverGrid}>
+            <ServerCard
+              number="1"
+              name="Vidsrc"
+              description="Server 1"
+            />
 
-              <div>
-                <strong>
-                  Vidsrc
-                </strong>
+            <ServerCard
+              number="2"
+              name="Stellar"
+              description="Server 2"
+            />
 
-                <p>
-                  Server 1
-                </p>
-              </div>
-            </div>
+            <ServerCard
+              number="3"
+              name="VidLink"
+              description="Server 3"
+            />
 
-            <div
-              style={
-                styles.serverCard
-              }
-            >
-              <div
-                style={
-                  styles.serverNumber
-                }
-              >
-                2
-              </div>
-
-              <div>
-                <strong>
-                  Stellar
-                </strong>
-
-                <p>
-                  Server 2
-                </p>
-              </div>
-            </div>
+            <ServerCard
+              number="4"
+              name="YapGrid"
+              description="👑 VIP Server"
+              vip
+            />
           </div>
         </section>
 
         {/* LOGS */}
 
-        <section
-          style={styles.card}
-        >
-          <div
-            style={
-              styles.logsHeader
-            }
-          >
+        <section style={styles.card}>
+          <div style={styles.logsHeader}>
             <SectionTitle
               icon="📜"
               title="سجل العمليات"
@@ -3263,75 +3660,58 @@ export default function Import() {
             />
 
             <button
-              style={
-                styles.clearButton
-              }
-              onClick={
-                clearLogs
-              }
-              disabled={
-                !logs.length
-              }
+              style={styles.clearButton}
+              onClick={clearLogs}
+              disabled={!logs.length}
             >
               مسح السجل
             </button>
           </div>
 
-          <div
-            style={styles.logs}
-          >
-            {logs.length ===
-            0 ? (
-              <div
-                style={
-                  styles.emptyLogs
-                }
-              >
+          <div style={styles.logs}>
+            {logs.length === 0 ? (
+              <div style={styles.emptyLogs}>
                 لا توجد عمليات بعد.
               </div>
             ) : (
-              logs.map(
-                (log) => (
-                  <div
-                    key={log.id}
-                    style={{
-                      ...styles.log,
-                      borderRight:
-                        `3px solid ${
-                          log.type ===
-                          'error'
-                            ? '#ef4444'
-                            : log.type ===
-                              'success'
-                            ? '#22c55e'
-                            : log.type ===
-                              'warning'
-                            ? '#f59e0b'
-                            : '#3b82f6'
-                        }`,
-                    }}
+              logs.map((log) => (
+                <div
+                  key={log.id}
+                  style={{
+                    ...styles.log,
+                    borderRight:
+                      `3px solid ${
+                        log.type ===
+                        'error'
+                          ? '#ef4444'
+                          : log.type ===
+                            'success'
+                          ? '#22c55e'
+                          : log.type ===
+                            'warning'
+                          ? '#f59e0b'
+                          : '#3b82f6'
+                      }`,
+                  }}
+                >
+                  <span
+                    style={
+                      styles.logTime
+                    }
                   >
-                    <span
-                      style={
-                        styles.logTime
-                      }
-                    >
-                      {log.time}
-                    </span>
+                    {log.time}
+                  </span>
 
-                    <span>
-                      {
-                        log.message
-                      }
-                    </span>
-                  </div>
-                )
-              )
+                  <span>
+                    {log.message}
+                  </span>
+                </div>
+              ))
             )}
           </div>
         </section>
 
-        {/* SECURITY NOTICE */}
+        {/* SECURITY */}
 
         <section
           style={
@@ -3377,29 +3757,17 @@ function StatCard({
   value,
 }) {
   return (
-    <div
-      style={styles.statCard}
-    >
-      <div
-        style={styles.statIcon}
-      >
+    <div style={styles.statCard}>
+      <div style={styles.statIcon}>
         {icon}
       </div>
 
       <div>
-        <span
-          style={
-            styles.statLabel
-          }
-        >
+        <span style={styles.statLabel}>
           {label}
         </span>
 
-        <strong
-          style={
-            styles.statValue
-          }
-        >
+        <strong style={styles.statValue}>
           {formatNumber(value)}
         </strong>
       </div>
@@ -3413,16 +3781,8 @@ function SectionTitle({
   description,
 }) {
   return (
-    <div
-      style={
-        styles.sectionTitle
-      }
-    >
-      <div
-        style={
-          styles.sectionIcon
-        }
-      >
+    <div style={styles.sectionTitle}>
+      <div style={styles.sectionIcon}>
         {icon}
       </div>
 
@@ -3447,9 +3807,7 @@ function ToolButton({
 }) {
   return (
     <button
-      style={
-        styles.toolButton
-      }
+      style={styles.toolButton}
       onClick={onClick}
       disabled={disabled}
     >
@@ -3459,6 +3817,46 @@ function ToolButton({
 
       {text}
     </button>
+  );
+}
+
+function ServerCard({
+  number,
+  name,
+  description,
+  vip = false,
+}) {
+  return (
+    <div
+      style={{
+        ...styles.serverCard,
+        ...(vip
+          ? styles.vipServerCard
+          : {}),
+      }}
+    >
+      <div
+        style={{
+          ...styles.serverNumber,
+          ...(vip
+            ? styles.vipServerNumber
+            : {}),
+        }}
+      >
+        {number}
+      </div>
+
+      <div>
+        <strong>
+          {vip && '👑 '}
+          {name}
+        </strong>
+
+        <p>
+          {description}
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -3628,7 +4026,7 @@ const styles = {
   operationBar: {
     display: 'grid',
     gridTemplateColumns:
-      'minmax(180px, 1fr) minmax(150px, 2fr) 50px',
+      'minmax(180px,1fr) minmax(150px,2fr) 50px',
     alignItems: 'center',
     gap: '15px',
     padding:
@@ -3652,7 +4050,7 @@ const styles = {
   progressFill: {
     height: '100%',
     background:
-      'linear-gradient(90deg, #e50914, #ff5260)',
+      'linear-gradient(90deg,#e50914,#ff5260)',
     borderRadius: '999px',
     transition:
       'width .25s ease',
@@ -3673,7 +4071,7 @@ const styles = {
     padding: '16px',
     borderRadius: '17px',
     background:
-      'linear-gradient(145deg, #171717, #101010)',
+      'linear-gradient(145deg,#171717,#101010)',
     border:
       '1px solid rgba(255,255,255,.07)',
   },
@@ -3696,7 +4094,7 @@ const styles = {
 
   card: {
     background:
-      'linear-gradient(145deg, rgba(25,25,25,.97), rgba(12,12,12,.97))',
+      'linear-gradient(145deg,rgba(25,25,25,.97),rgba(12,12,12,.97))',
     border:
       '1px solid rgba(255,255,255,.075)',
     borderRadius: '22px',
@@ -3706,24 +4104,75 @@ const styles = {
       '0 18px 50px rgba(0,0,0,.18)',
   },
 
-  sectionTitle: {
-    display: 'flex',
-    gap: '13px',
-    alignItems: 'flex-start',
-    marginBottom: '20px',
+  countryCard: {
+    background:
+      'linear-gradient(145deg,rgba(29,22,14,.98),rgba(12,12,12,.98))',
+    border:
+      '1px solid rgba(245,158,11,.18)',
+    borderRadius: '22px',
+    padding: '22px',
+    marginBottom: '18px',
+    boxShadow:
+      '0 18px 50px rgba(0,0,0,.25)',
   },
 
-  sectionIcon: {
-    width: '42px',
-    height: '42px',
+  countryHero: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: '13px',
+    justifyContent:
+      'space-between',
+    gap: '20px',
+    padding: '16px',
+    marginBottom: '18px',
+    borderRadius: '16px',
     background:
-      'rgba(229,9,20,.11)',
-    fontSize: '20px',
-    flexShrink: 0,
+      'rgba(245,158,11,.055)',
+    border:
+      '1px solid rgba(245,158,11,.12)',
+  },
+
+  countryIcon: {
+    fontSize: '38px',
+  },
+
+  countryOptions: {
+    marginTop: '4px',
+    marginBottom: '15px',
+    padding: '15px',
+    borderRadius: '14px',
+    background:
+      'rgba(255,255,255,.025)',
+    border:
+      '1px solid rgba(255,255,255,.06)',
+  },
+
+  checkboxRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '9px',
+    marginBottom: '15px',
+    color: '#ddd',
+    fontSize: '14px',
+  },
+
+  countryButton: {
+    width: '100%',
+    border: 0,
+    borderRadius: '14px',
+    background:
+      'linear-gradient(135deg,#f59e0b,#d97706)',
+    color: '#111',
+    fontWeight: 900,
+    cursor: 'pointer',
+    padding: '15px',
+    fontSize: '15px',
+  },
+
+  countryInfo: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    marginTop: '12px',
   },
 
   searchRow: {
@@ -3941,6 +4390,13 @@ const styles = {
       '1px solid rgba(255,255,255,.07)',
   },
 
+  vipServerCard: {
+    background:
+      'linear-gradient(145deg,rgba(245,158,11,.10),rgba(255,255,255,.025))',
+    border:
+      '1px solid rgba(245,158,11,.28)',
+  },
+
   serverNumber: {
     width: '42px',
     height: '42px',
@@ -3953,6 +4409,12 @@ const styles = {
     color: '#ff6670',
     fontSize: '18px',
     fontWeight: 900,
+  },
+
+  vipServerNumber: {
+    background:
+      'rgba(245,158,11,.14)',
+    color: '#fbbf24',
   },
 
   logsHeader: {
@@ -4011,6 +4473,26 @@ const styles = {
     padding: '30px',
     textAlign: 'center',
     color: '#666',
+  },
+
+  sectionTitle: {
+    display: 'flex',
+    gap: '13px',
+    alignItems: 'flex-start',
+    marginBottom: '20px',
+  },
+
+  sectionIcon: {
+    width: '42px',
+    height: '42px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '13px',
+    background:
+      'rgba(229,9,20,.11)',
+    fontSize: '20px',
+    flexShrink: 0,
   },
 
   securityNotice: {
