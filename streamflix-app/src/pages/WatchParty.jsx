@@ -18,7 +18,9 @@ import './WatchParty.css';
 export default function WatchParty() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isPremium } = useAuth();
+
+  const hasVipAccess = Boolean(isPremium);
 
   const [party, setParty] = useState(null);
   const [title, setTitle] = useState(null);
@@ -49,7 +51,7 @@ export default function WatchParty() {
   // =========================================================================
 
   async function loadMembers(partyId) {
-    if (!partyId) return;
+    if (!partyId || !hasVipAccess) return;
 
     try {
       const { data, error: membersError } = await supabase
@@ -119,7 +121,7 @@ export default function WatchParty() {
   // =========================================================================
 
   async function loadMessages(partyId) {
-    if (!partyId) return;
+    if (!partyId || !hasVipAccess) return;
 
     try {
       const { data, error: messagesError } =
@@ -191,7 +193,7 @@ export default function WatchParty() {
   // =========================================================================
 
   async function loadProfile(userId) {
-    if (!userId) return;
+    if (!userId || !hasVipAccess) return;
 
     if (profiles[userId]) {
       return;
@@ -241,6 +243,19 @@ export default function WatchParty() {
         return;
       }
 
+      // ---------------------------------------------------------------------
+      // VIP GATE
+      // ---------------------------------------------------------------------
+
+      if (!hasVipAccess) {
+        setLoading(false);
+        setParty(null);
+        setError(
+          'ميزة Watch Party متاحة لمشتركي VIP فقط'
+        );
+        return;
+      }
+
       try {
         setLoading(true);
         setError('');
@@ -261,12 +276,6 @@ export default function WatchParty() {
         if (cancelled) {
           return;
         }
-
-        /*
-         * مهم:
-         * بعد الانضمام مباشرة نعيد جلب الأعضاء.
-         * هذا يخلي المستخدم الجديد يظهر فوراً عند فتح الغرفة.
-         */
 
         setParty(partyData);
 
@@ -338,14 +347,20 @@ export default function WatchParty() {
     return () => {
       cancelled = true;
     };
-  }, [id, user?.id]);
+  }, [
+    id,
+    user?.id,
+    hasVipAccess,
+  ]);
 
   // =========================================================================
   // PARTY REALTIME
   // =========================================================================
 
   useEffect(() => {
-    if (!id) return;
+    if (!id || !user?.id || !hasVipAccess) {
+      return;
+    }
 
     const unsubscribe =
       subscribeToParty(
@@ -370,9 +385,6 @@ export default function WatchParty() {
             return;
           }
 
-          /*
-           * كلما تغيرت الغرفة نعيد جلب الأعضاء.
-           */
           await loadMembers(id);
         }
       );
@@ -385,14 +397,18 @@ export default function WatchParty() {
         unsubscribe();
       }
     };
-  }, [id]);
+  }, [
+    id,
+    user?.id,
+    hasVipAccess,
+  ]);
 
   // =========================================================================
   // MEMBERS + CHAT REALTIME
   // =========================================================================
 
   useEffect(() => {
-    if (!id) {
+    if (!id || !user?.id || !hasVipAccess) {
       return;
     }
 
@@ -419,10 +435,6 @@ export default function WatchParty() {
               payload
             );
 
-            /*
-             * مباشرة بعد INSERT / DELETE / UPDATE
-             * نعيد تحميل القائمة من Supabase.
-             */
             await loadMembers(id);
           }
         )
@@ -432,10 +444,6 @@ export default function WatchParty() {
             status
           );
 
-          /*
-           * إذا اتصل الـRealtime بنجاح،
-           * نعمل sync مرة أخرى للقائمة.
-           */
           if (status === 'SUBSCRIBED') {
             loadMembers(id);
           }
@@ -508,7 +516,11 @@ export default function WatchParty() {
         messagesChannel
       );
     };
-  }, [id, user?.id]);
+  }, [
+    id,
+    user?.id,
+    hasVipAccess,
+  ]);
 
   // =========================================================================
   // AUTO SCROLL CHAT
@@ -531,6 +543,7 @@ export default function WatchParty() {
       messageText.trim();
 
     if (
+      !hasVipAccess ||
       !text ||
       !id ||
       !user?.id ||
@@ -560,11 +573,6 @@ export default function WatchParty() {
         throw sendError;
       }
 
-      /*
-       * نضيف الرسالة محلياً مباشرة.
-       * وإذا وصلت Realtime مرة ثانية،
-       * الكود يمنع التكرار عن طريق ID.
-       */
       if (data) {
         setMessages((current) => {
           if (
@@ -604,6 +612,17 @@ export default function WatchParty() {
   // =========================================================================
 
   async function startRecording() {
+    // -----------------------------------------------------------------------
+    // VIP GATE
+    // -----------------------------------------------------------------------
+
+    if (!hasVipAccess) {
+      setError(
+        '🎙️ الرسائل الصوتية متاحة لمشتركي VIP فقط'
+      );
+      return;
+    }
+
     if (
       recording ||
       uploadingVoice ||
@@ -983,7 +1002,11 @@ export default function WatchParty() {
     try {
       setLeaving(true);
 
-      if (id && user?.id) {
+      if (
+        id &&
+        user?.id &&
+        hasVipAccess
+      ) {
         await leaveWatchParty(
           id,
           user.id
@@ -1007,6 +1030,70 @@ export default function WatchParty() {
     return (
       <div className="watch-party-loading">
         جاري فتح غرفة المشاهدة...
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // VIP LOCK
+  // =========================================================================
+
+  if (!hasVipAccess) {
+    return (
+      <div className="watch-party-error-page">
+        <div
+          className="watch-party-error-icon"
+          style={{
+            fontSize: '48px',
+          }}
+        >
+          ⭐🔒
+        </div>
+
+        <h2>
+          Watch Party متاحة لـ VIP فقط
+        </h2>
+
+        <p
+          style={{
+            maxWidth: '520px',
+            margin: '0 auto 20px',
+            lineHeight: 1.7,
+            opacity: 0.8,
+          }}
+        >
+          هذه الميزة حصرية لمشتركي VIP.
+          <br />
+          اشترك في VIP للاستفادة من المشاهدة
+          الجماعية والدردشة والرسائل الصوتية.
+        </p>
+
+        <div
+          style={{
+            display: 'flex',
+            gap: '10px',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() =>
+              navigate('/subscription')
+            }
+          >
+            ⭐ الترقية إلى VIP
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              navigate('/friends')
+            }
+          >
+            العودة للأصدقاء
+          </button>
+        </div>
       </div>
     );
   }
@@ -1098,7 +1185,7 @@ export default function WatchParty() {
           <div className="watch-party-heading">
 
             <div className="watch-party-kicker">
-              PRIVATE WATCH PARTY
+              PRIVATE WATCH PARTY ⭐ VIP
             </div>
 
             <h1>
@@ -1171,8 +1258,7 @@ export default function WatchParty() {
                 </strong>
 
                 <span>
-                  مشاهدة خاصة بين أعضاء
-                  الغرفة
+                  ⭐ مشاهدة خاصة لمشتركي VIP
                 </span>
               </div>
 
@@ -1211,7 +1297,7 @@ export default function WatchParty() {
 
                   <br />
 
-                  الغرفة خاصة بالدعوات فقط.
+                  ⭐ الغرفة متاحة لمشتركي VIP.
                 </p>
               </div>
             </div>
@@ -1319,7 +1405,7 @@ export default function WatchParty() {
 
                 <div>
                   <b>
-                    Party Chat
+                    Party Chat ⭐ VIP
                   </b>
 
                   <span>
@@ -1413,7 +1499,7 @@ export default function WatchParty() {
                                 <>
                                   <div className="watch-party-voice-label">
 
-                                    🎙️ رسالة صوتية
+                                    🎙️ رسالة صوتية ⭐
 
                                     {message.metadata?.duration ? (
                                       <small>
@@ -1516,7 +1602,7 @@ export default function WatchParty() {
                   onClick={
                     startRecording
                   }
-                  title="تسجيل رسالة صوتية"
+                  title="تسجيل رسالة صوتية - VIP"
                 >
                   🎙️
                 </button>
@@ -1574,7 +1660,7 @@ export default function WatchParty() {
         </main>
 
         <div className="watch-party-note">
-          🔒 هذه الغرفة خاصة بالأعضاء المدعوين فقط.
+          ⭐ Watch Party حصرية لمشتركي VIP.
           <br />
           💬 الدردشة والرسائل الصوتية خاصة بغرفة المشاهدة.
         </div>
