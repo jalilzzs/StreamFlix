@@ -9,7 +9,6 @@ import WatchParty from './pages/WatchParty';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import ErrorBoundary from './components/ErrorBoundary';
-import Notifications from './components/Notifications';
 
 // Pages
 import Home from './pages/Home';
@@ -92,8 +91,7 @@ export default function App() {
           textAlign: 'center',
           padding: '20px',
           direction: 'rtl',
-          fontFamily:
-            'system-ui, sans-serif'
+          fontFamily: 'system-ui, sans-serif'
         }}
       >
         <h1
@@ -133,8 +131,7 @@ export default function App() {
       ====================================================== */}
 
       {settings.announcement_bar &&
-        settings.announcement_bar.trim() !==
-          '' && (
+        settings.announcement_bar.trim() !== '' && (
           <div
             style={{
               background: '#e50914',
@@ -260,26 +257,17 @@ export default function App() {
       <Footer />
 
       {/* ======================================================
-          NOTIFICATIONS
-      ====================================================== */}
-
-      <Notifications />
-
-      {/* ======================================================
           DIAGNOSTICS
       ====================================================== */}
 
-      {settings.diagnostics_enabled ===
-        'true' && (
+      {settings.diagnostics_enabled === 'true' && (
         <div
           style={{
             position: 'fixed',
             bottom: '15px',
             left: '15px',
-            background:
-              'rgba(0, 0, 0, 0.85)',
-            border:
-              '1px solid #00ff00',
+            background: 'rgba(0, 0, 0, 0.85)',
+            border: '1px solid #00ff00',
             color: '#00ff00',
             padding: '8px 12px',
             borderRadius: '8px',
