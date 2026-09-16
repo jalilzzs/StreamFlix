@@ -17,7 +17,7 @@ import {
    ========================================================= */
 
 const VIDSRC_BASE_URL = 'https://vidsrc.me';
-const BACKEND_URL = 'https://streamflix-api-x0ku.onrender.co';
+const BACKEND_URL = 'https://streamflix-api-x0ku.onrender.com';
 
 /* =========================================================
    URL BUILDERS
