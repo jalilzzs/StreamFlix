@@ -13,56 +13,29 @@ const PLACEHOLDER_POSTER =
   'https://via.placeholder.com/342x513?text=No+Poster';
 
 export default function Import() {
-  // =========================================================
-  // البحث الفردي
-  // =========================================================
   const [searchQuery, setSearchQuery] = useState('');
   const [searchType, setSearchType] = useState('movie');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  // =========================================================
-  // الاستيراد الجماعي
-  // =========================================================
   const [bulkPages, setBulkPages] = useState('');
   const [bulkType, setBulkType] = useState('both');
   const [bulkSource, setBulkSource] = useState('popular');
   const [isBulkLoading, setIsBulkLoading] = useState(false);
 
-  // =========================================================
-  // Trending
-  // =========================================================
   const [trendingCount, setTrendingCount] = useState('');
   const [trendingType, setTrendingType] = useState('both');
-  const [isTrendingLoading, setIsTrendingLoading] =
-    useState(false);
+  const [isTrendingLoading, setIsTrendingLoading] = useState(false);
 
-  // =========================================================
-  // مسلسل + حلقات
-  // =========================================================
   const [seriesQuery, setSeriesQuery] = useState('');
   const [seriesResults, setSeriesResults] = useState([]);
-  const [seriesEpisodeLimit, setSeriesEpisodeLimit] =
-    useState('');
-  const [isSeriesSearching, setIsSeriesSearching] =
-    useState(false);
-  const [isSeriesImporting, setIsSeriesImporting] =
-    useState(false);
+  const [seriesEpisodeLimit, setSeriesEpisodeLimit] = useState('');
+  const [isSeriesSearching, setIsSeriesSearching] = useState(false);
+  const [isSeriesImporting, setIsSeriesImporting] = useState(false);
 
-  // =========================================================
-  // جلب روابط المشاهدة
-  // =========================================================
-  const [isFetchingSources, setIsFetchingSources] =
-    useState(false);
-
-  // =========================================================
-  // إصلاح وفحص
-  // =========================================================
+  const [isFetchingSources, setIsFetchingSources] = useState(false);
   const [isFixing, setIsFixing] = useState(false);
 
-  // =========================================================
-  // Logs
-  // =========================================================
   const [logs, setLogs] = useState([]);
 
   const addLog = (message) => {
@@ -73,9 +46,6 @@ export default function Import() {
     setLogs((prev) => [`[${time}] ${message}`, ...prev]);
   };
 
-  // =========================================================
-  // التأكد من وجود TMDB Token
-  // =========================================================
   const ensureTMDBToken = () => {
     if (!TMDB_READ_ACCESS_TOKEN) {
       throw new Error(
@@ -84,9 +54,6 @@ export default function Import() {
     }
   };
 
-  // =========================================================
-  // TMDB Fetch
-  // =========================================================
   const tmdbFetch = async (path, params = {}) => {
     ensureTMDBToken();
 
@@ -114,7 +81,7 @@ export default function Import() {
           message = errorData.status_message;
         }
       } catch {
-        // تجاهل خطأ JSON
+        // تجاهل
       }
 
       throw new Error(message);
@@ -123,9 +90,6 @@ export default function Import() {
     return response.json();
   };
 
-  // =========================================================
-  // تحويل رابط صورة TMDB
-  // =========================================================
   const makePosterUrl = (path) => {
     if (!path) return null;
 
@@ -140,43 +104,18 @@ export default function Import() {
     return `${TMDB_IMAGE}/w500${clean}`;
   };
 
-  const makeBackdropUrl = (path) => {
-    if (!path) return null;
-
-    if (/^https?:\/\//i.test(path)) {
-      return path;
-    }
-
-    const clean = String(path).startsWith('/')
-      ? path
-      : `/${path}`;
-
-    return `${TMDB_IMAGE}/w1280${clean}`;
-  };
-
-  // =========================================================
-  // استخراج سنة
-  // =========================================================
   const getYear = (date) => {
     if (!date) return null;
 
-    const year = parseInt(
-      String(date).split('-')[0],
-      10
-    );
+    const year = parseInt(String(date).split('-')[0], 10);
 
     return Number.isInteger(year) ? year : null;
   };
 
   // =========================================================
   // StreamSrc
-  //
-  // مهم:
-  // StreamSrc يتم تخزينه في stream_url.
-  //
-  // لا نستعمل url هنا حتى لا نستبدل المصدر الموجود
-  // عندك مثل Stelar.rip.
   // =========================================================
+
   const getStreamSrcMovieUrl = (tmdbId) => {
     if (!tmdbId) return null;
 
@@ -212,8 +151,9 @@ export default function Import() {
   };
 
   // =========================================================
-  // محاولة قراءة JSON من StreamSrc
+  // محاولة قراءة StreamSrc JSON
   // =========================================================
+
   const fetchStreamSrcJson = async (tmdbId) => {
     if (!tmdbId) {
       throw new Error('TMDB ID غير موجود.');
@@ -232,28 +172,19 @@ export default function Import() {
     });
 
     if (!response.ok) {
-      throw new Error(
-        `StreamSrc HTTP ${response.status}`
-      );
+      throw new Error(`StreamSrc HTTP ${response.status}`);
     }
 
     const contentType =
       response.headers.get('content-type') || '';
 
-    if (
-      !contentType.includes('application/json')
-    ) {
-      throw new Error(
-        'StreamSrc لم يرجع JSON.'
-      );
+    if (!contentType.includes('application/json')) {
+      throw new Error('StreamSrc لم يرجع JSON.');
     }
 
     return response.json();
   };
 
-  // =========================================================
-  // استخراج روابط محتملة من استجابة StreamSrc
-  // =========================================================
   const extractSourceUrls = (payload) => {
     const urls = [];
 
@@ -265,11 +196,7 @@ export default function Import() {
         return;
       }
 
-      if (
-        urls.some(
-          (item) => item.url === value
-        )
-      ) {
+      if (urls.some((item) => item.url === value)) {
         return;
       }
 
@@ -288,15 +215,11 @@ export default function Import() {
       }
 
       if (Array.isArray(value)) {
-        value.forEach((item) =>
-          visit(item, context)
-        );
+        value.forEach((item) => visit(item, context));
         return;
       }
 
-      if (
-        typeof value === 'object'
-      ) {
+      if (typeof value === 'object') {
         const directKeys = [
           'url',
           'stream_url',
@@ -326,32 +249,23 @@ export default function Import() {
           }
         });
 
-        Object.entries(value).forEach(
-          ([key, child]) => {
-            if (
-              directKeys.includes(key)
-            ) {
-              return;
-            }
+        Object.entries(value).forEach(([key, child]) => {
+          if (directKeys.includes(key)) return;
 
-            if (
-              child &&
-              typeof child === 'object'
-            ) {
-              visit(child, {
-                ...context,
-                provider:
-                  value.provider ||
-                  value.name ||
-                  context.provider,
-                quality:
-                  value.quality ||
-                  value.resolution ||
-                  context.quality,
-              });
-            }
+          if (child && typeof child === 'object') {
+            visit(child, {
+              ...context,
+              provider:
+                value.provider ||
+                value.name ||
+                context.provider,
+              quality:
+                value.quality ||
+                value.resolution ||
+                context.quality,
+            });
           }
-        );
+        });
       }
     };
 
@@ -360,12 +274,6 @@ export default function Import() {
     return urls;
   };
 
-  // =========================================================
-  // جلب مصادر العمل
-  //
-  // Stelar.rip لا يتم لمس رابطها هنا.
-  // StreamSrc فقط يذهب إلى stream_url.
-  // =========================================================
   const fetchSourcesForTitle = async ({
     tmdbId,
     type,
@@ -377,8 +285,7 @@ export default function Import() {
     }
 
     const normalizedType =
-      type === 'tv' ||
-      type === 'series'
+      type === 'tv' || type === 'series'
         ? 'series'
         : 'movie';
 
@@ -391,30 +298,27 @@ export default function Import() {
     let extractedSources = [];
 
     try {
-      apiData =
-        await fetchStreamSrcJson(tmdbId);
+      apiData = await fetchStreamSrcJson(tmdbId);
 
       extractedSources =
         extractSourceUrls(apiData);
 
-      if (
-        extractedSources.length > 0
-      ) {
+      if (extractedSources.length > 0) {
         addLog(
           `✅ StreamSrc JSON: تم العثور على ${extractedSources.length} مصدر.`
         );
       } else {
         addLog(
-          'ℹ️ StreamSrc JSON استجاب لكن لم نجد روابط مباشرة قابلة للاستخراج.'
+          'ℹ️ StreamSrc JSON استجاب لكن لم نجد روابط مباشرة.'
         );
       }
     } catch (error) {
       addLog(
-        `ℹ️ تعذر قراءة StreamSrc JSON من المتصفح: ${error.message}`
+        `ℹ️ تعذر قراءة StreamSrc JSON: ${error.message}`
       );
 
       addLog(
-        '↪️ سيتم الاعتماد على رابط StreamSrc Embed الرسمي.'
+        '↪️ سيتم الاعتماد على رابط StreamSrc.'
       );
     }
 
@@ -426,94 +330,53 @@ export default function Import() {
   };
 
   // =========================================================
-  // تنسيق فيلم
+  // Format
   // =========================================================
+
   const formatMovie = (item) => ({
     tmdb_id: String(item.id),
     type: 'movie',
-    name:
-      item.title ||
-      item.name ||
-      'بدون عنوان',
+    name: item.title || item.name || 'بدون عنوان',
     synopsis:
-      item.overview ||
-      'لا يوجد وصف متاح.',
-    poster_url: makePosterUrl(
-      item.poster_path
-    ),
-    backdrop_url: makeBackdropUrl(
-      item.backdrop_path
-    ),
+      item.overview || 'لا يوجد وصف متاح.',
+    poster_url: makePosterUrl(item.poster_path),
     release_year:
       getYear(item.release_date) ||
       new Date().getFullYear(),
     rating_avg:
-      typeof item.vote_average ===
-      'number'
-        ? Number(
-            item.vote_average.toFixed(1)
-          )
+      typeof item.vote_average === 'number'
+        ? Number(item.vote_average.toFixed(1))
         : 0,
     is_premium: false,
-
-    // StreamSrc في العمود الجديد للمصدر الثاني.
-    stream_url: getStreamSrcMovieUrl(
-      item.id
-    ),
   });
 
-  // =========================================================
-  // تنسيق مسلسل
-  // =========================================================
   const formatSeries = (item) => ({
     tmdb_id: String(item.id),
     type: 'series',
-    name:
-      item.name ||
-      item.title ||
-      'بدون عنوان',
+    name: item.name || item.title || 'بدون عنوان',
     synopsis:
-      item.overview ||
-      'لا يوجد وصف متاح.',
-    poster_url: makePosterUrl(
-      item.poster_path
-    ),
-    backdrop_url: makeBackdropUrl(
-      item.backdrop_path
-    ),
+      item.overview || 'لا يوجد وصف متاح.',
+    poster_url: makePosterUrl(item.poster_path),
     release_year:
       getYear(item.first_air_date) ||
       new Date().getFullYear(),
     rating_avg:
-      typeof item.vote_average ===
-      'number'
-        ? Number(
-            item.vote_average.toFixed(1)
-          )
+      typeof item.vote_average === 'number'
+        ? Number(item.vote_average.toFixed(1))
         : 0,
     is_premium: false,
-
-    // StreamSrc في العمود الجديد للمصدر الثاني.
-    stream_url: getStreamSrcSeriesUrl(
-      item.id
-    ),
   });
 
   // =========================================================
-  // البحث عن title موجود بواسطة TMDB ID
+  // إيجاد Title
   // =========================================================
-  const findExistingTitle = async (
-    tmdbId
-  ) => {
-    const { data, error } =
-      await supabase
-        .from('titles')
-        .select('id,tmdb_id')
-        .eq(
-          'tmdb_id',
-          String(tmdbId)
-        )
-        .maybeSingle();
+
+  const findExistingTitle = async (tmdbId) => {
+    const { data, error } = await supabase
+      .from('titles')
+      .select('id,tmdb_id,url')
+      .eq('tmdb_id', String(tmdbId))
+      .maybeSingle();
 
     if (error) {
       throw error;
@@ -523,65 +386,34 @@ export default function Import() {
   };
 
   // =========================================================
-  // حفظ Title واحد
+  // حفظ Title
   //
   // مهم:
-  // لا نحدث url.
-  // url يبقى للمصدر الموجود عندك مثل Stelar.rip.
-  //
-  // StreamSrc يذهب إلى stream_url.
+  // لا نلمس url نهائياً.
   // =========================================================
+
   const saveTitle = async (item) => {
-    const tmdbId = String(
-      item.tmdb_id
-    );
+    const tmdbId = String(item.tmdb_id);
 
     const existing =
-      await findExistingTitle(
-        tmdbId
-      );
+      await findExistingTitle(tmdbId);
 
-    const updatePayload = {
+    const payload = {
       type: item.type,
       name: item.name,
       synopsis: item.synopsis,
       poster_url: item.poster_url,
-      backdrop_url:
-        item.backdrop_url || null,
-      release_year:
-        item.release_year,
-      rating_avg:
-        item.rating_avg,
-      is_premium:
-        item.is_premium,
+      release_year: item.release_year,
+      rating_avg: item.rating_avg,
+      is_premium: item.is_premium,
     };
 
-    if (
-      Object.prototype.hasOwnProperty.call(
-        item,
-        'stream_url'
-      )
-    ) {
-      updatePayload.stream_url =
-        item.stream_url || null;
-    }
-
     if (existing) {
-      const {
-        data,
-        error,
-      } = await supabase
+      const { data, error } = await supabase
         .from('titles')
-        .update(
-          updatePayload
-        )
-        .eq(
-          'id',
-          existing.id
-        )
-        .select(
-          'id,tmdb_id'
-        )
+        .update(payload)
+        .eq('id', existing.id)
+        .select('id,tmdb_id')
         .single();
 
       if (error) {
@@ -590,42 +422,24 @@ export default function Import() {
 
       return {
         id: data.id,
-        tmdb_id:
-          data.tmdb_id,
+        tmdb_id: data.tmdb_id,
         created: false,
       };
     }
 
-    const {
-      data,
-      error,
-    } = await supabase
+    const { data, error } = await supabase
       .from('titles')
       .insert({
         tmdb_id: tmdbId,
         type: item.type,
         name: item.name,
         synopsis: item.synopsis,
-        poster_url:
-          item.poster_url,
-        backdrop_url:
-          item.backdrop_url ||
-          null,
-        release_year:
-          item.release_year,
-        rating_avg:
-          item.rating_avg,
-        is_premium:
-          item.is_premium,
-
-        // المصدر الثاني فقط.
-        stream_url:
-          item.stream_url ||
-          null,
+        poster_url: item.poster_url,
+        release_year: item.release_year,
+        rating_avg: item.rating_avg,
+        is_premium: item.is_premium,
       })
-      .select(
-        'id,tmdb_id'
-      )
+      .select('id,tmdb_id')
       .single();
 
     if (error) {
@@ -634,22 +448,13 @@ export default function Import() {
 
     return {
       id: data.id,
-      tmdb_id:
-        data.tmdb_id,
+      tmdb_id: data.tmdb_id,
       created: true,
     };
   };
 
-  // =========================================================
-  // حفظ مجموعة Titles
-  // =========================================================
-  const saveTitles = async (
-    items
-  ) => {
-    if (
-      !items ||
-      items.length === 0
-    ) {
+  const saveTitles = async (items) => {
+    if (!items || items.length === 0) {
       return {
         count: 0,
         created: 0,
@@ -660,18 +465,11 @@ export default function Import() {
     let created = 0;
     let updated = 0;
 
-    for (
-      const item of items
-    ) {
+    for (const item of items) {
       try {
-        const result =
-          await saveTitle(
-            item
-          );
+        const result = await saveTitle(item);
 
-        if (
-          result.created
-        ) {
+        if (result.created) {
           created += 1;
         } else {
           updated += 1;
@@ -684,853 +482,600 @@ export default function Import() {
     }
 
     return {
-      count:
-        created + updated,
+      count: created + updated,
       created,
       updated,
     };
   };
 
   // =========================================================
-  // الأنواع
+  // أنواع
   // =========================================================
-  const getSelectedTypes = (
-    type
-  ) => {
-    if (
-      type === 'movie'
-    ) {
+
+  const getSelectedTypes = (type) => {
+    if (type === 'movie') {
       return ['movie'];
     }
 
-    if (
-      type === 'series'
-    ) {
+    if (type === 'series') {
       return ['tv'];
     }
 
-    return [
-      'movie',
-      'tv',
-    ];
+    return ['movie', 'tv'];
   };
 
   // =========================================================
   // البحث الفردي
   // =========================================================
-  const handleSingleSearch =
-    async (event) => {
-      event.preventDefault();
 
-      const query =
-        searchQuery.trim();
+  const handleSingleSearch = async (event) => {
+    event.preventDefault();
 
-      if (!query) {
-        addLog(
-          '⚠️ اكتب اسم الفيلم أو المسلسل أولاً.'
+    const query = searchQuery.trim();
+
+    if (!query) {
+      addLog(
+        '⚠️ اكتب اسم الفيلم أو المسلسل أولاً.'
+      );
+      return;
+    }
+
+    setIsSearching(true);
+    setSearchResults([]);
+
+    try {
+      addLog(
+        `🔍 البحث عن "${query}" - ${
+          searchType === 'movie'
+            ? 'فيلم'
+            : 'مسلسل'
+        }`
+      );
+
+      if (/^\d+$/.test(query)) {
+        const item = await tmdbFetch(
+          `/${searchType}/${query}`,
+          {
+            language: 'ar-SA',
+          }
         );
-        return;
-      }
 
-      setIsSearching(true);
-      setSearchResults([]);
+        setSearchResults([item]);
 
-      try {
         addLog(
-          `🔍 البحث عن "${query}" - ${
-            searchType ===
-            'movie'
-              ? 'فيلم'
-              : 'مسلسل'
+          `✅ تم العثور على: ${
+            item.title ||
+            item.name ||
+            'بدون عنوان'
           }`
         );
 
-        if (
-          /^\d+$/.test(query)
-        ) {
-          const item =
-            await tmdbFetch(
-              `/${searchType}/${query}`,
-              {
-                language:
-                  'ar-SA',
-              }
-            );
+        return;
+      }
 
-          setSearchResults([
-            item,
-          ]);
-
-          addLog(
-            `✅ تم العثور على: ${
-              item.title ||
-              item.name ||
-              'بدون عنوان'
-            }`
-          );
-
-          return;
+      const data = await tmdbFetch(
+        `/search/${searchType}`,
+        {
+          language: 'ar-SA',
+          query,
+          page: '1',
+          include_adult: 'false',
         }
+      );
 
-        const data =
-          await tmdbFetch(
-            `/search/${searchType}`,
-            {
-              language:
-                'ar-SA',
-              query,
-              page: '1',
-              include_adult:
-                'false',
-            }
-          );
+      const results = data.results || [];
 
-        const results =
-          data.results ||
-          [];
+      setSearchResults(results);
 
-        setSearchResults(
-          results
-        );
-
-        if (
-          results.length ===
-          0
-        ) {
-          addLog(
-            '⚠️ لم يتم العثور على نتائج.'
-          );
-        } else {
-          addLog(
-            `✅ تم العثور على ${results.length} نتيجة.`
-          );
-        }
-      } catch (error) {
+      if (results.length === 0) {
         addLog(
-          `❌ خطأ في البحث: ${error.message}`
+          '⚠️ لم يتم العثور على نتائج.'
         );
-      } finally {
-        setIsSearching(
-          false
+      } else {
+        addLog(
+          `✅ تم العثور على ${results.length} نتيجة.`
         );
       }
-    };
+    } catch (error) {
+      addLog(
+        `❌ خطأ في البحث: ${error.message}`
+      );
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
   // =========================================================
-  // استيراد عنصر واحد
+  // استيراد عمل واحد
   // =========================================================
-  const importSingleItem =
-    async (item) => {
-      try {
-        const title =
-          item.title ||
-          item.name ||
-          'بدون عنوان';
 
+  const importSingleItem = async (item) => {
+    try {
+      const title =
+        item.title ||
+        item.name ||
+        'بدون عنوان';
+
+      addLog(
+        `⏳ جاري استيراد "${title}"...`
+      );
+
+      const formatted =
+        searchType === 'movie'
+          ? formatMovie(item)
+          : formatSeries(item);
+
+      const result =
+        await saveTitles([formatted]);
+
+      if (result.count > 0) {
         addLog(
-          `⏳ جاري استيراد "${title}"...`
+          `🎉 تم استيراد/تحديث "${title}" بنجاح.`
         );
 
-        let formatted;
-
-        if (
-          searchType ===
-          'movie'
-        ) {
-          formatted =
-            formatMovie(
-              item
-            );
-        } else {
-          formatted =
-            formatSeries(
-              item
-            );
-        }
-
-        const result =
-          await saveTitles([
-            formatted,
-          ]);
-
-        if (
-          result.count > 0
-        ) {
-          addLog(
-            `🎉 تم استيراد/تحديث "${title}" بنجاح.`
-          );
-
-          addLog(
-            `🔗 StreamSrc: ${formatted.stream_url}`
-          );
-        } else {
-          addLog(
-            `⚠️ لم يتم حفظ "${title}".`
-          );
-        }
-      } catch (error) {
         addLog(
-          `❌ فشل استيراد العمل: ${error.message}`
+          `🔗 StreamSrc سيتم توليده تلقائياً عند تشغيل المحتوى.`
+        );
+      } else {
+        addLog(
+          `⚠️ لم يتم حفظ "${title}".`
         );
       }
-    };
+    } catch (error) {
+      addLog(
+        `❌ فشل استيراد العمل: ${error.message}`
+      );
+    }
+  };
 
   // =========================================================
-  // جلب رابط StreamSrc لعمل واحد
-  //
-  // لا نلمس url حتى لا نحذف Stelar.rip.
+  // جلب StreamSrc لعمل
   // =========================================================
-  const fetchSingleSource =
-    async (item) => {
-      try {
-        const title =
-          item.title ||
-          item.name ||
-          'بدون عنوان';
 
-        const type =
-          searchType ===
-          'tv'
-            ? 'series'
-            : 'movie';
+  const fetchSingleSource = async (item) => {
+    try {
+      const title =
+        item.title ||
+        item.name ||
+        'بدون عنوان';
 
-        setIsFetchingSources(
-          true
-        );
+      setIsFetchingSources(true);
 
-        addLog(
-          `🔗 جاري جلب مصدر StreamSrc لـ "${title}"...`
-        );
+      addLog(
+        `🔗 جاري فحص StreamSrc لـ "${title}"...`
+      );
 
-        const result =
-          await fetchSourcesForTitle(
-            {
-              tmdbId:
-                item.id,
-              type,
-            }
-          );
+      const type =
+        searchType === 'tv'
+          ? 'series'
+          : 'movie';
 
+      const result =
+        await fetchSourcesForTitle({
+          tmdbId: item.id,
+          type,
+        });
+
+      const existing =
+        await findExistingTitle(item.id);
+
+      if (!existing) {
         const formatted =
-          type ===
-          'movie'
-            ? formatMovie(
-                item
-              )
-            : formatSeries(
-                item
-              );
+          type === 'movie'
+            ? formatMovie(item)
+            : formatSeries(item);
 
-        const existing =
-          await findExistingTitle(
-            item.id
-          );
+        await saveTitle(formatted);
+      }
 
-        if (
-          existing
-        ) {
-          const {
-            error,
-          } = await supabase
-            .from('titles')
-            .update({
-              stream_url:
-                result.embedUrl,
-            })
-            .eq(
-              'id',
-              existing.id
-            );
+      addLog(
+        `✅ StreamSrc جاهز لـ "${title}" بدون لمس url.`
+      );
 
-          if (error) {
-            throw error;
-          }
-        } else {
-          await saveTitle(
-            formatted
-          );
-        }
+      addLog(
+        `🔗 ${result.embedUrl}`
+      );
 
+      if (result.sources.length > 0) {
         addLog(
-          `✅ تم حفظ StreamSrc لـ "${title}" بدون لمس المصدر الأساسي.`
-        );
-
-        addLog(
-          `🔗 ${result.embedUrl}`
-        );
-
-        if (
-          result.sources.length >
-          0
-        ) {
-          addLog(
-            `🎯 تم اكتشاف ${result.sources.length} رابط/مصدر إضافي من JSON.`
-          );
-        }
-      } catch (error) {
-        addLog(
-          `❌ فشل جلب مصدر "${item.title || item.name}": ${error.message}`
-        );
-      } finally {
-        setIsFetchingSources(
-          false
+          `🎯 تم اكتشاف ${result.sources.length} مصدر إضافي.`
         );
       }
-    };
+    } catch (error) {
+      addLog(
+        `❌ فشل جلب مصدر "${item.title || item.name}": ${error.message}`
+      );
+    } finally {
+      setIsFetchingSources(false);
+    }
+  };
 
   // =========================================================
   // Popular
   // =========================================================
-  const fetchPopularPage =
-    async (
-      type,
-      page
-    ) => {
-      const endpoint =
-        type ===
-        'movie'
-          ? '/movie/popular'
-          : '/tv/popular';
 
-      return tmdbFetch(
-        endpoint,
-        {
-          language:
-            'ar-SA',
-          page: String(
-            page
-          ),
-        }
-      );
-    };
+  const fetchPopularPage = async (
+    type,
+    page
+  ) => {
+    const endpoint =
+      type === 'movie'
+        ? '/movie/popular'
+        : '/tv/popular';
+
+    return tmdbFetch(endpoint, {
+      language: 'ar-SA',
+      page: String(page),
+    });
+  };
 
   // =========================================================
   // Trending
   // =========================================================
-  const fetchTrendingPage =
-    async (
-      type,
-      page
-    ) => {
-      const endpoint =
-        type ===
-        'movie'
-          ? '/trending/movie/week'
-          : '/trending/tv/week';
 
-      return tmdbFetch(
-        endpoint,
-        {
-          language:
-            'ar-SA',
-          page: String(
-            page
-          ),
-        }
+  const fetchTrendingPage = async (
+    type,
+    page
+  ) => {
+    const endpoint =
+      type === 'movie'
+        ? '/trending/movie/week'
+        : '/trending/tv/week';
+
+    return tmdbFetch(endpoint, {
+      language: 'ar-SA',
+      page: String(page),
+    });
+  };
+
+  // =========================================================
+  // Bulk
+  // =========================================================
+
+  const handleBulkImport = async () => {
+    const pages = parseInt(bulkPages, 10);
+
+    if (!Number.isInteger(pages) || pages < 1) {
+      addLog(
+        '⚠️ اكتب عدد صفحات صحيح.'
       );
-    };
+      return;
+    }
 
-  // =========================================================
-  // الاستيراد الجماعي
-  // =========================================================
-  const handleBulkImport =
-    async () => {
-      const pages =
-        parseInt(
-          bulkPages,
-          10
-        );
+    if (pages > 500) {
+      addLog(
+        '⚠️ الحد الأقصى هو 500 صفحة.'
+      );
+      return;
+    }
 
-      if (
-        !Number.isInteger(
-          pages
-        ) ||
-        pages < 1
+    setIsBulkLoading(true);
+
+    let totalSaved = 0;
+    let failedPages = 0;
+
+    try {
+      const types =
+        getSelectedTypes(bulkType);
+
+      addLog(
+        `🚀 بدء الاستيراد الجماعي: ${pages} صفحة`
+      );
+
+      for (
+        let page = 1;
+        page <= pages;
+        page += 1
       ) {
-        addLog(
-          '⚠️ اكتب عدد صفحات صحيح.'
-        );
-        return;
-      }
-
-      if (pages > 500) {
-        addLog(
-          '⚠️ الحد الأقصى هو 500 صفحة.'
-        );
-        return;
-      }
-
-      setIsBulkLoading(
-        true
-      );
-
-      let totalSaved = 0;
-      let failedPages = 0;
-
-      try {
-        const types =
-          getSelectedTypes(
-            bulkType
+        try {
+          addLog(
+            `📥 جلب الصفحة ${page} من ${pages}...`
           );
 
-        addLog(
-          `🚀 بدء الاستيراد الجماعي: ${pages} صفحة - ${
-            bulkType ===
-            'both'
-              ? 'أفلام + مسلسلات'
-              : bulkType ===
-                'movie'
-              ? 'أفلام فقط'
-              : 'مسلسلات فقط'
-          } - المصدر: ${
-            bulkSource ===
-            'popular'
-              ? 'Popular'
-              : 'Trending'
-          }`
-        );
+          const responses =
+            await Promise.all(
+              types.map((type) =>
+                bulkSource === 'popular'
+                  ? fetchPopularPage(
+                      type,
+                      page
+                    )
+                  : fetchTrendingPage(
+                      type,
+                      page
+                    )
+              )
+            );
+
+          const items = [];
+
+          responses.forEach(
+            (data, index) => {
+              const currentType =
+                types[index];
+
+              const results =
+                data.results || [];
+
+              results.forEach((item) => {
+                items.push(
+                  currentType === 'movie'
+                    ? formatMovie(item)
+                    : formatSeries(item)
+                );
+              });
+            }
+          );
+
+          if (items.length === 0) {
+            addLog(
+              `⚠️ الصفحة ${page} فارغة.`
+            );
+            continue;
+          }
+
+          const result =
+            await saveTitles(items);
+
+          totalSaved += result.count;
+
+          addLog(
+            `✅ الصفحة ${page}: تم حفظ/تحديث ${result.count} عمل. المجموع: ${totalSaved}`
+          );
+        } catch (error) {
+          failedPages += 1;
+
+          addLog(
+            `❌ فشل الصفحة ${page}: ${error.message}`
+          );
+        }
+      }
+
+      addLog(
+        `🎉 انتهى الاستيراد الجماعي. تم حفظ/تحديث ${totalSaved} عمل${
+          failedPages > 0
+            ? `، وفشل ${failedPages} صفحات`
+            : ''
+        }.`
+      );
+
+      setBulkPages('');
+    } catch (error) {
+      addLog(
+        `❌ خطأ في الاستيراد الجماعي: ${error.message}`
+      );
+    } finally {
+      setIsBulkLoading(false);
+    }
+  };
+
+  // =========================================================
+  // Trending
+  // =========================================================
+
+  const handleTrendingImport = async () => {
+    const count =
+      parseInt(trendingCount, 10);
+
+    if (!Number.isInteger(count) || count < 1) {
+      addLog(
+        '⚠️ اكتب عدد الأعمال المطلوبة.'
+      );
+      return;
+    }
+
+    if (count > 1000) {
+      addLog(
+        '⚠️ الحد الأقصى هو 1000 عمل.'
+      );
+      return;
+    }
+
+    setIsTrendingLoading(true);
+
+    let totalSaved = 0;
+    let failedRequests = 0;
+
+    try {
+      const types =
+        getSelectedTypes(trendingType);
+
+      const targets = {};
+
+      if (trendingType === 'movie') {
+        targets.movie = count;
+      } else if (trendingType === 'series') {
+        targets.tv = count;
+      } else {
+        targets.movie = Math.ceil(count / 2);
+        targets.tv =
+          count - targets.movie;
+      }
+
+      for (const type of types) {
+        let typeSaved = 0;
+
+        const pagesNeeded =
+          Math.ceil(
+            targets[type] / 20
+          );
 
         for (
           let page = 1;
-          page <= pages;
+          page <= pagesNeeded;
           page += 1
         ) {
-          try {
-            addLog(
-              `📥 جلب الصفحة ${page} من ${pages}...`
-            );
+          if (
+            typeSaved >=
+            targets[type]
+          ) {
+            break;
+          }
 
-            const responses =
-              await Promise.all(
-                types.map(
-                  (
-                    type
-                  ) =>
-                    bulkSource ===
-                    'popular'
-                      ? fetchPopularPage(
-                          type,
-                          page
-                        )
-                      : fetchTrendingPage(
-                          type,
-                          page
-                        )
-                )
+          try {
+            const data =
+              await fetchTrendingPage(
+                type,
+                page
               );
 
-            const items =
-              [];
+            const results =
+              data.results || [];
 
-            responses.forEach(
-              (
-                data,
-                index
-              ) => {
-                const currentType =
-                  types[
-                    index
-                  ];
+            const remaining =
+              targets[type] -
+              typeSaved;
 
-                const results =
-                  data.results ||
-                  [];
+            const selected =
+              results.slice(
+                0,
+                remaining
+              );
 
-                if (
-                  currentType ===
-                  'movie'
-                ) {
-                  results.forEach(
-                    (
-                      item
-                    ) => {
-                      items.push(
-                        formatMovie(
-                          item
-                        )
-                      );
-                    }
+            const formatted =
+              type === 'movie'
+                ? selected.map(
+                    formatMovie
+                  )
+                : selected.map(
+                    formatSeries
                   );
-                } else {
-                  results.forEach(
-                    (
-                      item
-                    ) => {
-                      items.push(
-                        formatSeries(
-                          item
-                        )
-                      );
-                    }
-                  );
-                }
-              }
-            );
 
             if (
-              items.length ===
-              0
+              formatted.length > 0
             ) {
+              const result =
+                await saveTitles(
+                  formatted
+                );
+
+              typeSaved +=
+                result.count;
+
+              totalSaved +=
+                result.count;
+
               addLog(
-                `⚠️ الصفحة ${page} فارغة.`
+                `🔥 Trending ${
+                  type === 'movie'
+                    ? 'أفلام'
+                    : 'مسلسلات'
+                } - الصفحة ${page}: ${result.count} عمل`
               );
-              continue;
             }
-
-            const result =
-              await saveTitles(
-                items
-              );
-
-            totalSaved +=
-              result.count;
-
-            addLog(
-              `✅ الصفحة ${page}: تم حفظ/تحديث ${result.count} عمل. المجموع: ${totalSaved}`
-            );
           } catch (error) {
-            failedPages +=
-              1;
+            failedRequests += 1;
 
             addLog(
-              `❌ فشل الصفحة ${page}: ${error.message}`
+              `❌ خطأ Trending: ${error.message}`
             );
           }
         }
-
-        addLog(
-          `🎉 انتهى الاستيراد الجماعي. تم حفظ/تحديث ${totalSaved} عمل${
-            failedPages >
-            0
-              ? `، وفشل ${failedPages} صفحات`
-              : ''
-          }.`
-        );
-
-        setBulkPages('');
-      } catch (error) {
-        addLog(
-          `❌ خطأ في الاستيراد الجماعي: ${error.message}`
-        );
-      } finally {
-        setIsBulkLoading(
-          false
-        );
-      }
-    };
-
-  // =========================================================
-  // Trending بعدد محدد
-  // =========================================================
-  const handleTrendingImport =
-    async () => {
-      const count =
-        parseInt(
-          trendingCount,
-          10
-        );
-
-      if (
-        !Number.isInteger(
-          count
-        ) ||
-        count < 1
-      ) {
-        addLog(
-          '⚠️ اكتب عدد الأعمال المطلوبة.'
-        );
-        return;
       }
 
-      if (count > 1000) {
-        addLog(
-          '⚠️ الحد الأقصى هو 1000 عمل.'
-        );
-        return;
-      }
-
-      setIsTrendingLoading(
-        true
+      addLog(
+        `🎉 انتهى Trending. تم حفظ/تحديث ${totalSaved} عمل${
+          failedRequests > 0
+            ? `، مع ${failedRequests} أخطاء`
+            : ''
+        }.`
       );
 
-      let totalSaved = 0;
-      let failedRequests = 0;
-
-      try {
-        const types =
-          getSelectedTypes(
-            trendingType
-          );
-
-        addLog(
-          `🔥 بدء استيراد ${count} عمل من Trending - ${
-            trendingType ===
-            'both'
-              ? 'أفلام + مسلسلات'
-              : trendingType ===
-                'movie'
-              ? 'أفلام فقط'
-              : 'مسلسلات فقط'
-          }`
-        );
-
-        const targets =
-          {};
-
-        if (
-          trendingType ===
-          'movie'
-        ) {
-          targets.movie =
-            count;
-        } else if (
-          trendingType ===
-          'series'
-        ) {
-          targets.tv =
-            count;
-        } else {
-          targets.movie =
-            Math.ceil(
-              count / 2
-            );
-
-          targets.tv =
-            count -
-            targets.movie;
-        }
-
-        for (const type of types) {
-          let typeSaved = 0;
-
-          const pagesNeeded =
-            Math.ceil(
-              targets[type] /
-                20
-            );
-
-          for (
-            let page = 1;
-            page <=
-              pagesNeeded;
-            page += 1
-          ) {
-            if (
-              typeSaved >=
-              targets[type]
-            ) {
-              break;
-            }
-
-            try {
-              const data =
-                await fetchTrendingPage(
-                  type,
-                  page
-                );
-
-              const results =
-                data.results ||
-                [];
-
-              const remaining =
-                targets[type] -
-                typeSaved;
-
-              const selected =
-                results.slice(
-                  0,
-                  remaining
-                );
-
-              const formatted =
-                type ===
-                'movie'
-                  ? selected.map(
-                      formatMovie
-                    )
-                  : selected.map(
-                      formatSeries
-                    );
-
-              if (
-                formatted.length >
-                0
-              ) {
-                const result =
-                  await saveTitles(
-                    formatted
-                  );
-
-                typeSaved +=
-                  result.count;
-
-                totalSaved +=
-                  result.count;
-
-                addLog(
-                  `🔥 Trending ${
-                    type ===
-                    'movie'
-                      ? 'أفلام'
-                      : 'مسلسلات'
-                  } - الصفحة ${page}: ${result.count} عمل`
-                );
-              }
-            } catch (error) {
-              failedRequests +=
-                1;
-
-              addLog(
-                `❌ خطأ Trending ${
-                  type ===
-                  'movie'
-                    ? 'الأفلام'
-                    : 'المسلسلات'
-                } الصفحة ${page}: ${error.message}`
-              );
-            }
-          }
-        }
-
-        addLog(
-          `🎉 انتهى Trending. تم حفظ/تحديث ${totalSaved} عمل${
-            failedRequests >
-            0
-              ? `، مع ${failedRequests} أخطاء`
-              : ''
-          }.`
-        );
-
-        setTrendingCount('');
-      } catch (error) {
-        addLog(
-          `❌ خطأ في Trending: ${error.message}`
-        );
-      } finally {
-        setIsTrendingLoading(
-          false
-        );
-      }
-    };
+      setTrendingCount('');
+    } catch (error) {
+      addLog(
+        `❌ خطأ في Trending: ${error.message}`
+      );
+    } finally {
+      setIsTrendingLoading(false);
+    }
+  };
 
   // =========================================================
   // بحث مسلسل
   // =========================================================
-  const handleSeriesSearch =
-    async (
-      event
-    ) => {
-      event.preventDefault();
 
-      const query =
-        seriesQuery.trim();
+  const handleSeriesSearch = async (
+    event
+  ) => {
+    event.preventDefault();
 
-      if (!query) {
-        addLog(
-          '⚠️ اكتب اسم المسلسل أولاً.'
-        );
-        return;
-      }
+    const query =
+      seriesQuery.trim();
 
-      setIsSeriesSearching(
-        true
+    if (!query) {
+      addLog(
+        '⚠️ اكتب اسم المسلسل أولاً.'
       );
-      setSeriesResults(
-        []
-      );
+      return;
+    }
 
-      try {
-        addLog(
-          `📺 البحث عن المسلسل "${query}"...`
-        );
+    setIsSeriesSearching(true);
+    setSeriesResults([]);
 
-        if (
-          /^\d+$/.test(query)
-        ) {
-          const item =
-            await tmdbFetch(
-              `/tv/${query}`,
-              {
-                language:
-                  'ar-SA',
-              }
-            );
-
-          setSeriesResults([
-            item,
-          ]);
-
-          addLog(
-            `✅ تم العثور على المسلسل: ${
-              item.name ||
-              'بدون عنوان'
-            }`
-          );
-
-          return;
-        }
-
-        const data =
+    try {
+      if (/^\d+$/.test(query)) {
+        const item =
           await tmdbFetch(
-            '/search/tv',
+            `/tv/${query}`,
             {
-              language:
-                'ar-SA',
-              query,
-              page: '1',
-              include_adult:
-                'false',
+              language: 'ar-SA',
             }
           );
 
-        const results =
-          data.results ||
-          [];
-
-        setSeriesResults(
-          results
-        );
+        setSeriesResults([item]);
 
         addLog(
-          results.length >
-            0
-            ? `✅ تم العثور على ${results.length} مسلسل.`
-            : '⚠️ لم يتم العثور على المسلسل.'
+          `✅ تم العثور على المسلسل: ${
+            item.name || 'بدون عنوان'
+          }`
         );
-      } catch (error) {
-        addLog(
-          `❌ خطأ في البحث عن المسلسل: ${error.message}`
-        );
-      } finally {
-        setIsSeriesSearching(
-          false
-        );
+
+        return;
       }
-    };
 
-  // =========================================================
-  // رابط StreamSrc للحلقة
-  // =========================================================
-  const fetchEpisodeSourceUrl = (
-    tmdbId,
-    season,
-    episode
-  ) => {
-    return getStreamSrcEpisodeUrl(
-      tmdbId,
-      season,
-      episode
-    );
+      const data =
+        await tmdbFetch(
+          '/search/tv',
+          {
+            language: 'ar-SA',
+            query,
+            page: '1',
+            include_adult: 'false',
+          }
+        );
+
+      const results =
+        data.results || [];
+
+      setSeriesResults(results);
+
+      addLog(
+        results.length > 0
+          ? `✅ تم العثور على ${results.length} مسلسل.`
+          : '⚠️ لم يتم العثور على المسلسل.'
+      );
+    } catch (error) {
+      addLog(
+        `❌ خطأ في البحث عن المسلسل: ${error.message}`
+      );
+    } finally {
+      setIsSeriesSearching(false);
+    }
   };
 
   // =========================================================
-  // استيراد حلقات المسلسل
+  // استيراد مسلسل + الحلقات
+  //
+  // مهم:
+  // episodes.stream_urls = JSONB
+  //
+  // server1 = المصدر الموجود مسبقاً
+  // server2 = StreamSrc
   // =========================================================
+
   const importSeriesWithEpisodes =
-    async (
-      series
-    ) => {
+    async (series) => {
       const episodeLimit =
         parseInt(
           seriesEpisodeLimit,
@@ -1549,19 +1094,14 @@ export default function Import() {
         return;
       }
 
-      if (
-        episodeLimit >
-        10000
-      ) {
+      if (episodeLimit > 10000) {
         addLog(
           '⚠️ الحد الأقصى هو 10000 حلقة.'
         );
         return;
       }
 
-      setIsSeriesImporting(
-        true
-      );
+      setIsSeriesImporting(true);
 
       try {
         const seriesTitle =
@@ -1572,25 +1112,16 @@ export default function Import() {
           `📺 جاري جلب تفاصيل "${seriesTitle}"...`
         );
 
-        // -----------------------------------------
-        // جلب التفاصيل الكاملة
-        // -----------------------------------------
         const detail =
           await tmdbFetch(
             `/tv/${series.id}`,
             {
-              language:
-                'ar-SA',
+              language: 'ar-SA',
             }
           );
 
-        // -----------------------------------------
-        // حفظ المسلسل في titles
-        // -----------------------------------------
         const formattedSeries =
-          formatSeries(
-            detail
-          );
+          formatSeries(detail);
 
         const saved =
           await saveTitle(
@@ -1610,36 +1141,20 @@ export default function Import() {
           )}`
         );
 
-        // -----------------------------------------
-        // المواسم
-        // -----------------------------------------
         const seasons =
-          (
-            detail.seasons ||
-            []
-          )
+          (detail.seasons || [])
             .filter(
-              (
-                season
-              ) =>
-                season.season_number >
-                0
+              (season) =>
+                season.season_number > 0
             )
             .sort(
-              (
-                a,
-                b
-              ) =>
+              (a, b) =>
                 a.season_number -
                 b.season_number
             );
 
-        const episodes =
-          [];
+        const episodes = [];
 
-        // -----------------------------------------
-        // جلب الحلقات بالترتيب
-        // -----------------------------------------
         for (const season of seasons) {
           if (
             episodes.length >=
@@ -1656,25 +1171,22 @@ export default function Import() {
             await tmdbFetch(
               `/tv/${series.id}/season/${season.season_number}`,
               {
-                language:
-                  'ar-SA',
+                language: 'ar-SA',
               }
             );
 
           const seasonEpisodes =
-            (
-              seasonDetail.episodes ||
-              []
-            ).sort(
-              (
-                a,
-                b
-              ) =>
-                a.episode_number -
-                b.episode_number
-            );
+            (seasonDetail.episodes || [])
+              .sort(
+                (a, b) =>
+                  a.episode_number -
+                  b.episode_number
+              );
 
-          for (const episode of seasonEpisodes) {
+          for (
+            const episode of
+              seasonEpisodes
+          ) {
             if (
               episodes.length >=
               episodeLimit
@@ -1695,41 +1207,92 @@ export default function Import() {
         );
 
         if (
-          episodes.length ===
-          0
+          episodes.length === 0
         ) {
           addLog(
             `⚠️ لم يتم العثور على حلقات "${seriesTitle}".`
           );
 
-          setSeriesEpisodeLimit(
-            ''
-          );
-
+          setSeriesEpisodeLimit('');
           return;
         }
 
-        // -----------------------------------------
-        // تجهيز الحلقات
-        //
-        // StreamSrc فقط في stream_url.
-        // لا نحذف ولا نبدل video_url.
-        // -----------------------------------------
+        const seasonsToImport =
+          [
+            ...new Set(
+              episodes.map(
+                (episode) =>
+                  episode.season_number
+              )
+            ),
+          ];
+
+        // -----------------------------------------------------
+        // نجيب الحلقات القديمة قبل الحذف حتى نحافظ على server1
+        // -----------------------------------------------------
+
+        const {
+          data: existingEpisodes,
+          error: existingEpisodesError,
+        } = await supabase
+          .from('episodes')
+          .select(
+            'id,season,episode_number,stream_urls'
+          )
+          .eq(
+            'title_id',
+            titleId
+          );
+
+        if (existingEpisodesError) {
+          throw existingEpisodesError;
+        }
+
+        const existingMap =
+          new Map();
+
+        (
+          existingEpisodes || []
+        ).forEach((episode) => {
+          const key =
+            `${episode.season}:${episode.episode_number}`;
+
+          existingMap.set(
+            key,
+            episode
+          );
+        });
+
         const episodeRows =
           episodes.map(
-            (
-              episode
-            ) => {
+            (episode) => {
               const seasonNumber =
-                episode.season_number ||
-                1;
+                Number(
+                  episode.season_number || 1
+                );
 
               const episodeNumber =
-                episode.episode_number ||
-                1;
+                Number(
+                  episode.episode_number || 1
+                );
 
-              const streamUrl =
-                fetchEpisodeSourceUrl(
+              const key =
+                `${seasonNumber}:${episodeNumber}`;
+
+              const oldEpisode =
+                existingMap.get(
+                  key
+                );
+
+              const oldStreamUrls =
+                oldEpisode?.stream_urls &&
+                typeof oldEpisode.stream_urls ===
+                  'object'
+                  ? oldEpisode.stream_urls
+                  : {};
+
+              const streamSrcUrl =
+                getStreamSrcEpisodeUrl(
                   series.id,
                   seasonNumber,
                   episodeNumber
@@ -1752,98 +1315,79 @@ export default function Import() {
                 duration_seconds:
                   typeof episode.runtime ===
                   'number'
-                    ? episode.runtime *
-                      60
+                    ? episode.runtime * 60
                     : null,
 
-                stream_url:
-                  streamUrl ||
-                  null,
+                stream_urls: {
+                  ...oldStreamUrls,
+
+                  ...(streamSrcUrl
+                    ? {
+                        server2:
+                          streamSrcUrl,
+                      }
+                    : {}),
+                },
               };
             }
           );
 
-        // -----------------------------------------
-        // حذف الحلقات القديمة للمواسم المستوردة
-        // -----------------------------------------
-        const seasonsToImport =
-          [
-            ...new Set(
-              episodeRows.map(
-                (
-                  episode
-                ) =>
-                  episode.season
-              )
-            ),
-          ];
+        // -----------------------------------------------------
+        // حذف المواسم التي سيتم إعادة استيرادها
+        // -----------------------------------------------------
 
-        for (const seasonNumber of seasonsToImport) {
+        for (
+          const seasonNumber of
+            seasonsToImport
+        ) {
           const {
             error:
               deleteError,
-          } =
-            await supabase
-              .from(
-                'episodes'
-              )
-              .delete()
-              .eq(
-                'title_id',
-                titleId
-              )
-              .eq(
-                'season',
-                seasonNumber
-              );
+          } = await supabase
+            .from('episodes')
+            .delete()
+            .eq(
+              'title_id',
+              titleId
+            )
+            .eq(
+              'season',
+              seasonNumber
+            );
 
-          if (
-            deleteError
-          ) {
+          if (deleteError) {
             addLog(
               `⚠️ تعذر تنظيف الموسم ${seasonNumber}: ${deleteError.message}`
             );
           }
         }
 
-        // -----------------------------------------
-        // إدخال الحلقات على دفعات
-        // -----------------------------------------
-        const batchSize =
-          50;
+        // -----------------------------------------------------
+        // إدخال الحلقات
+        // -----------------------------------------------------
 
-        let savedEpisodes =
-          0;
+        const batchSize = 50;
+        let savedEpisodes = 0;
 
         for (
           let i = 0;
-          i <
-          episodeRows.length;
-          i +=
-            batchSize
+          i < episodeRows.length;
+          i += batchSize
         ) {
           const batch =
             episodeRows.slice(
               i,
-              i +
-                batchSize
+              i + batchSize
             );
 
           const {
             error:
               episodeError,
-          } =
-            await supabase
-              .from(
-                'episodes'
-              )
-              .insert(
-                batch
-              );
+          } = await supabase
+            .from('episodes')
+            .insert(batch);
 
-          if (
-            episodeError
-          ) {
+          if (episodeError) {
             throw episodeError;
           }
 
@@ -1851,74 +1395,73 @@ export default function Import() {
             batch.length;
 
           addLog(
-            `📥 تم حفظ ${savedEpisodes}/${episodeRows.length} حلقة مع روابط StreamSrc...`
+            `📥 تم حفظ ${savedEpisodes}/${episodeRows.length} حلقة مع Server 2`
           );
         }
 
         addLog(
-          `🎉 تم استيراد ${savedEpisodes} حلقة للمسلسل "${seriesTitle}" مع روابط StreamSrc.`
+          `🎉 تم استيراد ${savedEpisodes} حلقة للمسلسل "${seriesTitle}".`
         );
 
-        setSeriesEpisodeLimit(
-          ''
+        addLog(
+          `🛡️ تم الحفاظ على server1 الموجود مسبقاً.`
         );
+
+        addLog(
+          `🔗 StreamSrc تم وضعه داخل stream_urls.server2`
+        );
+
+        setSeriesEpisodeLimit('');
       } catch (error) {
         addLog(
           `❌ خطأ في استيراد المسلسل والحلقات: ${error.message}`
         );
       } finally {
-        setIsSeriesImporting(
-          false
-        );
+        setIsSeriesImporting(false);
       }
     };
 
   // =========================================================
-  // جلب StreamSrc لجميع الأعمال
+  // جلب روابط StreamSrc لجميع الأعمال
   //
-  // مهم:
-  // لا نلمس titles.url.
-  // إذا كان فيه Stelar.rip يبقى كما هو.
-  // StreamSrc يذهب إلى titles.stream_url.
+  // للأفلام/المسلسلات:
+  // الرابط يتولد مباشرة من TMDB داخل VideoPlayer.
+  //
+  // لا نحتاج عمود stream_url.
   // =========================================================
+
   const handleFetchAllSources =
     async () => {
-      if (
-        isFetchingSources
-      ) {
+      if (isFetchingSources) {
         return;
       }
 
-      setIsFetchingSources(
-        true
-      );
+      setIsFetchingSources(true);
 
       try {
         addLog(
-          '🔗 بدء جلب روابط StreamSrc للأعمال الموجودة...'
+          '🔗 بدء فحص StreamSrc للأعمال الموجودة...'
         );
 
         const {
           data,
           error,
-        } =
-          await supabase
-            .from('titles')
-            .select(
-              'id,type,name,tmdb_id,url,stream_url'
-            )
-            .not(
-              'tmdb_id',
-              'is',
-              null
-            )
-            .order(
-              'created_at',
-              {
-                ascending:
-                  false,
-              }
-            );
+        } = await supabase
+          .from('titles')
+          .select(
+            'id,type,name,tmdb_id,url'
+          )
+          .not(
+            'tmdb_id',
+            'is',
+            null
+          )
+          .order(
+            'created_at',
+            {
+              ascending: false,
+            }
+          );
 
         if (error) {
           throw error;
@@ -1931,27 +1474,21 @@ export default function Import() {
           `📊 تم العثور على ${rows.length} عمل لديه TMDB ID.`
         );
 
-        let updated =
-          0;
-
-        let failed =
-          0;
+        let checked = 0;
+        let failed = 0;
 
         for (
           const item of rows
         ) {
           try {
             const type =
-              item.type ===
-                'tv' ||
-              item.type ===
-                'series'
+              item.type === 'tv' ||
+              item.type === 'series'
                 ? 'series'
                 : 'movie';
 
             const streamUrl =
-              type ===
-              'movie'
+              type === 'movie'
                 ? getStreamSrcMovieUrl(
                     item.tmdb_id
                   )
@@ -1959,53 +1496,18 @@ export default function Import() {
                     item.tmdb_id
                   );
 
-            if (
-              !streamUrl
-            ) {
-              failed +=
-                1;
+            if (!streamUrl) {
+              failed += 1;
               continue;
             }
 
-            const {
-              error:
-                updateError,
-            } =
-              await supabase
-                .from(
-                  'titles'
-                )
-                .update({
-                  stream_url:
-                    streamUrl,
-                })
-                .eq(
-                  'id',
-                  item.id
-                );
-
-            if (
-              updateError
-            ) {
-              failed +=
-                1;
-
-              addLog(
-                `⚠️ تعذر تحديث "${item.name || 'بدون اسم'}": ${updateError.message}`
-              );
-
-              continue;
-            }
-
-            updated +=
-              1;
+            checked += 1;
 
             addLog(
-              `🔗 ${item.name || 'بدون اسم'} → StreamSrc`
+              `🔗 ${item.name || 'بدون اسم'} → ${streamUrl}`
             );
           } catch (error) {
-            failed +=
-              1;
+            failed += 1;
 
             addLog(
               `⚠️ فشل "${item.name || 'بدون اسم'}": ${error.message}`
@@ -2014,31 +1516,25 @@ export default function Import() {
         }
 
         addLog(
-          `🎉 انتهى جلب الروابط: تم تحديث ${updated} عمل${
-            failed >
-            0
-              ? `، وفشل ${failed}`
-              : ''
-          }.`
+          `🎉 انتهى الفحص: ${checked} رابط StreamSrc جاهز، ${failed} فشل.`
+        );
+
+        addLog(
+          'ℹ️ لم يتم تعديل titles.url.'
         );
       } catch (error) {
         addLog(
-          `❌ خطأ في جلب روابط StreamSrc: ${error.message}`
+          `❌ خطأ في فحص روابط StreamSrc: ${error.message}`
         );
       } finally {
-        setIsFetchingSources(
-          false
-        );
+        setIsFetchingSources(false);
       }
     };
 
   // =========================================================
-  // فحص وإصلاح URLs
-  //
-  // لا نستبدل url الموجود.
-  // url = المصدر الأساسي مثل Stelar.rip
-  // stream_url = StreamSrc
+  // فحص وإصلاح
   // =========================================================
+
   const handleFixUrls =
     async () => {
       setIsFixing(true);
@@ -2051,12 +1547,11 @@ export default function Import() {
         const {
           data,
           error,
-        } =
-          await supabase
-            .from('titles')
-            .select(
-              'id,type,name,poster_url,url,stream_url,tmdb_id'
-            );
+        } = await supabase
+          .from('titles')
+          .select(
+            'id,type,name,poster_url,url,tmdb_id'
+          );
 
         if (error) {
           throw error;
@@ -2066,55 +1561,36 @@ export default function Import() {
           data || [];
 
         addLog(
-          `📊 تم العثور على ${rows.length} سجل في قاعدة البيانات.`
+          `📊 تم العثور على ${rows.length} سجل.`
         );
 
-        let fixedCount =
-          0;
+        let fixedCount = 0;
+        let checkedCount = 0;
+        let invalidPoster = 0;
+        let invalidUrl = 0;
 
-        let checkedCount =
-          0;
+        for (
+          const item of rows
+        ) {
+          checkedCount += 1;
 
-        let invalidPoster =
-          0;
+          const updates = {};
 
-        let invalidUrl =
-          0;
-
-        for (const item of rows) {
-          checkedCount +=
-            1;
-
-          const updates =
-            {};
-
-          // ---------------------------------------
-          // تصحيح type
-          // ---------------------------------------
-          if (
-            item.type ===
-            'tv'
-          ) {
+          if (item.type === 'tv') {
             updates.type =
               'series';
           }
 
-          // ---------------------------------------
-          // تصحيح poster_url
-          // ---------------------------------------
           if (
             typeof item.poster_url ===
               'string' &&
-            item.poster_url.trim() !==
-              ''
+            item.poster_url.trim() !== ''
           ) {
             const poster =
               item.poster_url.trim();
 
             if (
-              poster.startsWith(
-                '/'
-              )
+              poster.startsWith('/')
             ) {
               updates.poster_url =
                 `${TMDB_IMAGE}/w500${poster}`;
@@ -2128,46 +1604,6 @@ export default function Import() {
             }
           }
 
-          // ---------------------------------------
-          // إذا كان StreamSrc ناقصاً
-          // نبنيه في stream_url فقط.
-          //
-          // لا نلمس url إطلاقاً.
-          // ---------------------------------------
-          if (
-            item.tmdb_id &&
-            (
-              !item.stream_url ||
-              !/^https?:\/\//i.test(
-                String(
-                  item.stream_url
-                )
-              )
-            )
-          ) {
-            const streamUrl =
-              item.type ===
-                'series' ||
-              item.type ===
-                'tv'
-                ? getStreamSrcSeriesUrl(
-                    item.tmdb_id
-                  )
-                : getStreamSrcMovieUrl(
-                    item.tmdb_id
-                  );
-
-            if (
-              streamUrl
-            ) {
-              updates.stream_url =
-                streamUrl;
-            }
-          }
-
-          // ---------------------------------------
-          // فحص poster
-          // ---------------------------------------
           if (
             item.poster_url &&
             !/^https?:\/\//i.test(
@@ -2176,58 +1612,39 @@ export default function Import() {
               )
             )
           ) {
-            invalidPoster +=
-              1;
+            invalidPoster += 1;
           }
 
-          // ---------------------------------------
-          // فحص المصدر الأساسي
-          // ---------------------------------------
           if (
             item.url &&
             !/^https?:\/\//i.test(
-              String(
-                item.url
-              )
+              String(item.url)
             )
           ) {
-            invalidUrl +=
-              1;
+            invalidUrl += 1;
           }
 
-          // ---------------------------------------
-          // تنفيذ التعديل
-          // ---------------------------------------
           if (
-            Object.keys(
-              updates
-            ).length > 0
+            Object.keys(updates)
+              .length > 0
           ) {
             const {
               error:
                 updateError,
-            } =
-              await supabase
-                .from(
-                  'titles'
-                )
-                .update(
-                  updates
-                )
-                .eq(
-                  'id',
-                  item.id
-                );
+            } = await supabase
+              .from('titles')
+              .update(updates)
+              .eq(
+                'id',
+                item.id
+              );
 
-            if (
-              updateError
-            ) {
+            if (updateError) {
               addLog(
                 `⚠️ تعذر إصلاح "${item.name || 'بدون اسم'}": ${updateError.message}`
               );
             } else {
-              fixedCount +=
-                1;
+              fixedCount += 1;
             }
           }
         }
@@ -2248,87 +1665,8 @@ export default function Import() {
           `🔗 روابط المصدر الأساسي غير كاملة: ${invalidUrl}`
         );
 
-        // -----------------------------------------
-        // فحص نهائي
-        // -----------------------------------------
-        const {
-          data:
-            verifyData,
-          error:
-            verifyError,
-        } =
-          await supabase
-            .from('titles')
-            .select(
-              'id,type,name,poster_url,url,stream_url'
-            );
-
-        if (
-          verifyError
-        ) {
-          throw verifyError;
-        }
-
-        let brokenPoster =
-          0;
-
-        let brokenUrl =
-          0;
-
-        let brokenStreamUrl =
-          0;
-
-        for (
-          const item of
-            verifyData || []
-        ) {
-          if (
-            item.poster_url &&
-            !/^https?:\/\//i.test(
-              String(
-                item.poster_url
-              )
-            )
-          ) {
-            brokenPoster +=
-              1;
-          }
-
-          if (
-            item.url &&
-            !/^https?:\/\//i.test(
-              String(
-                item.url
-              )
-            )
-          ) {
-            brokenUrl +=
-              1;
-          }
-
-          if (
-            item.stream_url &&
-            !/^https?:\/\//i.test(
-              String(
-                item.stream_url
-              )
-            )
-          ) {
-            brokenStreamUrl +=
-              1;
-          }
-        }
-
         addLog(
-          `🖼️ الفحص النهائي: ${brokenPoster} Poster غير صحيح.`
-        );
-
-        addLog(
-          `🔗 الفحص النهائي: ${brokenUrl} مصدر أساسي غير صحيح.`
-        );
-
-        addLog(
-          `🔗 الفحص النهائي: ${brokenStreamUrl} StreamSrc غير صحيح.`
+          'ℹ️ StreamSrc لا يحتاج عموداً إضافياً في titles؛ يتم توليده من TMDB عند التشغيل.'
         );
 
         addLog(
@@ -2343,9 +1681,6 @@ export default function Import() {
       }
     };
 
-  // =========================================================
-  // الحالة العامة
-  // =========================================================
   const busy =
     isBulkLoading ||
     isTrendingLoading ||
@@ -2353,9 +1688,6 @@ export default function Import() {
     isFixing ||
     isFetchingSources;
 
-  // =========================================================
-  // UI
-  // =========================================================
   return (
     <div className="import-page">
       <style>{`
@@ -2442,29 +1774,12 @@ export default function Import() {
           font-size: 18px;
         }
 
-        .red {
-          color: #ff4050;
-        }
-
-        .blue {
-          color: #4da3ff;
-        }
-
-        .orange {
-          color: #ffad33;
-        }
-
-        .green {
-          color: #46d369;
-        }
-
-        .purple {
-          color: #ad8cff;
-        }
-
-        .cyan {
-          color: #29c5d8;
-        }
+        .red { color: #ff4050; }
+        .blue { color: #4da3ff; }
+        .orange { color: #ffad33; }
+        .green { color: #46d369; }
+        .purple { color: #ad8cff; }
+        .cyan { color: #29c5d8; }
 
         .input-row {
           display: flex;
@@ -2516,43 +1831,21 @@ export default function Import() {
           filter: brightness(1.08);
         }
 
-        .import-button:active:not(:disabled) {
-          transform: translateY(0);
-        }
-
         .import-button:disabled {
           opacity: .42;
           cursor: not-allowed;
         }
 
-        .btn-red {
-          background: #e50914;
-        }
-
-        .btn-blue {
-          background: #1677ff;
-        }
-
+        .btn-red { background: #e50914; }
+        .btn-blue { background: #1677ff; }
         .btn-orange {
           background: #ff9800;
           color: #111;
         }
-
-        .btn-green {
-          background: #24a148;
-        }
-
-        .btn-cyan {
-          background: #1597a8;
-        }
-
-        .btn-purple {
-          background: #7646d9;
-        }
-
-        .btn-source {
-          background: #9b3cff;
-        }
+        .btn-green { background: #24a148; }
+        .btn-cyan { background: #1597a8; }
+        .btn-purple { background: #7646d9; }
+        .btn-source { background: #9b3cff; }
 
         .helper {
           margin-top: 10px;
@@ -2674,17 +1967,9 @@ export default function Import() {
           word-break: break-word;
         }
 
-        .log-line.error {
-          color: #ff5555;
-        }
-
-        .log-line.success {
-          color: #46d369;
-        }
-
-        .log-line.warning {
-          color: #ffbd4a;
-        }
+        .log-line.error { color: #ff5555; }
+        .log-line.success { color: #46d369; }
+        .log-line.warning { color: #ffbd4a; }
 
         .badge {
           display: inline-flex;
@@ -2739,9 +2024,6 @@ export default function Import() {
 
       <div className="import-container">
 
-        {/* =====================================================
-            HEADER
-        ===================================================== */}
         <div className="import-header">
           <div className="header-top">
             <div>
@@ -2756,50 +2038,37 @@ export default function Import() {
             </div>
 
             <div className="status-badge">
-              ● TMDB + Stelar + StreamSrc
+              ● TMDB + Server 1 + StreamSrc
             </div>
           </div>
         </div>
 
         <div className="import-grid">
 
-          {/* ===================================================
-              البحث الفردي
-          =================================================== */}
           <section className="import-card full">
             <h2 className="card-title red">
               🔍 البحث والاستيراد الفردي
             </h2>
 
             <form
-              onSubmit={
-                handleSingleSearch
-              }
+              onSubmit={handleSingleSearch}
               className="input-row"
             >
               <input
                 className="import-input"
                 type="text"
-                value={
-                  searchQuery
-                }
+                value={searchQuery}
                 onChange={(e) =>
-                  setSearchQuery(
-                    e.target.value
-                  )
+                  setSearchQuery(e.target.value)
                 }
                 placeholder="اسم الفيلم/المسلسل أو TMDB ID..."
               />
 
               <select
                 className="import-select"
-                value={
-                  searchType
-                }
+                value={searchType}
                 onChange={(e) =>
-                  setSearchType(
-                    e.target.value
-                  )
+                  setSearchType(e.target.value)
                 }
               >
                 <option value="movie">
@@ -2814,9 +2083,7 @@ export default function Import() {
               <button
                 className="import-button btn-red"
                 type="submit"
-                disabled={
-                  isSearching
-                }
+                disabled={isSearching}
               >
                 {isSearching
                   ? '⏳ جاري البحث...'
@@ -2825,149 +2092,117 @@ export default function Import() {
             </form>
 
             <div className="helper">
-              ابحث بالاسم أو أدخل TMDB ID
-              مباشرة، وستظهر لك صورة واسم العمل
-              قبل الاستيراد.
+              ابحث بالاسم أو TMDB ID.
             </div>
 
-            {searchResults.length >
-              0 && (
+            {searchResults.length > 0 && (
               <div className="results-grid">
-                {searchResults.map(
-                  (item) => (
-                    <div
-                      className="result-card"
-                      key={
-                        item.id
+                {searchResults.map((item) => (
+                  <div
+                    className="result-card"
+                    key={item.id}
+                  >
+                    <img
+                      className="result-poster"
+                      src={
+                        item.poster_path
+                          ? `${TMDB_IMAGE}/w342${item.poster_path}`
+                          : PLACEHOLDER_POSTER
                       }
-                    >
-                      <img
-                        className="result-poster"
-                        src={
-                          item.poster_path
-                            ? `${TMDB_IMAGE}/w342${item.poster_path}`
-                            : PLACEHOLDER_POSTER
-                        }
-                        alt={
-                          item.title ||
+                      alt={
+                        item.title ||
+                        item.name ||
+                        'Poster'
+                      }
+                    />
+
+                    <div className="result-body">
+                      <div className="result-title">
+                        {item.title ||
                           item.name ||
-                          'Poster'
+                          'بدون عنوان'}
+                      </div>
+
+                      <div className="result-meta">
+                        ⭐{' '}
+                        {typeof item.vote_average ===
+                        'number'
+                          ? item.vote_average.toFixed(1)
+                          : '0.0'}
+                        {' • '}
+                        {item.release_date ||
+                          item.first_air_date ||
+                          'بدون تاريخ'}
+                      </div>
+
+                      <div className="result-overview">
+                        {item.overview ||
+                          'لا يوجد وصف متاح.'}
+                      </div>
+
+                      <button
+                        className="import-button btn-green"
+                        type="button"
+                        onClick={() =>
+                          importSingleItem(item)
                         }
-                      />
+                        disabled={busy}
+                      >
+                        ➕ استيراد العمل
+                      </button>
 
-                      <div className="result-body">
-                        <div className="result-title">
-                          {item.title ||
-                            item.name ||
-                            'بدون عنوان'}
-                        </div>
+                      <button
+                        className="import-button btn-source source-button"
+                        type="button"
+                        onClick={() =>
+                          fetchSingleSource(item)
+                        }
+                        disabled={busy}
+                      >
+                        🔗 فحص StreamSrc
+                      </button>
 
-                        <div className="result-meta">
-                          ⭐{' '}
-                          {typeof item.vote_average ===
-                          'number'
-                            ? item.vote_average.toFixed(
-                                1
-                              )
-                            : '0.0'}
-
-                          {' • '}
-
-                          {item.release_date ||
-                            item.first_air_date ||
-                            'بدون تاريخ'}
-                        </div>
-
-                        <div className="result-overview">
-                          {item.overview ||
-                            'لا يوجد وصف متاح.'}
-                        </div>
-
-                        <button
-                          className="import-button btn-green"
-                          type="button"
-                          onClick={() =>
-                            importSingleItem(
-                              item
+                      <div className="source-info">
+                        StreamSrc:
+                        {' '}
+                        {searchType === 'movie'
+                          ? getStreamSrcMovieUrl(
+                              item.id
                             )
-                          }
-                          disabled={
-                            busy
-                          }
-                        >
-                          ➕ استيراد العمل
-                        </button>
-
-                        <button
-                          className="import-button btn-source source-button"
-                          type="button"
-                          onClick={() =>
-                            fetchSingleSource(
-                              item
-                            )
-                          }
-                          disabled={
-                            busy
-                          }
-                        >
-                          🔗 جلب StreamSrc
-                        </button>
-
-                        <div className="source-info">
-                          StreamSrc:
-                          {' '}
-                          {searchType ===
-                          'movie'
-                            ? getStreamSrcMovieUrl(
-                                item.id
-                              )
-                            : getStreamSrcSeriesUrl(
-                                item.id
-                              )}
-                        </div>
+                          : getStreamSrcSeriesUrl(
+                              item.id
+                            )}
                       </div>
                     </div>
-                  )
-                )}
+                  </div>
+                ))}
               </div>
             )}
           </section>
 
-          {/* ===================================================
-              الاستيراد الجماعي
-          =================================================== */}
           <section className="import-card">
             <h2 className="card-title blue">
               📦 الاستيراد الجماعي
             </h2>
 
             <div className="input-row">
-
               <input
                 className="import-input"
                 type="number"
                 min="1"
                 max="500"
-                value={
-                  bulkPages
-                }
+                value={bulkPages}
                 onChange={(e) =>
-                  setBulkPages(
-                    e.target.value
-                  )
+                  setBulkPages(e.target.value)
                 }
                 placeholder="عدد الصفحات"
               />
 
               <select
                 className="import-select"
-                value={
-                  bulkType
-                }
+                value={bulkType}
                 onChange={(e) =>
-                  setBulkType(
-                    e.target.value
-                  )
+                  setBulkType(e.target.value)
                 }
               >
                 <option value="both">
@@ -2985,13 +2220,9 @@ export default function Import() {
 
               <select
                 className="import-select"
-                value={
-                  bulkSource
-                }
+                value={bulkSource}
                 onChange={(e) =>
-                  setBulkSource(
-                    e.target.value
-                  )
+                  setBulkSource(e.target.value)
                 }
               >
                 <option value="popular">
@@ -3005,23 +2236,18 @@ export default function Import() {
             </div>
 
             <div className="helper">
-              StreamSrc يتم حفظه في
-              stream_url، بينما المصدر الموجود
-              في url لا يتم تغييره.
+              المصدر الموجود في titles.url لا يتم
+              تغييره. StreamSrc يتم توليده من TMDB
+              عند تشغيل الفيلم أو المسلسل.
             </div>
 
             <button
               className="import-button btn-blue"
               type="button"
-              onClick={
-                handleBulkImport
-              }
-              disabled={
-                busy
-              }
+              onClick={handleBulkImport}
+              disabled={busy}
               style={{
-                width:
-                  '100%',
+                width: '100%',
                 marginTop: 14,
               }}
             >
@@ -3031,41 +2257,29 @@ export default function Import() {
             </button>
           </section>
 
-          {/* ===================================================
-              TRENDING
-          =================================================== */}
           <section className="import-card">
             <h2 className="card-title orange">
               🔥 استيراد Trending
             </h2>
 
             <div className="input-row">
-
               <input
                 className="import-input"
                 type="number"
                 min="1"
                 max="1000"
-                value={
-                  trendingCount
-                }
+                value={trendingCount}
                 onChange={(e) =>
-                  setTrendingCount(
-                    e.target.value
-                  )
+                  setTrendingCount(e.target.value)
                 }
                 placeholder="عدد الأعمال"
               />
 
               <select
                 className="import-select"
-                value={
-                  trendingType
-                }
+                value={trendingType}
                 onChange={(e) =>
-                  setTrendingType(
-                    e.target.value
-                  )
+                  setTrendingType(e.target.value)
                 }
               >
                 <option value="both">
@@ -3083,22 +2297,17 @@ export default function Import() {
             </div>
 
             <div className="helper">
-              StreamSrc يحفظ كمصدر ثانٍ
-              بدون حذف المصدر الموجود.
+              لا يتم حذف المصدر الموجود في
+              titles.url.
             </div>
 
             <button
               className="import-button btn-orange"
               type="button"
-              onClick={
-                handleTrendingImport
-              }
-              disabled={
-                busy
-              }
+              onClick={handleTrendingImport}
+              disabled={busy}
               style={{
-                width:
-                  '100%',
+                width: '100%',
                 marginTop: 14,
               }}
             >
@@ -3108,30 +2317,21 @@ export default function Import() {
             </button>
           </section>
 
-          {/* ===================================================
-              مسلسل + حلقات
-          =================================================== */}
           <section className="import-card full">
             <h2 className="card-title green">
               📺 استيراد مسلسل + حلقاته
             </h2>
 
             <form
-              onSubmit={
-                handleSeriesSearch
-              }
+              onSubmit={handleSeriesSearch}
               className="input-row"
             >
               <input
                 className="import-input"
                 type="text"
-                value={
-                  seriesQuery
-                }
+                value={seriesQuery}
                 onChange={(e) =>
-                  setSeriesQuery(
-                    e.target.value
-                  )
+                  setSeriesQuery(e.target.value)
                 }
                 placeholder="اسم المسلسل أو TMDB ID..."
               />
@@ -3140,8 +2340,7 @@ export default function Import() {
                 className="import-button btn-green"
                 type="submit"
                 disabled={
-                  isSeriesSearching ||
-                  busy
+                  isSeriesSearching || busy
                 }
               >
                 {isSeriesSearching
@@ -3153,8 +2352,7 @@ export default function Import() {
             <div
               className="input-row"
               style={{
-                marginTop:
-                  12,
+                marginTop: 12,
               }}
             >
               <input
@@ -3162,9 +2360,7 @@ export default function Import() {
                 type="number"
                 min="1"
                 max="10000"
-                value={
-                  seriesEpisodeLimit
-                }
+                value={seriesEpisodeLimit}
                 onChange={(e) =>
                   setSeriesEpisodeLimit(
                     e.target.value
@@ -3179,183 +2375,140 @@ export default function Import() {
             </div>
 
             <div className="info-box">
-              اختر المسلسل ثم حدد عدد الحلقات.
-              النظام يجلب المواسم من TMDB ويحفظ
-              StreamSrc في stream_url لكل حلقة
-              حسب TMDB ID + الموسم + رقم الحلقة،
-              بدون المساس بالمصدر الأساسي.
+              الحلقات تحفظ في
+              <b> episodes.stream_urls </b>
+              بصيغة JSON. المصدر الموجود سابقاً
+              في <b>server1</b> يبقى محفوظاً،
+              وStreamSrc يضاف في <b>server2</b>.
             </div>
 
-            {seriesResults.length >
-              0 && (
+            {seriesResults.length > 0 && (
               <div className="results-grid">
-                {seriesResults.map(
-                  (item) => (
-                    <div
-                      className="result-card"
-                      key={
-                        item.id
+                {seriesResults.map((item) => (
+                  <div
+                    className="result-card"
+                    key={item.id}
+                  >
+                    <img
+                      className="result-poster"
+                      src={
+                        item.poster_path
+                          ? `${TMDB_IMAGE}/w342${item.poster_path}`
+                          : PLACEHOLDER_POSTER
                       }
-                    >
-                      <img
-                        className="result-poster"
-                        src={
-                          item.poster_path
-                            ? `${TMDB_IMAGE}/w342${item.poster_path}`
-                            : PLACEHOLDER_POSTER
-                        }
-                        alt={
-                          item.name ||
-                          'Series'
-                        }
-                      />
+                      alt={
+                        item.name || 'Series'
+                      }
+                    />
 
-                      <div className="result-body">
-                        <div className="result-title">
-                          {item.name ||
-                            'بدون عنوان'}
-                        </div>
-
-                        <div className="result-meta">
-                          ⭐{' '}
-                          {typeof item.vote_average ===
-                          'number'
-                            ? item.vote_average.toFixed(
-                                1
-                              )
-                            : '0.0'}
-
-                          {' • '}
-
-                          {item.first_air_date ||
-                            'بدون تاريخ'}
-                        </div>
-
-                        <div className="result-overview">
-                          {item.overview ||
-                            'لا يوجد وصف متاح.'}
-                        </div>
-
-                        <button
-                          className="import-button btn-purple"
-                          type="button"
-                          onClick={() =>
-                            importSeriesWithEpisodes(
-                              item
-                            )
-                          }
-                          disabled={
-                            busy
-                          }
-                        >
-                          {isSeriesImporting
-                            ? '⏳ جاري الاستيراد...'
-                            : '📥 استيراد المسلسل والحلقات'}
-                        </button>
+                    <div className="result-body">
+                      <div className="result-title">
+                        {item.name ||
+                          'بدون عنوان'}
                       </div>
+
+                      <div className="result-meta">
+                        ⭐{' '}
+                        {typeof item.vote_average ===
+                        'number'
+                          ? item.vote_average.toFixed(1)
+                          : '0.0'}
+                        {' • '}
+                        {item.first_air_date ||
+                          'بدون تاريخ'}
+                      </div>
+
+                      <div className="result-overview">
+                        {item.overview ||
+                          'لا يوجد وصف متاح.'}
+                      </div>
+
+                      <button
+                        className="import-button btn-purple"
+                        type="button"
+                        onClick={() =>
+                          importSeriesWithEpisodes(
+                            item
+                          )
+                        }
+                        disabled={busy}
+                      >
+                        {isSeriesImporting
+                          ? '⏳ جاري الاستيراد...'
+                          : '📥 استيراد المسلسل والحلقات'}
+                      </button>
                     </div>
-                  )
-                )}
+                  </div>
+                ))}
               </div>
             )}
           </section>
 
-          {/* ===================================================
-              جلب روابط جميع الأعمال
-          =================================================== */}
           <section className="import-card full">
             <h2 className="card-title purple">
-              🔗 جلب روابط StreamSrc
+              🔗 فحص روابط StreamSrc
             </h2>
 
             <p
               style={{
-                color:
-                  '#999',
-                fontSize:
-                  13,
-                lineHeight:
-                  1.8,
-                marginTop:
-                  0,
+                color: '#999',
+                fontSize: 13,
+                lineHeight: 1.8,
+                marginTop: 0,
               }}
             >
-              هذا الزر يمر على الأعمال الموجودة
-              في قاعدة البيانات والتي لديها TMDB ID
-              ويبني لها رابط StreamSrc في
-              stream_url. المصدر الموجود في url
-              لا يتم تغييره.
+              يفحص الأعمال التي لديها TMDB ID
+              ويعرض رابط StreamSrc الجاهز بدون
+              تعديل المصدر الموجود في titles.url.
             </p>
 
             <button
               className="import-button btn-source"
               type="button"
-              onClick={
-                handleFetchAllSources
-              }
-              disabled={
-                busy
-              }
+              onClick={handleFetchAllSources}
+              disabled={busy}
             >
               {isFetchingSources
-                ? '⏳ جاري جلب الروابط...'
-                : '🔗 جلب روابط StreamSrc لجميع الأعمال'}
+                ? '⏳ جاري الفحص...'
+                : '🔗 فحص روابط StreamSrc لجميع الأعمال'}
             </button>
           </section>
 
-          {/* ===================================================
-              إصلاح URLs
-          =================================================== */}
           <section className="import-card full">
             <h2 className="card-title cyan">
-              🛠️ فحص وإصلاح البيانات والروابط
+              🛠️ فحص وإصلاح البيانات
             </h2>
 
             <p
               style={{
-                color:
-                  '#999',
-                fontSize:
-                  13,
-                lineHeight:
-                  1.8,
-                marginTop:
-                  0,
+                color: '#999',
+                fontSize: 13,
+                lineHeight: 1.8,
+                marginTop: 0,
               }}
             >
-              يفحص البيانات وروابط الصور والمصدر
-              الأساسي، ويضيف StreamSrc في
-              stream_url إذا كان ناقصاً، بدون
-              استبدال المصدر الموجود في url.
+              يصلح نوع المحتوى وروابط الصور
+              غير الكاملة، بدون المساس بالمصدر
+              الموجود في titles.url.
             </p>
 
             <button
               className="import-button btn-cyan"
               type="button"
-              onClick={
-                handleFixUrls
-              }
-              disabled={
-                busy
-              }
+              onClick={handleFixUrls}
+              disabled={busy}
             >
               {isFixing
                 ? '⏳ جاري الفحص والإصلاح...'
-                : '🛠️ فحص وإصلاح URL والبيانات'}
+                : '🛠️ فحص وإصلاح البيانات'}
             </button>
           </section>
 
-          {/* ===================================================
-              LOGS
-          =================================================== */}
           <section className="import-card full">
             <div className="logs-head">
               <h2
                 className="card-title"
-                style={{
-                  margin:
-                    0,
-                }}
+                style={{ margin: 0 }}
               >
                 📋 سجل العمليات
               </h2>
@@ -3363,73 +2516,47 @@ export default function Import() {
               <button
                 className="clear-button"
                 type="button"
-                onClick={() =>
-                  setLogs(
-                    []
-                  )
-                }
+                onClick={() => setLogs([])}
               >
                 مسح السجل
               </button>
             </div>
 
             <div className="logs">
-              {logs.length ===
-              0 ? (
+              {logs.length === 0 ? (
                 <div className="log-line">
                   لا توجد عمليات حالياً...
                 </div>
               ) : (
-                logs.map(
-                  (
-                    log,
-                    index
-                  ) => {
-                    let className =
-                      'log-line';
+                logs.map((log, index) => {
+                  let className =
+                    'log-line';
 
-                    if (
-                      log.includes(
-                        '❌'
-                      )
-                    ) {
-                      className +=
-                        ' error';
-                    } else if (
-                      log.includes(
-                        '✅'
-                      ) ||
-                      log.includes(
-                        '🎉'
-                      )
-                    ) {
-                      className +=
-                        ' success';
-                    } else if (
-                      log.includes(
-                        '⚠️'
-                      )
-                    ) {
-                      className +=
-                        ' warning';
-                    }
-
-                    return (
-                      <div
-                        className={
-                          className
-                        }
-                        key={`${log}-${index}`}
-                      >
-                        {log}
-                      </div>
-                    );
+                  if (log.includes('❌')) {
+                    className += ' error';
+                  } else if (
+                    log.includes('✅') ||
+                    log.includes('🎉')
+                  ) {
+                    className += ' success';
+                  } else if (
+                    log.includes('⚠️')
+                  ) {
+                    className += ' warning';
                   }
-                )
+
+                  return (
+                    <div
+                      className={className}
+                      key={`${log}-${index}`}
+                    >
+                      {log}
+                    </div>
+                  );
+                })
               )}
             </div>
           </section>
-
         </div>
       </div>
     </div>
