@@ -33,10 +33,19 @@ function getVidsrcEpisodeUrl(tmdbId, season, episode) {
 }
 
 // رابط سيرفر Pirate Bay (مجهز للربط مع الباك إند مستقبلاً)
-function getPirateBayUrl(query) {
+function getPirateBayUrl(query, type = 'movie', season = 1, episode = 1) {
   if (!query) return null;
-  return `https://thepiratebay.org/search.php?q=${encodeURIComponent(query)}`;
+
+  const params = new URLSearchParams({
+    q: query,
+    type: type,
+    season: String(season),
+    episode: String(episode),
+  });
+
+  return `https://streamflix-api-x0ku.onrender.com/api/piratebay?${params.toString()}`;
 }
+
 
 /* =========================================================
    COMPONENT
