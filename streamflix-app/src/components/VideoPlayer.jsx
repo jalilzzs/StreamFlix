@@ -110,12 +110,16 @@ export default function VideoPlayer({
 
   // سيرفر 2: Pirate Bay
   const server2Url = useMemo(() => {
-    if (!contentTitleName) return null;
-    const searchQuery = contentType === 'tv'
-      ? `${contentTitleName} S${String(currentSeason).padStart(2, '0')}E${String(currentEpisodeNumber).padStart(2, '0')}`
-      : contentTitleName;
-    return getPirateBayUrl(searchQuery);
-  }, [contentTitleName, contentType, currentSeason, currentEpisodeNumber]);
+  if (!contentTitleName) return null;
+
+  return getPirateBayUrl(
+    contentTitleName,
+    contentType,
+    currentSeason,
+    currentEpisodeNumber
+  );
+}, [contentTitleName, contentType, currentSeason, currentEpisodeNumber]);
+
 
   /* =========================================================
      SERVERS LIST (سيرفر 1 وسيرفر 2 فقط)
