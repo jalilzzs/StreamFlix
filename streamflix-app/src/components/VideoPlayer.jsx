@@ -154,23 +154,23 @@ export default function VideoPlayer({
    */
 
   const streamSrcUrl = useMemo(() => {
-    if (!realTmdb) {
-      return null;
-    }
+  if (!realTmdb) {
+    return null;
+  }
 
-    const encodedTmdb = encodeURIComponent(
-      String(realTmdb)
-    );
+  const encodedTmdb = encodeURIComponent(
+    String(realTmdb)
+  );
 
-    if (contentType === 'movie') {
-      return `https://streamsrc.cc/watch/movie/tmdbid=${encodedTmdb}`;
-    }
+  if (contentType === 'movie') {
+    return `https://streamsrc.cc/watch/movie/tmdbid=${encodedTmdb}`;
+  }
 
-    return `https://streamsrc.cc/watch/series/tmdbid=${encodedTmdb}`;
-  }, [
-    realTmdb,
-    contentType,
-  ]);
+  return `https://streamsrc.cc/watch/series/tmdbid=${encodedTmdb}`;
+}, [
+  realTmdb,
+  contentType,
+]);
 
   /*
    * =========================================================
