@@ -7,2512 +7,2653 @@ const MAX_FAILED = 5;
 const LOCK_MS = 15 * 60 * 1000;
 
 const BADGES = {
-  verification: {
-    label: 'Verified',
-    icon: '✓',
-  },
-  official: {
-    label: 'Official',
-    icon: '🔵',
-  },
-  owner: {
-    label: 'Owner',
-    icon: '👑',
-  },
+  verification: { label: 'Verified', icon: '✓' },
+  official: { label: 'Official', icon: '🔵' },
+  owner: { label: 'Owner', icon: '👑' },
 };
 
-const normalizeBadges = (badges) => {
-  if (!Array.isArray(badges)) return [];
-
-  return badges.filter(
-    (x) =>
-      typeof x === 'string' &&
-      ['verification', 'official', 'owner'].includes(x)
-  );
+const DEFAULT_SETTINGS = {
+  maintenance_mode: false,
+  diagnostics_enabled: false,
+  announcement_bar: '',
+  vip_exclusive_content: true,
+  vip_features_enabled: true,
+  vip_media_messages: true,
+  vip_voice_messages: true,
+  vip_watch_party: true,
 };
 
-const hasBadge = (badges, type) =>
-  normalizeBadges(badges).includes(type);
+const DEFAULT_STATS = {
+  totalTitles: 0,
+  totalUsers: 0,
+  bannedUsers: 0,
+  vipUsers: 0,
+  verifiedUsers: 0,
+  officialUsers: 0,
+  ownerUsers: 0,
+  hiddenTitles: 0,
+};
 
-const toggleBadgeValue = (badges, type) => {
-  const current = normalizeBadges(badges);
+function getFirstValue(obj, keys, fallback = '') {
+  if (!obj || typeof obj !== 'object') return fallback;
 
-  if (current.includes(type)) {
-    return current.filter((x) => x !== type);
+  for (const key of keys) {
+    if (
+      Object.prototype.hasOwnProperty.call(obj, key) &&
+      obj[key] !== null &&
+      obj[key] !== undefined &&
+      obj[key] !== ''
+    ) {
+      return obj[key];
+    }
   }
 
-  return [...current, type];
-};
+  return fallback;
+}
 
-const normalizeUser = (user) => ({
-  ...user,
-  badges: normalizeBadges(user.badges),
-  is_vip: user.is_premium === true,
-  is_banned: false,
-});
+function getUserName(user) {
+  return getFirstValue(
+    user,
+    ['display_name', 'username', 'name', 'full_name', 'email'],
+    'مستخدم'
+  );
+}
+
+function getUserAvatar(user) {
+  return getFirstValue(
+    user,
+    ['avatar_url', 'avatar', 'photo_url', 'picture'],
+    ''
+  );
+}
+
+function getUserBadges(user) {
+  const badges = user?.badges;
+
+  if (Array.isArray(badges)) return badges;
+
+  if (typeof badges === 'string') {
+    try {
+      const parsed = JSON.parse(badges);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function isUserVip(user) {
+  return Boolean(
+    user?.is_premium ??
+      user?.is_vip ??
+      user?.vip ??
+      user?.premium
+  );
+}
+
+function isUserBanned(user) {
+  return Boolean(
+    user?.is_banned ??
+      user?.banned ??
+      user?.ban ??
+      false
+  );
+}
+
+function isTitleVip(title) {
+  return Boolean(
+    title?.is_vip ??
+      title?.vip ??
+      title?.vip_only ??
+      title?.premium_only ??
+      title?.is_premium ??
+      false
+  );
+}
+
+function isTitleHidden(title) {
+  return Boolean(
+    title?.is_hidden ??
+      title?.hidden ??
+      title?.hide ??
+      false
+  );
+}
+
+function getTitleName(title) {
+  return getFirstValue(
+    title,
+    ['title', 'name', 'original_title', 'title_name'],
+    `#${title?.id ?? '---'}`
+  );
+}
+
+function getTitlePoster(title) {
+  return getFirstValue(
+    title,
+    ['poster_url', 'poster', 'backdrop_url', 'image_url', 'image'],
+    ''
+  );
+}
+
+function getLocation(user) {
+  return getFirstValue(
+    user,
+    ['location', 'city', 'address', 'country'],
+    ''
+  );
+}
+
+function formatDate(value) {
+  if (!value) return '—';
+
+  try {
+    return new Date(value).toLocaleDateString('fr-FR');
+  } catch {
+    return '—';
+  }
+}
+
+function calculateStats(users, titles) {
+  let verifiedUsers = 0;
+  let officialUsers = 0;
+  let ownerUsers = 0;
+
+  users.forEach((user) => {
+    const badges = getUserBadges(user);
+
+    if (
+      badges.includes('verification') ||
+      badges.includes('verified') ||
+      badges.includes('✓')
+    ) {
+      verifiedUsers++;
+    }
+
+    if (
+      badges.includes('official') ||
+      badges.includes('🔵')
+    ) {
+      officialUsers++;
+    }
+
+    if (
+      badges.includes('owner') ||
+      badges.includes('👑')
+    ) {
+      ownerUsers++;
+    }
+  });
+
+  return {
+    totalTitles: titles.length,
+    totalUsers: users.length,
+    bannedUsers: users.filter(isUserBanned).length,
+    vipUsers: users.filter(isUserVip).length,
+    verifiedUsers,
+    officialUsers,
+    ownerUsers,
+    hiddenTitles: titles.filter(isTitleHidden).length,
+  };
+}
 
 export default function Admin() {
   const navigate = useNavigate();
 
   const [step, setStep] = useState('login');
   const [pin, setPin] = useState('');
-  const [auth, setAuth] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [auth, setAuth] = useState(null);
 
-  const [loading, setLoading] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
-  const [failed, setFailed] = useState(0);
+  const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockUntil, setLockUntil] = useState(null);
 
-  const [msg, setMsg] = useState({
-    text: '',
-    type: '',
-  });
+  const [msg, setMsg] = useState('');
+  const [error, setError] = useState('');
 
   const [tab, setTab] = useState('stats');
 
-  const [logs, setLogs] = useState([]);
   const [users, setUsers] = useState([]);
   const [titles, setTitles] = useState([]);
 
   const [userSearch, setUserSearch] = useState('');
   const [titleSearch, setTitleSearch] = useState('');
 
-  const [settings, setSettings] = useState({
-    maintenance_mode: false,
-    diagnostics_enabled: false,
-    announcement_bar: '',
-    vip_exclusive_content: true,
-    vip_features_enabled: true,
-    vip_media_messages: true,
-    vip_voice_messages: true,
-    vip_watch_party: true,
-  });
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
 
-  const [stats, setStats] = useState({
-    totalTitles: 0,
-    totalUsers: 0,
-    bannedUsers: 0,
-    vipUsers: 0,
-    verifiedUsers: 0,
-    officialUsers: 0,
-    ownerUsers: 0,
-    hiddenTitles: 0,
-  });
+  const [stats, setStats] = useState(DEFAULT_STATS);
 
-  const log = useCallback((text) => {
-    setLogs((previous) =>
-      [
-        `[${new Date().toLocaleTimeString('ar-DZ')}] ${text}`,
-        ...previous,
-      ].slice(0, 80)
-    );
+  const [logs, setLogs] = useState([]);
+
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [loadingTitles, setLoadingTitles] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const addLog = useCallback((text, type = 'info') => {
+    setLogs((prev) => [
+      {
+        id: `${Date.now()}-${Math.random()}`,
+        text,
+        type,
+        date: new Date().toLocaleString('fr-FR'),
+      },
+      ...prev,
+    ].slice(0, 100));
   }, []);
 
-  /* =========================================================
-     LOCK SYSTEM
-  ========================================================= */
-
-  const locked = useCallback(() => {
-    if (!lockUntil) return false;
-
-    if (lockUntil > Date.now()) {
-      setMsg({
-        text: `❌ المحاولات مقفولة مؤقتاً. انتظر ${Math.ceil(
-          (lockUntil - Date.now()) / 60000
-        )} دقيقة.`,
-        type: 'error',
-      });
-
-      return true;
+  const checkAdmin = useCallback(async (userId) => {
+    if (!userId) {
+      setIsAdmin(false);
+      return false;
     }
 
-    setLockUntil(null);
-    setFailed(0);
+    try {
+      const { data, error: rpcError } = await supabase.rpc('is_admin');
 
-    return false;
-  }, [lockUntil]);
-
-  const fail = useCallback(() => {
-    setFailed((previous) => {
-      const next = previous + 1;
-
-      if (next >= MAX_FAILED) {
-        setLockUntil(Date.now() + LOCK_MS);
-
-        setMsg({
-          text:
-            '🔒 تم قفل المحاولات لمدة 15 دقيقة بسبب كثرة المحاولات الفاشلة.',
-          type: 'error',
-        });
+      if (rpcError) {
+        console.error('is_admin RPC error:', rpcError);
+        setIsAdmin(false);
+        setError(`خطأ التحقق من Admin: ${rpcError.message}`);
+        return false;
       }
 
-      return next;
-    });
+      const result = data === true;
+
+      setIsAdmin(result);
+
+      if (!result) {
+        setError('هذا الحساب ليس Admin.');
+      }
+
+      return result;
+    } catch (err) {
+      console.error(err);
+      setIsAdmin(false);
+      setError(err?.message || 'فشل التحقق من صلاحيات Admin.');
+      return false;
+    }
   }, []);
-
-  /* =========================================================
-     ADMIN CHECK
-  ========================================================= */
-
-  const checkAdmin = useCallback(async () => {
-    const { data, error } = await supabase.rpc('is_admin');
-
-    if (error) {
-      console.error('is_admin RPC error:', error);
-
-      setIsAdmin(false);
-
-      return false;
-    }
-
-    const allowed = data === true;
-
-    setIsAdmin(allowed);
-
-    return allowed;
-  }, []);
-
-  /* =========================================================
-     VERIFY SESSION
-  ========================================================= */
-
-  const verifySession = useCallback(async () => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    if (!session?.user) {
-      setAuth(false);
-      setIsAdmin(false);
-      setStep('login');
-
-      return false;
-    }
-
-    const allowed = await checkAdmin();
-
-    if (!allowed) {
-      setAuth(false);
-      setIsAdmin(false);
-      setStep('login');
-
-      return false;
-    }
-
-    return true;
-  }, [checkAdmin]);
-
-  /* =========================================================
-     ACTION GUARD
-  ========================================================= */
-
-  const guardAction = useCallback(async () => {
-    const allowed = await verifySession();
-
-    if (!allowed) {
-      setMsg({
-        text: '❌ انتهت صلاحية جلسة الإدارة أو لا تملك الصلاحية.',
-        type: 'error',
-      });
-
-      return false;
-    }
-
-    setIsAdmin(true);
-
-    return true;
-  }, [verifySession]);
-
-  /* =========================================================
-     INITIAL AUTH
-  ========================================================= */
 
   useEffect(() => {
     let mounted = true;
 
-    const init = async () => {
+    async function initAuth() {
       setCheckingAuth(true);
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      try {
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
 
-      if (!mounted) return;
+        if (sessionError) {
+          throw sessionError;
+        }
 
-      if (!session?.user) {
-        setAuth(false);
-        setIsAdmin(false);
-        setStep('login');
-        setCheckingAuth(false);
-        return;
-      }
-
-      const allowed = await checkAdmin();
-
-      if (!mounted) return;
-
-      if (!allowed) {
-        setAuth(false);
-        setIsAdmin(false);
-        setStep('login');
-
-        setMsg({
-          text: '❌ هذا الحساب لا يملك صلاحية Admin.',
-          type: 'error',
-        });
-      } else {
-        setIsAdmin(true);
-        setStep('pin');
-      }
-
-      setCheckingAuth(false);
-    };
-
-    init();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
         if (!mounted) return;
 
-        if (event === 'SIGNED_OUT' || !session?.user) {
-          setAuth(false);
+        if (!session?.user) {
+          setAuth(null);
           setIsAdmin(false);
           setStep('login');
-          setPin('');
+          setCheckingAuth(false);
           return;
         }
 
-        if (
-          event === 'SIGNED_IN' ||
-          event === 'TOKEN_REFRESHED' ||
-          event === 'USER_UPDATED'
-        ) {
-          const allowed = await checkAdmin();
+        setAuth(session);
 
-          if (!mounted) return;
+        const admin = await checkAdmin(session.user.id);
 
-          if (!allowed) {
-            setAuth(false);
-            setIsAdmin(false);
-            setStep('login');
+        if (!mounted) return;
 
-            setMsg({
-              text: '❌ هذا الحساب لا يملك صلاحية Admin.',
-              type: 'error',
-            });
+        if (admin) {
+          setStep('pin');
+        } else {
+          setStep('login');
+        }
+      } catch (err) {
+        console.error(err);
 
-            return;
-          }
-
-          setIsAdmin(true);
-
-          setStep((currentStep) => {
-            if (currentStep === 'login') {
-              return 'pin';
-            }
-
-            return currentStep;
-          });
+        if (mounted) {
+          setError(err?.message || 'تعذر التحقق من الحساب.');
+          setAuth(null);
+          setIsAdmin(false);
+          setStep('login');
+        }
+      } finally {
+        if (mounted) {
+          setCheckingAuth(false);
         }
       }
-    );
+    }
+
+    initAuth();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!mounted) return;
+
+      setAuth(session);
+
+      if (!session?.user) {
+        setIsAdmin(false);
+        setStep('login');
+        return;
+      }
+
+      const admin = await checkAdmin(session.user.id);
+
+      if (!mounted) return;
+
+      if (admin) {
+        setStep('pin');
+      } else {
+        setStep('login');
+      }
+    });
 
     return () => {
       mounted = false;
-      subscription.unsubscribe();
+      subscription?.unsubscribe();
     };
   }, [checkAdmin]);
 
-  /* =========================================================
-     GOOGLE LOGIN
-  ========================================================= */
+  const fetchSettings = useCallback(async () => {
+    try {
+      const { data, error: settingsError } = await supabase
+        .from('site_settings')
+        .select('*');
 
-  const googleLogin = async () => {
-    if (locked()) return;
+      if (settingsError) {
+        console.error('settings error:', settingsError);
+        addLog(
+          `فشل تحميل الإعدادات: ${settingsError.message}`,
+          'error'
+        );
+        return;
+      }
 
-    setLoading(true);
+      const next = { ...DEFAULT_SETTINGS };
 
-    setMsg({
-      text: '',
-      type: '',
-    });
+      (data || []).forEach((row) => {
+        if (!row?.key) return;
 
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/admin`,
-        queryParams: {
-          prompt: 'select_account',
-        },
-      },
-    });
+        let value = row.value;
 
-    if (error) {
-      fail();
+        if (typeof value === 'string') {
+          try {
+            value = JSON.parse(value);
+          } catch {
+            // keep string
+          }
+        }
 
-      setMsg({
-        text: `❌ ${error.message}`,
-        type: 'error',
+        if (row.key === 'maintenance_mode') {
+          next.maintenance_mode =
+            typeof value === 'object'
+              ? Boolean(value?.enabled)
+              : Boolean(value);
+          return;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(next, row.key)) {
+          next[row.key] = value;
+        }
       });
 
-      setLoading(false);
+      setSettings(next);
+    } catch (err) {
+      console.error(err);
+      addLog(
+        `خطأ أثناء تحميل الإعدادات: ${err?.message || err}`,
+        'error'
+      );
     }
-  };
+  }, [addLog]);
 
-  /* =========================================================
-     FETCH SETTINGS
-  ========================================================= */
-
-  const fetchSettings = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('site_settings')
-      .select('key,value');
-
-    if (error) throw error;
-
-    const result = {};
-
-    (data || []).forEach((item) => {
-      result[item.key] = item.value;
-    });
-
-    setSettings({
-      maintenance_mode:
-        result.maintenance_mode?.enabled === true ||
-        result.maintenance_mode === true,
-
-      diagnostics_enabled:
-        result.diagnostics_enabled === true,
-
-      announcement_bar:
-        typeof result.announcement_bar === 'string'
-          ? result.announcement_bar
-          : '',
-
-      vip_exclusive_content:
-        result.vip_exclusive_content !== false,
-
-      vip_features_enabled:
-        result.vip_features_enabled !== false,
-
-      vip_media_messages:
-        result.vip_media_messages !== false,
-
-      vip_voice_messages:
-        result.vip_voice_messages !== false,
-
-      vip_watch_party:
-        result.vip_watch_party !== false,
-    });
-  }, []);
-
-  /* =========================================================
-     UPDATE STATS
-  ========================================================= */
-
-  const calculateStats = useCallback((userList, titleList) => {
-    const us = userList || [];
-    const ts = titleList || [];
-
-    setStats({
-      totalTitles: ts.length,
-      totalUsers: us.length,
-
-      bannedUsers: 0,
-
-      vipUsers: us.filter(
-        (x) => x.is_premium === true
-      ).length,
-
-      verifiedUsers: us.filter((x) =>
-        hasBadge(x.badges, 'verification')
-      ).length,
-
-      officialUsers: us.filter((x) =>
-        hasBadge(x.badges, 'official')
-      ).length,
-
-      ownerUsers: us.filter((x) =>
-        hasBadge(x.badges, 'owner')
-      ).length,
-
-      hiddenTitles: ts.filter(
-        (x) => x.is_hidden === true
-      ).length,
-    });
-  }, []);
-
-  /* =========================================================
-     FETCH DATA
-  ========================================================= */
-
-  const fetchData = useCallback(async () => {
-    if (!(await guardAction())) return;
-
-    setLoading(true);
-
-    setMsg({
-      text: '',
-      type: '',
-    });
+  const fetchUsers = useCallback(async () => {
+    setLoadingUsers(true);
 
     try {
+      /*
+       * مهم جداً:
+       * لا نحدد أعمدة مثل wilaya هنا.
+       * نستعمل * حتى Admin يخدم مهما كان مخطط profiles الحالي.
+       */
+      const { data, error: usersError } = await supabase
+        .from('profiles')
+        .select('*');
+
+      if (usersError) {
+        console.error('profiles error:', usersError);
+
+        setUsers([]);
+        addLog(
+          `فشل تحميل المستخدمين: ${usersError.message}`,
+          'error'
+        );
+
+        setError(`المستخدمين: ${usersError.message}`);
+        return [];
+      }
+
+      const list = Array.isArray(data) ? data : [];
+
+      setUsers(list);
+
+      return list;
+    } catch (err) {
+      console.error(err);
+
+      setUsers([]);
+
+      addLog(
+        `خطأ profiles: ${err?.message || err}`,
+        'error'
+      );
+
+      setError(`المستخدمين: ${err?.message || err}`);
+
+      return [];
+    } finally {
+      setLoadingUsers(false);
+    }
+  }, [addLog]);
+
+  const fetchTitles = useCallback(async () => {
+    setLoadingTitles(true);
+
+    try {
+      /*
+       * نفس الفكرة مع titles:
+       * لا نفترض أسماء أعمدة غير مؤكدة.
+       * نجيب كل الأعمدة الموجودة فعلياً.
+       */
+      const { data, error: titlesError } = await supabase
+        .from('titles')
+        .select('*');
+
+      if (titlesError) {
+        console.error('titles error:', titlesError);
+
+        setTitles([]);
+
+        addLog(
+          `فشل تحميل المحتوى: ${titlesError.message}`,
+          'error'
+        );
+
+        setError(`المحتوى: ${titlesError.message}`);
+
+        return [];
+      }
+
+      const list = Array.isArray(data) ? data : [];
+
+      setTitles(list);
+
+      return list;
+    } catch (err) {
+      console.error(err);
+
+      setTitles([]);
+
+      addLog(
+        `خطأ titles: ${err?.message || err}`,
+        'error'
+      );
+
+      setError(`المحتوى: ${err?.message || err}`);
+
+      return [];
+    } finally {
+      setLoadingTitles(false);
+    }
+  }, [addLog]);
+
+  const fetchData = useCallback(async () => {
+    if (!isAdmin) return;
+
+    setLoading(true);
+    setError('');
+    setMsg('');
+
+    try {
+      const [loadedUsers, loadedTitles] = await Promise.all([
+        fetchUsers(),
+        fetchTitles(),
+      ]);
+
       await fetchSettings();
 
-      /* =========================
-         USERS
-      ========================= */
-
-      const {
-        data: userData,
-        error: userError,
-      } = await supabase
-        .from('profiles')
-        .select(`
-          id,
-          user_code,
-          display_name,
-          avatar_url,
-          wilaya,
-          is_premium,
-          badges,
-          created_at,
-          updated_at
-        `)
-        .order('created_at', {
-          ascending: false,
-        });
-
-      if (userError) throw userError;
-
-      const normalizedUsers = (userData || []).map(
-        normalizeUser
+      const nextStats = calculateStats(
+        loadedUsers,
+        loadedTitles
       );
 
-      /* =========================
-         CONTENT
-      ========================= */
+      setStats(nextStats);
 
-      const {
-        data: titleData,
-        error: titleError,
-      } = await supabase
-        .from('titles')
-        .select('*')
-        .order('id', {
-          ascending: false,
-        });
-
-      if (titleError) throw titleError;
-
-      const allTitles = titleData || [];
-
-      setUsers(normalizedUsers);
-      setTitles(allTitles);
-
-      calculateStats(
-        normalizedUsers,
-        allTitles
+      addLog(
+        `تم تحميل ${loadedUsers.length} مستخدم و ${loadedTitles.length} عنوان`,
+        'success'
       );
+    } catch (err) {
+      console.error(err);
 
-      log(
-        `✅ تم تحميل ${normalizedUsers.length} مستخدم و ${allTitles.length} محتوى.`
-      );
-
-      if (normalizedUsers.length === 0) {
-        log(
-          '⚠️ لم يتم العثور على أي مستخدمين في profiles.'
-        );
-      }
-
-      if (allTitles.length === 0) {
-        log(
-          '⚠️ لم يتم العثور على أي محتوى في titles.'
-        );
-      }
-    } catch (error) {
-      console.error('Admin fetch error:', error);
-
-      setMsg({
-        text: `❌ ${
-          error?.message ||
-          'حدث خطأ أثناء جلب البيانات.'
-        }`,
-        type: 'error',
-      });
-
-      log(
-        `❌ فشل تحميل البيانات: ${
-          error?.message || 'Unknown error'
-        }`
+      setError(
+        err?.message ||
+          'حدث خطأ غير معروف أثناء تحميل بيانات Admin.'
       );
     } finally {
       setLoading(false);
     }
   }, [
-    guardAction,
+    isAdmin,
+    fetchUsers,
+    fetchTitles,
     fetchSettings,
-    calculateStats,
-    log,
+    addLog,
   ]);
 
-  /* =========================================================
-     PIN
-  ========================================================= */
+  useEffect(() => {
+    if (step === 'dashboard' && isAdmin) {
+      fetchData();
+    }
+  }, [step, isAdmin, fetchData]);
 
-  const submitPin = async (e) => {
+  async function loginGoogle() {
+    setError('');
+    setMsg('');
+
+    try {
+      const { error: loginError } =
+        await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: window.location.href,
+          },
+        });
+
+      if (loginError) {
+        throw loginError;
+      }
+    } catch (err) {
+      console.error(err);
+      setError(err?.message || 'فشل تسجيل الدخول بواسطة Google.');
+    }
+  }
+
+  function submitPin(e) {
     e.preventDefault();
 
-    if (locked()) return;
+    setError('');
+    setMsg('');
 
-    const allowed = await verifySession();
+    if (!auth?.user) {
+      setError('سجل الدخول أولاً.');
+      return;
+    }
 
-    if (!allowed) return;
+    if (!isAdmin) {
+      setError('هذا الحساب ليس Admin.');
+      return;
+    }
 
-    if (pin !== ADMIN_PIN) {
-      fail();
+    const now = Date.now();
 
-      setMsg({
-        text: '❌ رمز PIN غير صحيح.',
-        type: 'error',
-      });
+    if (lockUntil && now < lockUntil) {
+      const remaining = Math.ceil(
+        (lockUntil - now) / 1000
+      );
+
+      setError(
+        `محاولات كثيرة. حاول بعد ${Math.ceil(
+          remaining / 60
+        )} دقيقة.`
+      );
 
       return;
     }
 
-    setAuth(true);
-    setIsAdmin(true);
+    if (pin !== ADMIN_PIN) {
+      const nextFailed = failedAttempts + 1;
 
-    setMsg({
-      text: '',
-      type: '',
-    });
-  };
+      setFailedAttempts(nextFailed);
+      setPin('');
 
-  /* =========================================================
-     LOAD DATA AFTER AUTH
-  ========================================================= */
+      if (nextFailed >= MAX_FAILED) {
+        const until = Date.now() + LOCK_MS;
 
-  useEffect(() => {
-    if (!auth || !isAdmin) return;
+        setLockUntil(until);
 
-    fetchData();
-  }, [auth, isAdmin, fetchData]);
+        setError(
+          'تم قفل لوحة Admin لمدة 15 دقيقة بسبب كثرة المحاولات.'
+        );
+      } else {
+        setError(
+          `PIN خاطئ. تبقى ${
+            MAX_FAILED - nextFailed
+          } محاولات.`
+        );
+      }
 
-  /* =========================================================
-     LOGOUT
-  ========================================================= */
+      return;
+    }
 
-  const logout = async () => {
+    setFailedAttempts(0);
+    setLockUntil(null);
+    setPin('');
+    setStep('dashboard');
+    setMsg('تم فتح لوحة التحكم بنجاح.');
+    addLog('تم فتح لوحة Admin', 'success');
+  }
+
+  async function logout() {
     await supabase.auth.signOut();
 
-    setAuth(false);
+    setAuth(null);
     setIsAdmin(false);
     setStep('login');
     setPin('');
     setUsers([]);
     setTitles([]);
+    setStats(DEFAULT_STATS);
+  }
 
-    setStats({
-      totalTitles: 0,
-      totalUsers: 0,
-      bannedUsers: 0,
-      vipUsers: 0,
-      verifiedUsers: 0,
-      officialUsers: 0,
-      ownerUsers: 0,
-      hiddenTitles: 0,
-    });
-  };
+  async function saveSetting(key, value) {
+    if (!isAdmin) {
+      setError('غير مصرح.');
+      return;
+    }
 
-  /* =========================================================
-     SETTINGS
-  ========================================================= */
+    setSaving(true);
+    setError('');
+    setMsg('');
 
-  const saveSetting = async (key, value) => {
-    if (!(await guardAction())) return;
+    try {
+      let storedValue = value;
 
-    let databaseValue = value;
+      if (key === 'maintenance_mode') {
+        storedValue = {
+          enabled: Boolean(value),
+        };
+      }
 
-    if (key === 'maintenance_mode') {
-      databaseValue = {
-        enabled: value === true,
+      const { error: saveError } = await supabase
+        .from('site_settings')
+        .upsert(
+          {
+            key,
+            value: storedValue,
+            updated_at: new Date().toISOString(),
+          },
+          {
+            onConflict: 'key',
+          }
+        );
+
+      if (saveError) {
+        throw saveError;
+      }
+
+      setSettings((prev) => ({
+        ...prev,
+        [key]: value,
+      }));
+
+      setMsg('تم حفظ الإعداد بنجاح.');
+      addLog(`تم تعديل الإعداد: ${key}`, 'success');
+    } catch (err) {
+      console.error(err);
+
+      setError(
+        `فشل حفظ الإعداد: ${
+          err?.message || err
+        }`
+      );
+
+      addLog(
+        `فشل تعديل ${key}: ${err?.message || err}`,
+        'error'
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function getProfileUpdateValue(profile, field, value) {
+    if (!profile) return null;
+
+    if (Object.prototype.hasOwnProperty.call(profile, field)) {
+      return {
+        [field]: value,
       };
     }
 
-    const { error } = await supabase
-      .from('site_settings')
-      .upsert(
-        {
-          key,
-          value: databaseValue,
-          updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: 'key',
-        }
-      );
+    return null;
+  }
 
-    if (error) {
-      setMsg({
-        text: `❌ ${error.message}`,
-        type: 'error',
-      });
+  async function setVip(user, mode) {
+    if (!user?.id) return;
 
-      return;
-    }
+    setSaving(true);
+    setError('');
+    setMsg('');
 
-    setSettings((previous) => ({
-      ...previous,
-      [key]: value,
-    }));
+    try {
+      const value = mode !== 'none';
 
-    log(
-      `⚙️ تم تغيير إعداد ${key} إلى ${
-        value === true
-          ? 'مفعل'
-          : value === false
-          ? 'معطل'
-          : value
-      }`
-    );
+      const updateValue =
+        getProfileUpdateValue(
+          user,
+          'is_premium',
+          value
+        ) ||
+        getProfileUpdateValue(
+          user,
+          'is_vip',
+          value
+        );
 
-    setMsg({
-      text:
-        key === 'maintenance_mode'
-          ? value
-            ? '🚧 تم تفعيل وضع الصيانة بنجاح. سيظهر كنافذة عند دخول الموقع.'
-            : '✅ تم إيقاف وضع الصيانة.'
-          : '✅ تم حفظ الإعداد.',
-      type: 'success',
-    });
-  };
-
-  /* =========================================================
-     VIP
-  ========================================================= */
-
-  const vip = async (user, plan) => {
-    if (!(await guardAction())) return;
-
-    const isVip = plan !== 'none';
-
-    const oldBadges = normalizeBadges(
-      user.badges
-    );
-
-    let newBadges = oldBadges;
-
-    if (plan === 'month') {
-      if (!oldBadges.includes('verification')) {
-        newBadges = [
-          ...oldBadges,
-          'verification',
-        ];
+      if (!updateValue) {
+        throw new Error(
+          'لم نجد عمود VIP/ Premium في profiles.'
+        );
       }
-    }
 
-    if (plan === 'year') {
-      if (!oldBadges.includes('official')) {
-        newBadges = [
-          ...oldBadges,
-          'official',
-        ];
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update(updateValue)
+        .eq('id', user.id);
+
+      if (updateError) {
+        throw updateError;
       }
+
+      const nextUsers = users.map((item) =>
+        item.id === user.id
+          ? {
+              ...item,
+              ...updateValue,
+            }
+          : item
+      );
+
+      setUsers(nextUsers);
+      setStats(calculateStats(nextUsers, titles));
+
+      setMsg(
+        value
+          ? `تم تفعيل VIP لـ ${getUserName(user)}`
+          : `تم إلغاء VIP لـ ${getUserName(user)}`
+      );
+
+      addLog(
+        `${value ? 'تفعيل' : 'إلغاء'} VIP للمستخدم ${getUserName(
+          user
+        )}`,
+        'success'
+      );
+    } catch (err) {
+      console.error(err);
+
+      setError(
+        `فشل تعديل VIP: ${
+          err?.message || err
+        }`
+      );
+    } finally {
+      setSaving(false);
     }
+  }
 
-    if (plan === 'none') {
-      newBadges = oldBadges.filter(
-        (badge) =>
-          badge !== 'verification' &&
-          badge !== 'official'
+  async function setBadge(user, badgeKey) {
+    if (!user?.id) return;
+
+    setSaving(true);
+    setError('');
+    setMsg('');
+
+    try {
+      const current = getUserBadges(user);
+
+      const exists = current.includes(badgeKey);
+
+      const nextBadges = exists
+        ? current.filter((x) => x !== badgeKey)
+        : [...current, badgeKey];
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          badges: nextBadges,
+        })
+        .eq('id', user.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      const nextUsers = users.map((item) =>
+        item.id === user.id
+          ? {
+              ...item,
+              badges: nextBadges,
+            }
+          : item
       );
+
+      setUsers(nextUsers);
+      setStats(calculateStats(nextUsers, titles));
+
+      setMsg(
+        exists
+          ? `تم حذف شارة ${BADGES[badgeKey]?.label}`
+          : `تمت إضافة شارة ${BADGES[badgeKey]?.label}`
+      );
+
+      addLog(
+        `${exists ? 'حذف' : 'إضافة'} badge ${badgeKey} للمستخدم ${getUserName(
+          user
+        )}`,
+        'success'
+      );
+    } catch (err) {
+      console.error(err);
+
+      setError(
+        `فشل تعديل الشارة: ${
+          err?.message || err
+        }`
+      );
+    } finally {
+      setSaving(false);
     }
+  }
 
-    const updateData = {
-      is_premium: isVip,
-      badges: newBadges,
-      updated_at: new Date().toISOString(),
-    };
+  async function updateTitleBoolean(title, value, candidates) {
+    if (!title?.id) return;
 
-    const {
-      data,
-      error,
-    } = await supabase
-      .from('profiles')
-      .update(updateData)
-      .eq('id', user.id)
-      .select(`
-        id,
-        user_code,
-        display_name,
-        avatar_url,
-        wilaya,
-        is_premium,
-        badges,
-        created_at,
-        updated_at
-      `)
-      .single();
-
-    if (error) {
-      console.error(
-        'VIP update error:',
-        error
-      );
-
-      setMsg({
-        text: `❌ ${error.message}`,
-        type: 'error',
-      });
-
-      return;
-    }
-
-    const updatedUser =
-      normalizeUser(data);
-
-    setUsers((previous) => {
-      const nextUsers = previous.map(
-        (item) =>
-          item.id === user.id
-            ? updatedUser
-            : item
-      );
-
-      calculateStats(
-        nextUsers,
-        titles
-      );
-
-      return nextUsers;
-    });
-
-    log(
-      `⭐ تم ${
-        isVip ? 'تفعيل' : 'إزالة'
-      } VIP للمستخدم ${
-        user.display_name ||
-        user.user_code ||
-        user.id
-      }`
+    const field = candidates.find((key) =>
+      Object.prototype.hasOwnProperty.call(title, key)
     );
 
-    setMsg({
-      text: isVip
-        ? '⭐ تم تفعيل VIP وحفظه في الحساب بنجاح.'
-        : '✅ تم إزالة VIP من الحساب.',
-      type: 'success',
-    });
-  };
-
-  /* =========================================================
-     BADGES
-  ========================================================= */
-
-  const badge = async (user, type) => {
-    if (!(await guardAction())) return;
-
-    const current = normalizeBadges(
-      user.badges
-    );
-
-    const next = toggleBadgeValue(
-      current,
-      type
-    );
-
-    const {
-      data,
-      error,
-    } = await supabase
-      .from('profiles')
-      .update({
-        badges: next,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', user.id)
-      .select(`
-        id,
-        user_code,
-        display_name,
-        avatar_url,
-        wilaya,
-        is_premium,
-        badges,
-        created_at,
-        updated_at
-      `)
-      .single();
-
-    if (error) {
-      console.error(
-        'Badge update error:',
-        error
+    if (!field) {
+      throw new Error(
+        `لم نجد العمود المطلوب في titles. الأعمدة الموجودة: ${Object.keys(
+          title
+        ).join(', ')}`
       );
-
-      setMsg({
-        text: `❌ ${error.message}`,
-        type: 'error',
-      });
-
-      return;
     }
 
-    const updatedUser =
-      normalizeUser(data);
-
-    setUsers((previous) => {
-      const nextUsers = previous.map(
-        (item) =>
-          item.id === user.id
-            ? updatedUser
-            : item
-      );
-
-      calculateStats(
-        nextUsers,
-        titles
-      );
-
-      return nextUsers;
-    });
-
-    const enabled =
-      next.includes(type);
-
-    log(
-      `${
-        enabled
-          ? '🏅 إعطاء'
-          : '❌ نزع'
-      } ${
-        BADGES[type]?.label || type
-      } من ${
-        user.display_name ||
-        user.user_code ||
-        user.id
-      }`
-    );
-
-    setMsg({
-      text: `${
-        enabled
-          ? '🏅 تم إعطاء'
-          : '❌ تم نزع'
-      } ${
-        BADGES[type]?.label || type
-      } بنجاح.`,
-      type: 'success',
-    });
-  };
-
-  /* =========================================================
-     BAN
-  ========================================================= */
-
-  const ban = async () => {
-    if (!(await guardAction())) return;
-
-    setMsg({
-      text:
-        'ℹ️ نظام الحظر يحتاج ربط عمود is_banned في قاعدة البيانات أولاً.',
-      type: 'error',
-    });
-  };
-
-  /* =========================================================
-     TITLE ACTION
-  ========================================================= */
-
-  const titleAction = async (
-    id,
-    field,
-    value
-  ) => {
-    if (!(await guardAction())) return;
-
-    const newValue = !value;
-
-    const {
-      error,
-    } = await supabase
+    const { error: updateError } = await supabase
       .from('titles')
       .update({
-        [field]: newValue,
+        [field]: value,
       })
-      .eq('id', id);
+      .eq('id', title.id);
 
-    if (error) {
-      setMsg({
-        text: `❌ ${error.message}`,
-        type: 'error',
-      });
-
-      return;
+    if (updateError) {
+      throw updateError;
     }
 
-    setTitles((previous) => {
-      const nextTitles = previous.map(
-        (item) =>
-          item.id === id
-            ? {
-                ...item,
-                [field]: newValue,
-              }
-            : item
-      );
-
-      calculateStats(
-        users,
-        nextTitles
-      );
-
-      return nextTitles;
-    });
-
-    log(
-      `🎬 تم تحديث ${field} للمحتوى ${id}`
+    const nextTitles = titles.map((item) =>
+      item.id === title.id
+        ? {
+            ...item,
+            [field]: value,
+          }
+        : item
     );
 
-    setMsg({
-      text: '✅ تم تحديث المحتوى.',
-      type: 'success',
-    });
-  };
+    setTitles(nextTitles);
+    setStats(calculateStats(users, nextTitles));
 
-  /* =========================================================
-     DELETE TITLE
-  ========================================================= */
+    return nextTitles;
+  }
 
-  const delTitle = async (
-    id,
-    name
-  ) => {
-    if (!(await guardAction())) return;
+  async function toggleTitleVip(title) {
+    setSaving(true);
+    setError('');
+    setMsg('');
 
-    if (
-      !window.confirm(
-        `حذف "${name}" نهائياً؟`
-      )
-    ) {
-      return;
-    }
-
-    const {
-      error,
-    } = await supabase
-      .from('titles')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      setMsg({
-        text: `❌ ${error.message}`,
-        type: 'error',
-      });
-
-      return;
-    }
-
-    setTitles((previous) => {
-      const nextTitles = previous.filter(
-        (item) => item.id !== id
+    try {
+      await updateTitleBoolean(
+        title,
+        !isTitleVip(title),
+        [
+          'is_vip',
+          'vip',
+          'vip_only',
+          'premium_only',
+          'is_premium',
+        ]
       );
 
-      calculateStats(
-        users,
-        nextTitles
+      setMsg('تم تعديل حالة VIP للمحتوى.');
+      addLog(
+        `تم تعديل VIP للمحتوى: ${getTitleName(title)}`,
+        'success'
+      );
+    } catch (err) {
+      console.error(err);
+
+      setError(
+        `فشل تعديل VIP للمحتوى: ${
+          err?.message || err
+        }`
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleTitleHidden(title) {
+    setSaving(true);
+    setError('');
+    setMsg('');
+
+    try {
+      await updateTitleBoolean(
+        title,
+        !isTitleHidden(title),
+        [
+          'is_hidden',
+          'hidden',
+          'hide',
+        ]
       );
 
-      return nextTitles;
-    });
+      setMsg('تم تعديل حالة إخفاء المحتوى.');
+      addLog(
+        `تم تعديل إخفاء المحتوى: ${getTitleName(title)}`,
+        'success'
+      );
+    } catch (err) {
+      console.error(err);
 
-    log(`🗑️ حذف ${name}`);
+      setError(
+        `فشل إخفاء المحتوى: ${
+          err?.message || err
+        }`
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
 
-    setMsg({
-      text: '🗑️ تم حذف المحتوى.',
-      type: 'success',
-    });
-  };
+  async function deleteTitle(title) {
+    if (!title?.id) return;
 
-  /* =========================================================
-     LOADING AUTH
-  ========================================================= */
+    const confirmed = window.confirm(
+      `هل أنت متأكد من حذف "${getTitleName(title)}"؟`
+    );
+
+    if (!confirmed) return;
+
+    setSaving(true);
+    setError('');
+    setMsg('');
+
+    try {
+      const { error: deleteError } = await supabase
+        .from('titles')
+        .delete()
+        .eq('id', title.id);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      const nextTitles = titles.filter(
+        (item) => item.id !== title.id
+      );
+
+      setTitles(nextTitles);
+      setStats(calculateStats(users, nextTitles));
+
+      setMsg('تم حذف المحتوى.');
+      addLog(
+        `تم حذف المحتوى: ${getTitleName(title)}`,
+        'success'
+      );
+    } catch (err) {
+      console.error(err);
+
+      setError(
+        `فشل حذف المحتوى: ${
+          err?.message || err
+        }`
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const filteredUsers = users.filter((user) => {
+    const q = userSearch.trim().toLowerCase();
+
+    if (!q) return true;
+
+    const searchable = [
+      user?.id,
+      user?.email,
+      user?.display_name,
+      user?.username,
+      user?.name,
+      user?.full_name,
+      user?.location,
+      user?.city,
+      user?.country,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    return searchable.includes(q);
+  });
+
+  const filteredTitles = titles.filter((title) => {
+    const q = titleSearch.trim().toLowerCase();
+
+    if (!q) return true;
+
+    return [
+      title?.id,
+      title?.title,
+      title?.name,
+      title?.original_title,
+      title?.title_name,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .includes(q);
+  });
 
   if (checkingAuth) {
     return (
-      <div style={S.authPage}>
-        <div style={S.authCard}>
-          <div style={{ fontSize: 48 }}>
-            🛡️
-          </div>
-
-          <div style={S.logo}>
-            STREAM<span>FLIX</span>
-          </div>
-
+      <div style={S.page}>
+        <div style={S.centerCard}>
+          <div style={S.spinner}>⏳</div>
           <h2>جاري التحقق...</h2>
+        </div>
+      </div>
+    );
+  }
+
+  if (!auth?.user) {
+    return (
+      <div style={S.page}>
+        <div style={S.centerCard}>
+          <div style={S.logo}>SF</div>
+
+          <h1 style={S.title}>StreamFlix Admin</h1>
 
           <p style={S.muted}>
-            التحقق من جلسة الإدارة والصلاحيات
+            يجب تسجيل الدخول بحساب Admin.
           </p>
-        </div>
-      </div>
-    );
-  }
 
-  /* =========================================================
-     LOGIN
-  ========================================================= */
-
-  if (!auth || !isAdmin) {
-    return (
-      <div style={S.authPage}>
-        <div style={S.authCard}>
-          <div style={{ fontSize: 48 }}>
-            🛡️
-          </div>
-
-          <div style={S.logo}>
-            STREAM<span>FLIX</span>
-          </div>
-
-          {step === 'login' ? (
-            <>
-              <h2>
-                دخول لوحة الإدارة
-              </h2>
-
-              <p style={S.muted}>
-                الدخول عبر حساب Google
-                المصرح به في نظام Admin
-              </p>
-
-              <button
-                onClick={googleLogin}
-                disabled={loading}
-                style={S.google}
-              >
-                G&nbsp;&nbsp;
-                {loading
-                  ? 'جاري فتح Google...'
-                  : 'المتابعة باستخدام Google'}
-              </button>
-
-              <div style={S.note}>
-                🔐 يتم التحقق من الحساب
-                <br />
-                <small>
-                  يجب أن يكون حساب Google
-                  موجوداً في جدول admin_users
-                </small>
-              </div>
-
-              {msg.text && (
-                <div style={S.error}>
-                  {msg.text}
-                </div>
-              )}
-
-              <button
-                onClick={() =>
-                  navigate('/')
-                }
-                style={S.link}
-              >
-                ← العودة للموقع
-              </button>
-            </>
-          ) : (
-            <>
-              <h2>
-                🛡️ التحقق النهائي
-              </h2>
-
-              <p style={S.muted}>
-                تم التحقق من حساب Admin.
-                أدخل PIN المسؤول.
-              </p>
-
-              <form
-                onSubmit={submitPin}
-              >
-                <input
-                  autoFocus
-                  value={pin}
-                  onChange={(e) =>
-                    setPin(
-                      e.target.value.replace(
-                        /\D/g,
-                        ''
-                      )
-                    )
-                  }
-                  maxLength={6}
-                  inputMode="numeric"
-                  placeholder="••••"
-                  style={S.pin}
-                />
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  style={{
-                    ...S.red,
-                    opacity: loading
-                      ? 0.6
-                      : 1,
-                  }}
-                >
-                  {loading
-                    ? '⏳ جاري التحقق...'
-                    : 'فتح لوحة التحكم'}
-                </button>
-              </form>
-
-              {msg.text && (
-                <div style={S.error}>
-                  {msg.text}
-                </div>
-              )}
-
-              <button
-                onClick={logout}
-                style={S.link}
-              >
-                ← حساب Google آخر
-              </button>
-            </>
+          {error && (
+            <div style={S.errorBox}>
+              {error}
+            </div>
           )}
+
+          <button
+            style={S.primaryButton}
+            onClick={loginGoogle}
+          >
+            تسجيل الدخول بواسطة Google
+          </button>
+
+          <button
+            style={S.secondaryButton}
+            onClick={() => navigate('/')}
+          >
+            العودة للموقع
+          </button>
         </div>
       </div>
     );
   }
 
-  /* =========================================================
-     FILTERS
-  ========================================================= */
+  if (!isAdmin) {
+    return (
+      <div style={S.page}>
+        <div style={S.centerCard}>
+          <div style={S.dangerIcon}>!</div>
 
-  const searchUser =
-    userSearch.toLowerCase();
+          <h1 style={S.title}>
+            لا توجد صلاحيات Admin
+          </h1>
 
-  const fu = users.filter((user) =>
-    [
-      user.display_name,
-      user.user_code,
-      user.wilaya,
-      user.id,
-    ].some((value) =>
-      String(value || '')
-        .toLowerCase()
-        .includes(searchUser)
-    )
-  );
+          <p style={S.muted}>
+            الحساب الحالي:
+          </p>
 
-  const searchTitle =
-    titleSearch.toLowerCase();
+          <div style={S.email}>
+            {auth.user.email}
+          </div>
 
-  const ft = titles.filter(
-    (title) => {
-      const name =
-        title.title ||
-        title.name ||
-        '';
+          {error && (
+            <div style={S.errorBox}>
+              {error}
+            </div>
+          )}
 
-      return (
-        name
-          .toLowerCase()
-          .includes(searchTitle) ||
-        String(
-          title.tmdb_id || ''
-        ).includes(titleSearch)
-      );
-    }
-  );
+          <button
+            style={S.secondaryButton}
+            onClick={logout}
+          >
+            تسجيل الخروج
+          </button>
 
-  /* =========================================================
-     ADMIN PANEL
-  ========================================================= */
+          <button
+            style={S.primaryButton}
+            onClick={() => navigate('/')}
+          >
+            العودة للموقع
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === 'pin') {
+    return (
+      <div style={S.page}>
+        <div style={S.centerCard}>
+          <div style={S.logo}>SF</div>
+
+          <h1 style={S.title}>
+            StreamFlix Admin
+          </h1>
+
+          <p style={S.muted}>
+            أدخل رمز الحماية للوصول إلى لوحة التحكم
+          </p>
+
+          <div style={S.email}>
+            {auth.user.email}
+          </div>
+
+          {error && (
+            <div style={S.errorBox}>
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={submitPin}>
+            <input
+              type="password"
+              value={pin}
+              onChange={(e) =>
+                setPin(e.target.value)
+              }
+              placeholder="PIN"
+              maxLength={10}
+              style={S.pinInput}
+              autoFocus
+            />
+
+            <button
+              type="submit"
+              style={S.primaryButton}
+            >
+              دخول لوحة التحكم
+            </button>
+          </form>
+
+          <button
+            style={S.secondaryButton}
+            onClick={logout}
+          >
+            تسجيل الخروج
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={S.page}>
-      <div style={S.container}>
-        <header style={S.header}>
-          <div>
-            <div style={S.logo}>
-              STREAM<span>FLIX</span>
-            </div>
-
-            <h1
-              style={{
-                color: '#e50914',
-                margin: '5px 0',
-              }}
-            >
-              ⚡ لوحة تحكم الإدارة
-            </h1>
-
-            <span style={S.muted}>
-              المستخدمون • VIP • البادجات • المحتوى
-            </span>
+    <div style={S.dashboard}>
+      <header style={S.header}>
+        <div>
+          <div style={S.brand}>
+            <span style={S.logoSmall}>SF</span>
+            <span>StreamFlix Admin</span>
           </div>
 
-          <div style={S.row}>
-            <button
-              onClick={async () => {
-                if (
-                  await guardAction()
-                ) {
-                  navigate('/import');
-                }
-              }}
-              style={S.blue}
-              disabled={!isAdmin}
-            >
-              📥 الاستيراد
-            </button>
-
-            <button
-              onClick={() =>
-                navigate('/')
-              }
-              style={S.dark}
-            >
-              🏠 الموقع
-            </button>
-
-            <button
-              onClick={logout}
-              style={S.out}
-            >
-              🔒 خروج
-            </button>
+          <div style={S.headerSub}>
+            {auth.user.email}
           </div>
-        </header>
+        </div>
 
-        <div style={S.tabs}>
+        <div style={S.headerActions}>
+          <button
+            style={S.secondaryButtonSmall}
+            onClick={fetchData}
+            disabled={loading || saving}
+          >
+            🔄 تحديث
+          </button>
+
+          <button
+            style={S.secondaryButtonSmall}
+            onClick={() => navigate('/')}
+          >
+            الموقع
+          </button>
+
+          <button
+            style={S.dangerButtonSmall}
+            onClick={logout}
+          >
+            خروج
+          </button>
+        </div>
+      </header>
+
+      <div style={S.layout}>
+        <aside style={S.sidebar}>
           {[
-            ['stats', '📊 الإحصائيات'],
-            ['settings', '⚙️ إعدادات VIP'],
-            ['users', '👥 المستخدمين'],
-            ['content', '🎬 المحتوى'],
-            ['logs', '📋 السجلات'],
-          ].map((item) => (
+            ['stats', '📊', 'الإحصائيات'],
+            ['settings', '⚙️', 'الإعدادات'],
+            ['users', '👥', 'المستخدمون'],
+            ['content', '🎬', 'المحتوى'],
+            ['logs', '📋', 'السجل'],
+          ].map(([key, icon, label]) => (
             <button
-              key={item[0]}
-              onClick={() => {
-                if (!isAdmin) return;
-
-                setTab(item[0]);
-
-                setMsg({
-                  text: '',
-                  type: '',
-                });
-              }}
-              disabled={!isAdmin}
+              key={key}
+              onClick={() => setTab(key)}
               style={{
-                ...S.tab,
-                ...(tab === item[0]
-                  ? S.active
+                ...S.sideButton,
+                ...(tab === key
+                  ? S.sideButtonActive
                   : {}),
               }}
             >
-              {item[1]}
+              <span>{icon}</span>
+              <span>{label}</span>
             </button>
           ))}
-        </div>
+        </aside>
 
-        {msg.text && (
-          <div
-            style={
-              msg.type === 'error'
-                ? S.errorBanner
-                : S.success
-            }
-          >
-            {msg.text}
-          </div>
-        )}
-
-        {/* =====================================================
-            STATS
-        ===================================================== */}
-
-        {tab === 'stats' && (
-          <>
-            <div style={S.grid}>
-              {[
-                [
-                  '🎬',
-                  stats.totalTitles,
-                  'المحتوى',
-                ],
-                [
-                  '👥',
-                  stats.totalUsers,
-                  'المستخدمين',
-                ],
-                [
-                  '⭐',
-                  stats.vipUsers,
-                  'VIP',
-                ],
-                [
-                  '🚫',
-                  stats.bannedUsers,
-                  'محظورين',
-                ],
-                [
-                  '✓',
-                  stats.verifiedUsers,
-                  'Verified',
-                ],
-                [
-                  '🔵',
-                  stats.officialUsers,
-                  'Official',
-                ],
-                [
-                  '👑',
-                  stats.ownerUsers,
-                  'Owner',
-                ],
-                [
-                  '🙈',
-                  stats.hiddenTitles,
-                  'مخفي',
-                ],
-              ].map((item) => (
-                <div
-                  style={S.stat}
-                  key={item[2]}
-                >
-                  <b
-                    style={{
-                      fontSize: 28,
-                    }}
-                  >
-                    {item[0]}
-                  </b>
-
-                  <strong>
-                    {item[1]}
-                  </strong>
-
-                  <span>
-                    {item[2]}
-                  </span>
-                </div>
-              ))}
+        <main style={S.main}>
+          {msg && (
+            <div style={S.successBox}>
+              ✓ {msg}
             </div>
+          )}
 
-            <div style={S.card}>
-              <button
-                onClick={fetchData}
-                disabled={
-                  loading || !isAdmin
-                }
-                style={{
-                  ...S.dark,
-                  opacity:
-                    loading ||
-                    !isAdmin
-                      ? 0.5
-                      : 1,
-                }}
-              >
-                {loading
-                  ? '⏳ جاري...'
-                  : '🔄 تحديث البيانات'}
-              </button>
+          {error && (
+            <div style={S.errorBox}>
+              <strong>خطأ:</strong> {error}
             </div>
-          </>
-        )}
+          )}
 
-        {/* =====================================================
-            SETTINGS
-        ===================================================== */}
-
-        {tab === 'settings' && (
-          <div style={S.stack}>
-            {[
-              [
-                'vip_features_enabled',
-                '⭐ نظام VIP',
-              ],
-              [
-                'vip_exclusive_content',
-                '🎬 محتوى VIP',
-              ],
-              [
-                'vip_media_messages',
-                '📷 الصور والملفات',
-              ],
-              [
-                'vip_voice_messages',
-                '🎙️ الرسائل الصوتية',
-              ],
-              [
-                'vip_watch_party',
-                '🎥 Watch Party',
-              ],
-              [
-                'maintenance_mode',
-                '🚧 وضع الصيانة',
-              ],
-              [
-                'diagnostics_enabled',
-                '🛠️ Diagnostics',
-              ],
-            ].map((item) => (
-              <div
-                style={S.setting}
-                key={item[0]}
-              >
+          {tab === 'stats' && (
+            <section>
+              <div style={S.sectionHeader}>
                 <div>
-                  <b>{item[1]}</b>
+                  <h1 style={S.sectionTitle}>
+                    الإحصائيات
+                  </h1>
 
-                  {item[0] ===
-                    'maintenance_mode' && (
-                    <div
-                      style={{
-                        ...S.small,
-                        color: '#888',
-                      }}
-                    >
-                      تظهر نافذة الصيانة
-                      للمستخدمين عند دخول
-                      الموقع.
-                    </div>
-                  )}
+                  <p style={S.muted}>
+                    بيانات حقيقية مباشرة من Supabase
+                  </p>
                 </div>
 
                 <button
-                  onClick={() => {
-                    if (!isAdmin) return;
-
-                    saveSetting(
-                      item[0],
-                      !settings[item[0]]
-                    );
-                  }}
-                  disabled={!isAdmin}
-                  style={{
-                    ...S.toggle,
-                    background:
-                      settings[item[0]]
-                        ? '#28a745'
-                        : '#333',
-                    opacity:
-                      !isAdmin ? 0.5 : 1,
-                  }}
+                  style={S.primaryButtonSmall}
+                  onClick={fetchData}
+                  disabled={loading}
                 >
-                  {settings[item[0]]
-                    ? '🟢 مفعلة'
-                    : '⚪ معطلة'}
+                  {loading
+                    ? 'جاري التحميل...'
+                    : 'تحديث البيانات'}
                 </button>
               </div>
-            ))}
 
-            <div style={S.card}>
-              <h3>
-                📢 الشريط الإعلاني
-              </h3>
+              <div style={S.statsGrid}>
+                <StatCard
+                  icon="🎬"
+                  label="إجمالي المحتوى"
+                  value={stats.totalTitles}
+                />
 
-              <div style={S.row}>
-                <input
-                  style={S.input}
-                  value={
-                    settings.announcement_bar
-                  }
-                  disabled={!isAdmin}
-                  onChange={(e) =>
-                    setSettings(
-                      (previous) => ({
-                        ...previous,
-                        announcement_bar:
-                          e.target.value,
-                      })
+                <StatCard
+                  icon="👥"
+                  label="إجمالي المستخدمين"
+                  value={stats.totalUsers}
+                />
+
+                <StatCard
+                  icon="⭐"
+                  label="مستخدمو VIP"
+                  value={stats.vipUsers}
+                />
+
+                <StatCard
+                  icon="🚫"
+                  label="المحظورون"
+                  value={stats.bannedUsers}
+                />
+
+                <StatCard
+                  icon="✓"
+                  label="Verified"
+                  value={stats.verifiedUsers}
+                />
+
+                <StatCard
+                  icon="🔵"
+                  label="Official"
+                  value={stats.officialUsers}
+                />
+
+                <StatCard
+                  icon="👑"
+                  label="Owner"
+                  value={stats.ownerUsers}
+                />
+
+                <StatCard
+                  icon="🙈"
+                  label="محتوى مخفي"
+                  value={stats.hiddenTitles}
+                />
+              </div>
+
+              <div style={S.infoCard}>
+                <h3 style={S.cardTitle}>
+                  حالة الاتصال
+                </h3>
+
+                <div style={S.connectionRow}>
+                  <span style={S.onlineDot} />
+                  <span>
+                    Supabase متصل
+                  </span>
+                </div>
+
+                <div style={S.dataRow}>
+                  <span>Users المحملة</span>
+                  <strong>
+                    {users.length}
+                  </strong>
+                </div>
+
+                <div style={S.dataRow}>
+                  <span>Titles المحملة</span>
+                  <strong>
+                    {titles.length}
+                  </strong>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {tab === 'settings' && (
+            <section>
+              <div style={S.sectionHeader}>
+                <div>
+                  <h1 style={S.sectionTitle}>
+                    إعدادات الموقع
+                  </h1>
+
+                  <p style={S.muted}>
+                    تحكم في وظائف StreamFlix
+                  </p>
+                </div>
+              </div>
+
+              <div style={S.settingsGrid}>
+                <SettingToggle
+                  label="وضع الصيانة"
+                  description="يعرض نافذة صيانة فقط، ولا يعطل الموقع."
+                  value={settings.maintenance_mode}
+                  disabled={saving}
+                  onChange={(value) =>
+                    saveSetting(
+                      'maintenance_mode',
+                      value
                     )
                   }
                 />
 
-                <button
-                  onClick={() => {
-                    if (!isAdmin) return;
+                <SettingToggle
+                  label="التشخيص"
+                  description="تفعيل أدوات التشخيص."
+                  value={settings.diagnostics_enabled}
+                  disabled={saving}
+                  onChange={(value) =>
+                    saveSetting(
+                      'diagnostics_enabled',
+                      value
+                    )
+                  }
+                />
 
+                <SettingToggle
+                  label="محتوى VIP"
+                  description="تفعيل المحتوى الحصري لـ VIP."
+                  value={settings.vip_exclusive_content}
+                  disabled={saving}
+                  onChange={(value) =>
+                    saveSetting(
+                      'vip_exclusive_content',
+                      value
+                    )
+                  }
+                />
+
+                <SettingToggle
+                  label="ميزات VIP"
+                  description="تفعيل ميزات VIP."
+                  value={settings.vip_features_enabled}
+                  disabled={saving}
+                  onChange={(value) =>
+                    saveSetting(
+                      'vip_features_enabled',
+                      value
+                    )
+                  }
+                />
+
+                <SettingToggle
+                  label="رسائل الصور لـ VIP"
+                  description="السماح لميزات الوسائط."
+                  value={settings.vip_media_messages}
+                  disabled={saving}
+                  onChange={(value) =>
+                    saveSetting(
+                      'vip_media_messages',
+                      value
+                    )
+                  }
+                />
+
+                <SettingToggle
+                  label="الرسائل الصوتية لـ VIP"
+                  description="السماح بالرسائل الصوتية."
+                  value={settings.vip_voice_messages}
+                  disabled={saving}
+                  onChange={(value) =>
+                    saveSetting(
+                      'vip_voice_messages',
+                      value
+                    )
+                  }
+                />
+
+                <SettingToggle
+                  label="Watch Party"
+                  description="تفعيل المشاهدة الجماعية."
+                  value={settings.vip_watch_party}
+                  disabled={saving}
+                  onChange={(value) =>
+                    saveSetting(
+                      'vip_watch_party',
+                      value
+                    )
+                  }
+                />
+              </div>
+
+              <div style={S.infoCard}>
+                <h3 style={S.cardTitle}>
+                  📢 شريط الإعلان
+                </h3>
+
+                <textarea
+                  value={settings.announcement_bar || ''}
+                  onChange={(e) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      announcement_bar:
+                        e.target.value,
+                    }))
+                  }
+                  placeholder="اكتب إعلان الموقع..."
+                  style={S.textarea}
+                />
+
+                <button
+                  style={S.primaryButtonSmall}
+                  disabled={saving}
+                  onClick={() =>
                     saveSetting(
                       'announcement_bar',
-                      settings.announcement_bar
-                    );
-                  }}
-                  disabled={!isAdmin}
-                  style={{
-                    ...S.blue,
-                    opacity:
-                      !isAdmin ? 0.5 : 1,
-                  }}
+                      settings.announcement_bar || ''
+                    )
+                  }
                 >
-                  حفظ
+                  حفظ الإعلان
                 </button>
               </div>
-            </div>
-          </div>
-        )}
 
-        {/* =====================================================
-            USERS
-        ===================================================== */}
-
-        {tab === 'users' && (
-          <div style={S.card}>
-            <div style={S.head}>
-              <h3>
-                👥 المستخدمين ({fu.length})
-              </h3>
-
-              <input
-                style={S.search}
-                placeholder="🔎 بحث بالاسم / الكود / الموقع..."
-                value={userSearch}
-                onChange={(e) =>
-                  setUserSearch(
-                    e.target.value
-                  )
-                }
-              />
-            </div>
-
-            <div style={S.stack}>
-              {fu.length === 0 ? (
-                <div style={S.empty}>
-                  {users.length === 0
-                    ? '⚠️ لم يتم تحميل أي مستخدم من قاعدة البيانات.'
-                    : 'لا يوجد مستخدمون مطابقون للبحث.'}
+              <div style={S.maintenanceInfo}>
+                <div style={S.maintenanceIcon}>
+                  🛠️
                 </div>
-              ) : (
-                fu.map((user) => {
-                  const userBadges =
-                    normalizeBadges(
-                      user.badges
-                    );
 
-                  return (
-                    <div
-                      style={S.user}
-                      key={user.id}
-                    >
+                <div>
+                  <strong>
+                    وضع الصيانة في StreamFlix
+                  </strong>
+
+                  <p>
+                    عند تفعيله سيظهر للمستخدمين
+                    Popup تنبيه بالصيانة فقط.
+                    الموقع لا يتم حجبه ولا يتم
+                    تعطيل الصفحات.
+                  </p>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {tab === 'users' && (
+            <section>
+              <div style={S.sectionHeader}>
+                <div>
+                  <h1 style={S.sectionTitle}>
+                    المستخدمون
+                  </h1>
+
+                  <p style={S.muted}>
+                    {users.length} مستخدم محمل من قاعدة البيانات
+                  </p>
+                </div>
+
+                <input
+                  value={userSearch}
+                  onChange={(e) =>
+                    setUserSearch(e.target.value)
+                  }
+                  placeholder="بحث عن مستخدم..."
+                  style={S.search}
+                />
+              </div>
+
+              {loadingUsers ? (
+                <EmptyState text="جاري تحميل المستخدمين..." />
+              ) : users.length === 0 ? (
+                <EmptyState text="لم يتم تحميل أي مستخدم من قاعدة البيانات." />
+              ) : filteredUsers.length === 0 ? (
+                <EmptyState text="لا توجد نتائج مطابقة للبحث." />
+              ) : (
+                <div style={S.usersGrid}>
+                  {filteredUsers.map((user) => {
+                    const badges =
+                      getUserBadges(user);
+
+                    const vip =
+                      isUserVip(user);
+
+                    return (
                       <div
-                        style={
-                          S.userTop
-                        }
+                        key={user.id}
+                        style={S.userCard}
                       >
-                        <div
-                          style={
-                            S.userInfo
-                          }
-                        >
-                          {user.avatar_url ? (
+                        <div style={S.userTop}>
+                          {getUserAvatar(user) ? (
                             <img
-                              src={
-                                user.avatar_url
-                              }
-                              style={
-                                S.avatar
-                              }
+                              src={getUserAvatar(user)}
                               alt=""
+                              style={S.avatar}
                             />
                           ) : (
-                            <div
-                              style={
-                                S.avatar
-                              }
-                            >
-                              👤
+                            <div style={S.avatarFallback}>
+                              {getUserName(user)
+                                .charAt(0)
+                                .toUpperCase()}
                             </div>
                           )}
 
-                          <div>
-                            <b
-                              style={{
-                                fontSize: 15,
-                              }}
-                            >
-                              {user.display_name ||
-                                user.user_code ||
-                                'مستخدم'}
-
-                              {user.is_premium && (
-                                <span
-                                  style={
-                                    S.vipMini
-                                  }
-                                >
-                                  ⭐ VIP
-                                </span>
-                              )}
-                            </b>
-
-                            <div
-                              style={
-                                S.small
-                              }
-                            >
-                              {user.user_code ||
-                                'بدون كود'}
-
-                              {user.wilaya
-                                ? ` • ${user.wilaya}`
-                                : ''}
+                          <div style={{ minWidth: 0 }}>
+                            <div style={S.userName}>
+                              {getUserName(user)}
                             </div>
 
-                            {userBadges.length >
-                              0 && (
-                              <div
-                                style={
-                                  S.badgesLine
-                                }
-                              >
-                                {userBadges.map(
-                                  (type) => (
-                                    <span
-                                      key={
-                                        type
-                                      }
-                                      style={
-                                        S.badgePill
-                                      }
-                                    >
-                                      {
-                                        BADGES[
-                                          type
-                                        ]?.icon
-                                      }{' '}
-                                      {
-                                        BADGES[
-                                          type
-                                        ]?.label
-                                      }
-                                    </span>
-                                  )
-                                )}
-                              </div>
+                            <div style={S.userEmail}>
+                              {user.email || '—'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={S.userMeta}>
+                          <span>
+                            ID: {user.id || '—'}
+                          </span>
+
+                          <span>
+                            الموقع:{' '}
+                            {getLocation(user) || '—'}
+                          </span>
+
+                          <span>
+                            التسجيل:{' '}
+                            {formatDate(
+                              user.created_at
                             )}
+                          </span>
+                        </div>
+
+                        <div style={S.badgesRow}>
+                          {vip && (
+                            <span style={S.vipBadge}>
+                              ⭐ VIP
+                            </span>
+                          )}
+
+                          {badges.map((badge) => (
+                            <span
+                              key={badge}
+                              style={S.smallBadge}
+                            >
+                              {BADGES[badge]?.icon ||
+                                badge}
+                            </span>
+                          ))}
+                        </div>
+
+                        <div style={S.actions}>
+                          <button
+                            style={
+                              vip
+                                ? S.warningButton
+                                : S.primaryButtonSmall
+                            }
+                            disabled={saving}
+                            onClick={() =>
+                              setVip(
+                                user,
+                                vip ? 'none' : 'manual'
+                              )
+                            }
+                          >
+                            {vip
+                              ? 'إلغاء VIP'
+                              : 'إعطاء VIP'}
+                          </button>
+
+                          {Object.keys(BADGES).map(
+                            (badgeKey) => {
+                              const active =
+                                badges.includes(
+                                  badgeKey
+                                );
+
+                              return (
+                                <button
+                                  key={badgeKey}
+                                  style={
+                                    active
+                                      ? S.badgeActiveButton
+                                      : S.secondaryButtonSmall
+                                  }
+                                  disabled={saving}
+                                  onClick={() =>
+                                    setBadge(
+                                      user,
+                                      badgeKey
+                                    )
+                                  }
+                                >
+                                  {
+                                    BADGES[badgeKey]
+                                      .icon
+                                  }{' '}
+                                  {
+                                    BADGES[badgeKey]
+                                      .label
+                                  }
+                                </button>
+                              );
+                            }
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          )}
+
+          {tab === 'content' && (
+            <section>
+              <div style={S.sectionHeader}>
+                <div>
+                  <h1 style={S.sectionTitle}>
+                    المحتوى
+                  </h1>
+
+                  <p style={S.muted}>
+                    {titles.length} عنوان محمل من قاعدة البيانات
+                  </p>
+                </div>
+
+                <input
+                  value={titleSearch}
+                  onChange={(e) =>
+                    setTitleSearch(e.target.value)
+                  }
+                  placeholder="بحث عن فيلم أو مسلسل..."
+                  style={S.search}
+                />
+              </div>
+
+              {loadingTitles ? (
+                <EmptyState text="جاري تحميل المحتوى..." />
+              ) : titles.length === 0 ? (
+                <EmptyState text="لم يتم تحميل أي محتوى من قاعدة البيانات." />
+              ) : filteredTitles.length === 0 ? (
+                <EmptyState text="لا توجد نتائج مطابقة للبحث." />
+              ) : (
+                <div style={S.contentGrid}>
+                  {filteredTitles.map((title) => {
+                    const vip =
+                      isTitleVip(title);
+
+                    const hidden =
+                      isTitleHidden(title);
+
+                    return (
+                      <div
+                        key={title.id}
+                        style={S.contentCard}
+                      >
+                        {getTitlePoster(title) ? (
+                          <img
+                            src={getTitlePoster(title)}
+                            alt=""
+                            style={S.poster}
+                          />
+                        ) : (
+                          <div style={S.posterFallback}>
+                            🎬
+                          </div>
+                        )}
+
+                        <div style={S.contentInfo}>
+                          <div style={S.contentTitle}>
+                            {getTitleName(title)}
+                          </div>
+
+                          <div style={S.contentId}>
+                            ID: {title.id}
+                          </div>
+
+                          <div style={S.contentBadges}>
+                            {vip && (
+                              <span style={S.vipBadge}>
+                                ⭐ VIP
+                              </span>
+                            )}
+
+                            {hidden && (
+                              <span style={S.hiddenBadge}>
+                                🙈 مخفي
+                              </span>
+                            )}
+                          </div>
+
+                          <div style={S.actions}>
+                            <button
+                              style={
+                                vip
+                                  ? S.warningButton
+                                  : S.primaryButtonSmall
+                              }
+                              disabled={saving}
+                              onClick={() =>
+                                toggleTitleVip(title)
+                              }
+                            >
+                              {vip
+                                ? 'إلغاء VIP'
+                                : 'VIP'}
+                            </button>
+
+                            <button
+                              style={
+                                hidden
+                                  ? S.warningButton
+                                  : S.secondaryButtonSmall
+                              }
+                              disabled={saving}
+                              onClick={() =>
+                                toggleTitleHidden(title)
+                              }
+                            >
+                              {hidden
+                                ? 'إظهار'
+                                : 'إخفاء'}
+                            </button>
+
+                            <button
+                              style={S.dangerButtonSmall}
+                              disabled={saving}
+                              onClick={() =>
+                                deleteTitle(title)
+                              }
+                            >
+                              حذف
+                            </button>
                           </div>
                         </div>
                       </div>
-
-                      <div style={S.sub}>
-                        <b>⭐ VIP</b>
-
-                        <div style={S.row}>
-                          <button
-                            onClick={() =>
-                              vip(
-                                user,
-                                'none'
-                              )
-                            }
-                            disabled={
-                              !isAdmin
-                            }
-                            style={{
-                              ...S.smallBtn,
-                              opacity:
-                                !isAdmin
-                                  ? 0.5
-                                  : 1,
-                            }}
-                          >
-                            ❌ إزالة
-                          </button>
-
-                          <button
-                            onClick={() =>
-                              vip(
-                                user,
-                                'month'
-                              )
-                            }
-                            disabled={
-                              !isAdmin
-                            }
-                            style={{
-                              ...S.gold,
-                              opacity:
-                                !isAdmin
-                                  ? 0.5
-                                  : 1,
-                            }}
-                          >
-                            ⭐ شهر
-                          </button>
-
-                          <button
-                            onClick={() =>
-                              vip(
-                                user,
-                                'year'
-                              )
-                            }
-                            disabled={
-                              !isAdmin
-                            }
-                            style={{
-                              ...S.orange,
-                              opacity:
-                                !isAdmin
-                                  ? 0.5
-                                  : 1,
-                            }}
-                          >
-                            🏆 عام
-                          </button>
-
-                          <button
-                            onClick={() =>
-                              vip(
-                                user,
-                                'manual'
-                              )
-                            }
-                            disabled={
-                              !isAdmin
-                            }
-                            style={{
-                              ...S.purple,
-                              opacity:
-                                !isAdmin
-                                  ? 0.5
-                                  : 1,
-                            }}
-                          >
-                            🛠️ يدوي
-                          </button>
-                        </div>
-                      </div>
-
-                      <div style={S.sub}>
-                        <b>
-                          🏅 البادجات
-                        </b>
-
-                        <div style={S.row}>
-                          {[
-                            [
-                              'verification',
-                              '✓ Verified',
-                            ],
-                            [
-                              'official',
-                              '🔵 Official',
-                            ],
-                            [
-                              'owner',
-                              '👑 Owner',
-                            ],
-                          ].map(
-                            ([
-                              type,
-                              label,
-                            ]) => (
-                              <button
-                                key={
-                                  type
-                                }
-                                onClick={() =>
-                                  badge(
-                                    user,
-                                    type
-                                  )
-                                }
-                                disabled={
-                                  !isAdmin
-                                }
-                                style={{
-                                  ...S.smallBtn,
-                                  ...(hasBadge(
-                                    userBadges,
-                                    type
-                                  )
-                                    ? S.badgeActive
-                                    : {}),
-                                  opacity:
-                                    !isAdmin
-                                      ? 0.5
-                                      : 1,
-                                }}
-                              >
-                                {hasBadge(
-                                  userBadges,
-                                  type
-                                )
-                                  ? `✅ ${label}`
-                                  : label}
-                              </button>
-                            )
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* =====================================================
-            CONTENT
-        ===================================================== */}
-
-        {tab === 'content' && (
-          <div style={S.card}>
-            <div style={S.head}>
-              <h3>
-                🎬 المحتوى ({ft.length})
-              </h3>
-
-              <input
-                style={S.search}
-                placeholder="🔎 الاسم / TMDB ID"
-                value={titleSearch}
-                onChange={(e) =>
-                  setTitleSearch(
-                    e.target.value
-                  )
-                }
-              />
-            </div>
-
-            <div style={S.stack}>
-              {ft.length === 0 ? (
-                <div style={S.empty}>
-                  {titles.length === 0
-                    ? '⚠️ لم يتم تحميل أي محتوى من قاعدة البيانات.'
-                    : 'لا يوجد محتوى مطابق للبحث.'}
+                    );
+                  })}
                 </div>
-              ) : (
-                ft.map((title) => (
-                  <div
-                    style={
-                      S.titleCard
-                    }
-                    key={title.id}
-                  >
-                    <div
-                      style={
-                        S.userInfo
-                      }
-                    >
-                      {(title.poster_path ||
-                        title.poster_url) && (
-                        <img
-                          src={
-                            title.poster_path ||
-                            title.poster_url
-                          }
-                          style={
-                            S.poster
-                          }
-                          alt=""
-                        />
-                      )}
-
-                      <div>
-                        <b>
-                          {title.title ||
-                            title.name}
-                        </b>
-
-                        <div
-                          style={
-                            S.small
-                          }
-                        >
-                          {title.type ===
-                            'series' ||
-                          title.type ===
-                            'tv'
-                            ? 'مسلسل'
-                            : 'فيلم'}{' '}
-                          • TMDB{' '}
-                          {title.tmdb_id ||
-                            '-'}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div
-                      style={S.row}
-                    >
-                      <button
-                        onClick={() =>
-                          titleAction(
-                            title.id,
-                            'is_premium',
-                            title.is_premium
-                          )
-                        }
-                        disabled={
-                          !isAdmin
-                        }
-                        style={{
-                          ...S.smallBtn,
-                          opacity:
-                            !isAdmin
-                              ? 0.5
-                              : 1,
-                        }}
-                      >
-                        {title.is_premium
-                          ? '⭐ إزالة VIP'
-                          : '⭐ جعل VIP'}
-                      </button>
-
-                      <button
-                        onClick={() =>
-                          titleAction(
-                            title.id,
-                            'is_hidden',
-                            title.is_hidden
-                          )
-                        }
-                        disabled={
-                          !isAdmin
-                        }
-                        style={{
-                          ...S.smallBtn,
-                          opacity:
-                            !isAdmin
-                              ? 0.5
-                              : 1,
-                        }}
-                      >
-                        {title.is_hidden
-                          ? '👁️ إظهار'
-                          : '🙈 إخفاء'}
-                      </button>
-
-                      <button
-                        onClick={() =>
-                          delTitle(
-                            title.id,
-                            title.title ||
-                              title.name
-                          )
-                        }
-                        disabled={
-                          !isAdmin
-                        }
-                        style={{
-                          ...S.delete,
-                          opacity:
-                            !isAdmin
-                              ? 0.5
-                              : 1,
-                        }}
-                      >
-                        🗑️ حذف
-                      </button>
-                    </div>
-                  </div>
-                ))
               )}
-            </div>
-          </div>
-        )}
+            </section>
+          )}
 
-        {/* =====================================================
-            LOGS
-        ===================================================== */}
-
-        {tab === 'logs' && (
-          <div style={S.card}>
-            <h3>📋 السجلات</h3>
-
-            <div style={S.logs}>
-              {logs.length === 0 ? (
+          {tab === 'logs' && (
+            <section>
+              <div style={S.sectionHeader}>
                 <div>
-                  لا توجد سجلات بعد.
+                  <h1 style={S.sectionTitle}>
+                    سجل العمليات
+                  </h1>
+
+                  <p style={S.muted}>
+                    آخر عمليات لوحة التحكم
+                  </p>
                 </div>
+
+                <button
+                  style={S.secondaryButtonSmall}
+                  onClick={() => setLogs([])}
+                >
+                  مسح السجل
+                </button>
+              </div>
+
+              {logs.length === 0 ? (
+                <EmptyState text="لا توجد عمليات مسجلة بعد." />
               ) : (
-                logs.map(
-                  (item, index) => (
-                    <div key={index}>
-                      {item}
+                <div style={S.logs}>
+                  {logs.map((log) => (
+                    <div
+                      key={log.id}
+                      style={{
+                        ...S.log,
+                        borderLeft:
+                          log.type === 'error'
+                            ? '3px solid #ef4444'
+                            : log.type === 'success'
+                            ? '3px solid #22c55e'
+                            : '3px solid #64748b',
+                      }}
+                    >
+                      <div>
+                        {log.text}
+                      </div>
+
+                      <small>
+                        {log.date}
+                      </small>
                     </div>
-                  )
-                )
+                  ))}
+                </div>
               )}
-            </div>
-          </div>
-        )}
+            </section>
+          )}
+        </main>
       </div>
     </div>
   );
 }
 
-/* =============================================================
-   STYLES
-============================================================= */
+function StatCard({ icon, label, value }) {
+  return (
+    <div style={S.statCard}>
+      <div style={S.statIcon}>
+        {icon}
+      </div>
+
+      <div>
+        <div style={S.statValue}>
+          {value}
+        </div>
+
+        <div style={S.statLabel}>
+          {label}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingToggle({
+  label,
+  description,
+  value,
+  onChange,
+  disabled,
+}) {
+  return (
+    <div style={S.settingCard}>
+      <div style={{ flex: 1 }}>
+        <div style={S.settingTitle}>
+          {label}
+        </div>
+
+        <div style={S.settingDescription}>
+          {description}
+        </div>
+      </div>
+
+      <button
+        disabled={disabled}
+        onClick={() => onChange(!value)}
+        style={{
+          ...S.toggle,
+          background: value
+            ? '#22c55e'
+            : '#334155',
+        }}
+      >
+        <span
+          style={{
+            ...S.toggleCircle,
+            transform: value
+              ? 'translateX(22px)'
+              : 'translateX(0)',
+          }}
+        />
+      </button>
+    </div>
+  );
+}
+
+function EmptyState({ text }) {
+  return (
+    <div style={S.empty}>
+      <div style={S.emptyIcon}>📭</div>
+      <div>{text}</div>
+    </div>
+  );
+}
 
 const S = {
   page: {
     minHeight: '100vh',
     background:
-      'radial-gradient(circle at top,#181818,#050505 65%)',
+      'linear-gradient(135deg,#020617,#0f172a,#111827)',
     color: '#fff',
-    padding: 22,
-    direction: 'rtl',
-    fontFamily:
-      'system-ui,sans-serif',
-  },
-
-  container: {
-    maxWidth: 1250,
-    margin: 'auto',
-  },
-
-  authPage: {
-    minHeight: '100vh',
-    background: '#060606',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
-    color: '#fff',
-    direction: 'rtl',
+    boxSizing: 'border-box',
+    fontFamily:
+      'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   },
 
-  authCard: {
+  centerCard: {
     width: '100%',
     maxWidth: 430,
-    background: '#151515',
-    border: '1px solid #2b2b2b',
-    borderRadius: 22,
+    background: 'rgba(15,23,42,.95)',
+    border: '1px solid rgba(255,255,255,.08)',
+    borderRadius: 24,
     padding: 30,
+    boxSizing: 'border-box',
     textAlign: 'center',
-    boxShadow: '0 25px 80px #000',
+    boxShadow:
+      '0 30px 80px rgba(0,0,0,.45)',
   },
 
   logo: {
+    width: 68,
+    height: 68,
+    borderRadius: 20,
+    margin: '0 auto 18px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     fontWeight: 900,
-    fontSize: 24,
+    fontSize: 25,
+    background:
+      'linear-gradient(135deg,#e50914,#ff4050)',
+    boxShadow:
+      '0 15px 40px rgba(229,9,20,.35)',
+  },
+
+  logoSmall: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: 900,
+    background:
+      'linear-gradient(135deg,#e50914,#ff4050)',
+  },
+
+  title: {
+    fontSize: 25,
+    margin: '0 0 10px',
   },
 
   muted: {
-    color: '#777',
-    fontSize: 12,
+    color: '#94a3b8',
+    lineHeight: 1.6,
   },
 
-  google: {
-    width: '100%',
-    padding: 14,
-    border: 0,
-    borderRadius: 11,
-    background: '#fff',
-    color: '#111',
-    fontWeight: 800,
-    cursor: 'pointer',
-    fontSize: 15,
-  },
-
-  note: {
-    marginTop: 15,
-    padding: 12,
-    borderRadius: 10,
-    background: '#0d0d0d',
-    color: '#aaa',
-    fontSize: 11,
-    lineHeight: 1.8,
-  },
-
-  pin: {
-    width: '100%',
-    boxSizing: 'border-box',
-    padding: 14,
-    background: '#222',
-    border: '1px solid #444',
-    borderRadius: 10,
-    color: '#fff',
-    textAlign: 'center',
-    fontSize: 25,
-    letterSpacing: 7,
-    marginBottom: 12,
-  },
-
-  red: {
-    width: '100%',
-    padding: 13,
-    border: 0,
-    borderRadius: 10,
-    background: '#e50914',
-    color: '#fff',
-    fontWeight: 800,
-    cursor: 'pointer',
-  },
-
-  link: {
-    marginTop: 15,
-    background: 'transparent',
-    border: 0,
-    color: '#777',
-    cursor: 'pointer',
-  },
-
-  error: {
-    marginTop: 14,
-    padding: 11,
-    borderRadius: 10,
-    background: '#2a1212',
-    color: '#ff7777',
-    fontSize: 12,
-  },
-
-  errorBanner: {
-    padding: 13,
-    borderRadius: 11,
-    background: '#2a1212',
-    color: '#ff7777',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-
-  success: {
-    padding: 13,
-    borderRadius: 11,
-    background: '#122a18',
-    color: '#6bff8d',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 15,
-    flexWrap: 'wrap',
-    paddingBottom: 18,
-    borderBottom: '1px solid #222',
-  },
-
-  row: {
-    display: 'flex',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-
-  blue: {
+  email: {
+    margin: '12px 0 20px',
     padding: '10px 14px',
-    background: '#0066cc',
-    color: '#fff',
-    border: 0,
-    borderRadius: 9,
-    fontWeight: 800,
-    cursor: 'pointer',
+    borderRadius: 12,
+    background: '#020617',
+    color: '#cbd5e1',
+    wordBreak: 'break-all',
   },
 
-  dark: {
-    padding: '10px 14px',
-    background: '#222',
-    color: '#fff',
-    border: '1px solid #3a3a3a',
-    borderRadius: 9,
-    cursor: 'pointer',
+  errorBox: {
+    background: 'rgba(239,68,68,.12)',
+    border: '1px solid rgba(239,68,68,.3)',
+    color: '#fecaca',
+    padding: 13,
+    borderRadius: 12,
+    marginBottom: 15,
+    lineHeight: 1.5,
+    textAlign: 'left',
   },
 
-  out: {
-    padding: '10px 14px',
-    background: '#2a1212',
-    color: '#ff7777',
-    border: '1px solid #4b2020',
-    borderRadius: 9,
-    cursor: 'pointer',
-  },
-
-  tabs: {
-    display: 'flex',
-    gap: 8,
-    overflowX: 'auto',
-    margin: '20px 0',
-  },
-
-  tab: {
-    padding: '11px 15px',
-    background: '#141414',
-    color: '#aaa',
-    border: '1px solid #292929',
-    borderRadius: 10,
-    cursor: 'pointer',
-    whiteSpace: 'nowrap',
-    fontWeight: 700,
-  },
-
-  active: {
-    background: '#e50914',
-    color: '#fff',
-    borderColor: '#e50914',
-  },
-
-  grid: {
-    display: 'grid',
-    gridTemplateColumns:
-      'repeat(auto-fit,minmax(150px,1fr))',
-    gap: 12,
-  },
-
-  stat: {
-    background: '#151515',
-    border: '1px solid #292929',
-    borderRadius: 15,
-    padding: 18,
-    textAlign: 'center',
-    display: 'grid',
-    gap: 5,
-  },
-
-  card: {
-    background: '#141414',
-    border: '1px solid #292929',
-    borderRadius: 15,
-    padding: 18,
-    marginTop: 15,
-  },
-
-  stack: {
-    display: 'grid',
-    gap: 12,
-  },
-
-  setting: {
-    background: '#141414',
-    border: '1px solid #292929',
-    borderRadius: 13,
-    padding: 16,
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 10,
-  },
-
-  toggle: {
-    minWidth: 110,
-    padding: 10,
-    color: '#fff',
-    border: 0,
-    borderRadius: 8,
-    fontWeight: 800,
-    cursor: 'pointer',
-  },
-
-  input: {
-    flex: 1,
-    padding: 11,
-    background: '#222',
-    border: '1px solid #3a3a3a',
-    borderRadius: 9,
-    color: '#fff',
-  },
-
-  head: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 10,
-    flexWrap: 'wrap',
+  successBox: {
+    background: 'rgba(34,197,94,.12)',
+    border: '1px solid rgba(34,197,94,.3)',
+    color: '#bbf7d0',
+    padding: 13,
+    borderRadius: 12,
     marginBottom: 15,
   },
 
-  search: {
-    width: 290,
-    maxWidth: '100%',
-    padding: 10,
-    background: '#222',
-    border: '1px solid #3a3a3a',
-    borderRadius: 9,
+  primaryButton: {
+    width: '100%',
+    border: 0,
+    borderRadius: 13,
+    padding: '13px 16px',
+    background:
+      'linear-gradient(135deg,#e50914,#ff4050)',
     color: '#fff',
+    fontWeight: 800,
+    cursor: 'pointer',
+    marginBottom: 10,
   },
 
-  user: {
+  secondaryButton: {
+    width: '100%',
+    border: '1px solid rgba(255,255,255,.1)',
+    borderRadius: 13,
+    padding: '13px 16px',
+    background: '#1e293b',
+    color: '#fff',
+    fontWeight: 700,
+    cursor: 'pointer',
+    marginBottom: 10,
+  },
+
+  pinInput: {
+    width: '100%',
+    boxSizing: 'border-box',
+    padding: 14,
+    borderRadius: 13,
+    border: '1px solid #334155',
+    background: '#020617',
+    color: '#fff',
+    outline: 'none',
+    textAlign: 'center',
+    fontSize: 22,
+    letterSpacing: 8,
+    marginBottom: 12,
+  },
+
+  dangerIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: '50%',
+    margin: '0 auto 15px',
+    background: '#450a0a',
+    color: '#f87171',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 30,
+    fontWeight: 900,
+  },
+
+  dashboard: {
+    minHeight: '100vh',
+    background: '#020617',
+    color: '#fff',
+    fontFamily:
+      'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  },
+
+  header: {
+    minHeight: 76,
+    padding: '14px 22px',
+    boxSizing: 'border-box',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 20,
+    background: '#0f172a',
+    borderBottom: '1px solid #1e293b',
+  },
+
+  brand: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    fontWeight: 900,
+    fontSize: 18,
+  },
+
+  headerSub: {
+    color: '#64748b',
+    fontSize: 12,
+    marginTop: 4,
+  },
+
+  headerActions: {
+    display: 'flex',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+
+  layout: {
+    display: 'grid',
+    gridTemplateColumns: '220px minmax(0,1fr)',
+    minHeight: 'calc(100vh - 76px)',
+  },
+
+  sidebar: {
+    background: '#0f172a',
+    borderRight: '1px solid #1e293b',
+    padding: 14,
+  },
+
+  sideButton: {
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    border: 0,
+    borderRadius: 12,
+    padding: '12px 14px',
+    background: 'transparent',
+    color: '#94a3b8',
+    cursor: 'pointer',
+    marginBottom: 5,
+    textAlign: 'left',
+    fontWeight: 700,
+  },
+
+  sideButtonActive: {
     background:
-      'linear-gradient(145deg,#1b1b1b,#111)',
-    border: '1px solid #2b2b2b',
-    borderRadius: 15,
-    padding: 15,
+      'linear-gradient(135deg,rgba(229,9,20,.2),rgba(255,64,80,.08))',
+    color: '#fff',
+    border:
+      '1px solid rgba(229,9,20,.25)',
+  },
+
+  main: {
+    minWidth: 0,
+    padding: 24,
+    overflow: 'auto',
+  },
+
+  sectionHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 20,
+    marginBottom: 22,
+    flexWrap: 'wrap',
+  },
+
+  sectionTitle: {
+    margin: 0,
+    fontSize: 28,
+  },
+
+  search: {
+    width: 280,
+    maxWidth: '100%',
+    boxSizing: 'border-box',
+    padding: '12px 14px',
+    borderRadius: 12,
+    border: '1px solid #334155',
+    background: '#0f172a',
+    color: '#fff',
+    outline: 'none',
+  },
+
+  statsGrid: {
+    display: 'grid',
+    gridTemplateColumns:
+      'repeat(auto-fit,minmax(180px,1fr))',
+    gap: 14,
+    marginBottom: 22,
+  },
+
+  statCard: {
+    background: '#0f172a',
+    border: '1px solid #1e293b',
+    borderRadius: 18,
+    padding: 18,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 15,
+  },
+
+  statIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    background: '#1e293b',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 22,
+  },
+
+  statValue: {
+    fontSize: 25,
+    fontWeight: 900,
+  },
+
+  statLabel: {
+    color: '#94a3b8',
+    fontSize: 13,
+    marginTop: 3,
+  },
+
+  infoCard: {
+    background: '#0f172a',
+    border: '1px solid #1e293b',
+    borderRadius: 18,
+    padding: 20,
+    marginTop: 18,
+  },
+
+  cardTitle: {
+    marginTop: 0,
+  },
+
+  connectionRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
+  },
+
+  onlineDot: {
+    width: 9,
+    height: 9,
+    borderRadius: '50%',
+    background: '#22c55e',
+    boxShadow:
+      '0 0 12px rgba(34,197,94,.7)',
+  },
+
+  dataRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '10px 0',
+    borderTop: '1px solid #1e293b',
+    color: '#94a3b8',
+  },
+
+  settingsGrid: {
+    display: 'grid',
+    gridTemplateColumns:
+      'repeat(auto-fit,minmax(300px,1fr))',
+    gap: 14,
+  },
+
+  settingCard: {
+    background: '#0f172a',
+    border: '1px solid #1e293b',
+    borderRadius: 18,
+    padding: 18,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 15,
+  },
+
+  settingTitle: {
+    fontWeight: 800,
+    marginBottom: 5,
+  },
+
+  settingDescription: {
+    color: '#64748b',
+    fontSize: 13,
+    lineHeight: 1.5,
+  },
+
+  toggle: {
+    width: 50,
+    height: 28,
+    border: 0,
+    borderRadius: 20,
+    padding: 3,
+    cursor: 'pointer',
+    flexShrink: 0,
+    transition: 'background .2s',
+  },
+
+  toggleCircle: {
+    display: 'block',
+    width: 22,
+    height: 22,
+    borderRadius: '50%',
+    background: '#fff',
+    transition: 'transform .2s',
+  },
+
+  textarea: {
+    width: '100%',
+    minHeight: 110,
+    boxSizing: 'border-box',
+    background: '#020617',
+    color: '#fff',
+    border: '1px solid #334155',
+    borderRadius: 12,
+    padding: 13,
+    resize: 'vertical',
+    outline: 'none',
+    marginBottom: 10,
+  },
+
+  maintenanceInfo: {
+    marginTop: 18,
+    padding: 18,
+    borderRadius: 18,
+    background:
+      'linear-gradient(135deg,rgba(245,158,11,.1),rgba(15,23,42,.8))',
+    border:
+      '1px solid rgba(245,158,11,.25)',
+    display: 'flex',
+    gap: 15,
+    alignItems: 'flex-start',
+  },
+
+  maintenanceIcon: {
+    fontSize: 28,
+  },
+
+  usersGrid: {
+    display: 'grid',
+    gridTemplateColumns:
+      'repeat(auto-fill,minmax(310px,1fr))',
+    gap: 14,
+  },
+
+  userCard: {
+    background: '#0f172a',
+    border: '1px solid #1e293b',
+    borderRadius: 18,
+    padding: 17,
+    minWidth: 0,
   },
 
   userTop: {
     display: 'flex',
-    justifyContent: 'space-between',
+    gap: 12,
     alignItems: 'center',
-    gap: 10,
-    flexWrap: 'wrap',
-  },
-
-  userInfo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
+    marginBottom: 14,
   },
 
   avatar: {
-    width: 50,
-    height: 50,
+    width: 52,
+    height: 52,
     borderRadius: '50%',
     objectFit: 'cover',
-    background: '#333',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
     flexShrink: 0,
   },
 
-  small: {
-    color: '#666',
-    fontSize: 11,
-    marginTop: 4,
-  },
-
-  vipMini: {
-    display: 'inline-block',
-    marginRight: 7,
-    padding: '3px 7px',
-    borderRadius: 999,
+  avatarFallback: {
+    width: 52,
+    height: 52,
+    borderRadius: '50%',
     background:
-      'linear-gradient(135deg,#ffc107,#ff9800)',
-    color: '#000',
-    fontSize: 10,
-    fontWeight: 900,
-    verticalAlign: 'middle',
-  },
-
-  badgesLine: {
+      'linear-gradient(135deg,#334155,#475569)',
     display: 'flex',
-    gap: 5,
-    flexWrap: 'wrap',
-    marginTop: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 20,
+    fontWeight: 900,
+    flexShrink: 0,
   },
 
-  badgePill: {
+  userName: {
+    fontWeight: 900,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+
+  userEmail: {
+    color: '#64748b',
+    fontSize: 12,
+    marginTop: 3,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+
+  userMeta: {
+    display: 'grid',
+    gap: 5,
+    color: '#94a3b8',
+    fontSize: 12,
+    marginBottom: 12,
+  },
+
+  badgesRow: {
+    display: 'flex',
+    gap: 6,
+    flexWrap: 'wrap',
+    marginBottom: 12,
+  },
+
+  vipBadge: {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 3,
-    padding: '3px 7px',
-    borderRadius: 999,
-    background: '#252525',
-    border: '1px solid #3b3b3b',
-    color: '#ddd',
-    fontSize: 9,
-    fontWeight: 800,
-  },
-
-  badgeActive: {
-    background: '#29200a',
-    borderColor: '#ffc107',
-    color: '#ffc107',
-  },
-
-  empty: {
-    padding: 30,
-    textAlign: 'center',
-    color: '#777',
-    background: '#111',
-    borderRadius: 12,
-  },
-
-  smallBtn: {
-    padding: '8px 11px',
-    background: '#292929',
-    color: '#fff',
-    border: '1px solid #3b3b3b',
-    borderRadius: 7,
-    cursor: 'pointer',
+    gap: 4,
+    padding: '4px 8px',
+    borderRadius: 20,
+    background:
+      'rgba(250,204,21,.12)',
+    border:
+      '1px solid rgba(250,204,21,.3)',
+    color: '#fde047',
     fontSize: 11,
-    fontWeight: 700,
-  },
-
-  sub: {
-    borderTop: '1px solid #292929',
-    marginTop: 13,
-    paddingTop: 13,
-    color: '#ffc107',
-  },
-
-  gold: {
-    padding: '8px 11px',
-    background: '#ffc107',
-    color: '#000',
-    border: 0,
-    borderRadius: 7,
-    cursor: 'pointer',
     fontWeight: 800,
   },
 
-  orange: {
-    padding: '8px 11px',
-    background: '#ff9800',
-    color: '#000',
-    border: 0,
-    borderRadius: 7,
-    cursor: 'pointer',
-    fontWeight: 800,
+  smallBadge: {
+    padding: '4px 8px',
+    borderRadius: 20,
+    background: '#1e293b',
+    fontSize: 12,
   },
 
-  purple: {
-    padding: '8px 11px',
-    background: '#9c27b0',
-    color: '#fff',
-    border: 0,
-    borderRadius: 7,
-    cursor: 'pointer',
-    fontWeight: 800,
-  },
-
-  titleCard: {
+  actions: {
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 10,
+    gap: 6,
     flexWrap: 'wrap',
-    background: '#1b1b1b',
-    border: '1px solid #2b2b2b',
-    borderRadius: 12,
-    padding: 12,
+  },
+
+  primaryButtonSmall: {
+    border: 0,
+    borderRadius: 9,
+    padding: '8px 11px',
+    background:
+      'linear-gradient(135deg,#e50914,#ff4050)',
+    color: '#fff',
+    cursor: 'pointer',
+    fontWeight: 700,
+    fontSize: 12,
+  },
+
+  secondaryButtonSmall: {
+    border: '1px solid #334155',
+    borderRadius: 9,
+    padding: '8px 11px',
+    background: '#1e293b',
+    color: '#fff',
+    cursor: 'pointer',
+    fontWeight: 700,
+    fontSize: 12,
+  },
+
+  warningButton: {
+    border: '1px solid rgba(245,158,11,.3)',
+    borderRadius: 9,
+    padding: '8px 11px',
+    background: 'rgba(245,158,11,.1)',
+    color: '#fbbf24',
+    cursor: 'pointer',
+    fontWeight: 700,
+    fontSize: 12,
+  },
+
+  dangerButtonSmall: {
+    border: '1px solid rgba(239,68,68,.3)',
+    borderRadius: 9,
+    padding: '8px 11px',
+    background: 'rgba(239,68,68,.1)',
+    color: '#f87171',
+    cursor: 'pointer',
+    fontWeight: 700,
+    fontSize: 12,
+  },
+
+  badgeActiveButton: {
+    border: '1px solid rgba(34,197,94,.3)',
+    borderRadius: 9,
+    padding: '8px 11px',
+    background: 'rgba(34,197,94,.1)',
+    color: '#86efac',
+    cursor: 'pointer',
+    fontWeight: 700,
+    fontSize: 12,
+  },
+
+  contentGrid: {
+    display: 'grid',
+    gridTemplateColumns:
+      'repeat(auto-fill,minmax(280px,1fr))',
+    gap: 14,
+  },
+
+  contentCard: {
+    background: '#0f172a',
+    border: '1px solid #1e293b',
+    borderRadius: 18,
+    overflow: 'hidden',
   },
 
   poster: {
-    width: 44,
-    height: 60,
+    width: '100%',
+    height: 230,
     objectFit: 'cover',
-    borderRadius: 6,
+    display: 'block',
   },
 
-  delete: {
-    padding: '8px 11px',
-    background: '#d9534f',
-    color: '#fff',
-    border: 0,
-    borderRadius: 7,
-    cursor: 'pointer',
+  posterFallback: {
+    width: '100%',
+    height: 230,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: '#1e293b',
+    fontSize: 45,
+  },
+
+  contentInfo: {
+    padding: 15,
+  },
+
+  contentTitle: {
+    fontWeight: 900,
+    fontSize: 16,
+    marginBottom: 5,
+  },
+
+  contentId: {
+    color: '#64748b',
+    fontSize: 11,
+    marginBottom: 10,
+  },
+
+  contentBadges: {
+    display: 'flex',
+    gap: 6,
+    flexWrap: 'wrap',
+    marginBottom: 12,
+  },
+
+  hiddenBadge: {
+    padding: '4px 8px',
+    borderRadius: 20,
+    background: 'rgba(148,163,184,.1)',
+    color: '#cbd5e1',
+    fontSize: 11,
+  },
+
+  empty: {
+    minHeight: 240,
+    border: '1px dashed #334155',
+    borderRadius: 18,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#64748b',
+    textAlign: 'center',
+    padding: 20,
+  },
+
+  emptyIcon: {
+    fontSize: 38,
+    marginBottom: 12,
   },
 
   logs: {
-    background: '#080808',
-    padding: 14,
-    borderRadius: 9,
-    minHeight: 250,
-    maxHeight: 400,
-    overflow: 'auto',
-    fontFamily: 'monospace',
-    fontSize: 11,
-    color: '#00ff00',
+    display: 'grid',
+    gap: 8,
+  },
+
+  log: {
+    background: '#0f172a',
+    border: '1px solid #1e293b',
+    borderRadius: 10,
+    padding: 12,
+    color: '#cbd5e1',
+  },
+
+  spinner: {
+    fontSize: 40,
+    marginBottom: 15,
   },
 };
