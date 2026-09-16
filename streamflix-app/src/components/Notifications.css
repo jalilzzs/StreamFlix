@@ -1,6 +1,6 @@
 /* =========================================================
    STREAMFLIX NOTIFICATIONS
-   Isolated from Navbar.css
+   Completely isolated from Navbar.css
    ========================================================= */
 
 .sf-notification-wrap{
@@ -11,22 +11,25 @@
   width:38px;
   height:38px;
   flex:0 0 38px;
+  margin:0;
+  padding:0;
   z-index:120;
 }
 
-/* =========================
-   BUTTON
-   ========================= */
+/* Notification button */
 
 .sf-notification-btn{
   position:relative;
+
   width:38px;
   height:38px;
-  padding:0;
-  margin:0;
 
-  border-radius:50%;
+  margin:0;
+  padding:0;
+
   border:1px solid var(--border);
+  border-radius:50%;
+
   background:var(--panel);
   color:var(--muted);
 
@@ -36,58 +39,56 @@
 
   cursor:pointer;
 
-  appearance:none;
-  -webkit-appearance:none;
+  box-sizing:border-box;
+  flex:none;
 
   transition:
     color .2s ease,
     border-color .2s ease,
     background .2s ease,
     transform .15s ease;
-
-  box-sizing:border-box;
 }
 
-.sf-notification-btn:hover{
+.sf-notification-btn:hover,
+.sf-notification-btn[aria-expanded="true"]{
   color:var(--gold);
   border-color:var(--gold-dim);
-  background:var(--panel-raised);
+  background:var(--panel);
 }
 
 .sf-notification-btn:active{
-  transform:scale(.94);
+  transform:scale(.95);
 }
 
 .sf-notification-btn svg{
-  display:block;
   width:17px;
   height:17px;
+  display:block;
   flex:none;
 }
 
-/* =========================
-   BADGE
-   ========================= */
+/* Badge */
 
 .sf-notification-badge{
   position:absolute;
+
   top:-3px;
   right:-3px;
 
   min-width:16px;
   height:16px;
+
   padding:0 4px;
 
-  display:flex;
-  align-items:center;
-  justify-content:center;
-
   border-radius:999px;
+  border:2px solid var(--bg);
 
   background:var(--gold);
   color:#1a1608;
 
-  border:2px solid var(--bg);
+  display:flex;
+  align-items:center;
+  justify-content:center;
 
   font-family:Arial,sans-serif;
   font-size:9px;
@@ -98,9 +99,7 @@
   pointer-events:none;
 }
 
-/* =========================
-   OVERLAY
-   ========================= */
+/* Invisible click-away layer */
 
 .sf-notification-overlay{
   position:fixed;
@@ -108,12 +107,10 @@
 
   background:transparent;
 
-  z-index:119;
+  z-index:9998;
 }
 
-/* =========================
-   DROPDOWN
-   ========================= */
+/* Dropdown */
 
 .sf-notification-menu{
   position:absolute;
@@ -125,24 +122,25 @@
   max-width:calc(100vw - 24px);
 
   background:var(--panel);
+  color:var(--text);
 
   border:1px solid var(--border);
   border-radius:12px;
 
   overflow:hidden;
 
+  box-sizing:border-box;
+
+  z-index:9999;
+
   box-shadow:
     0 18px 45px rgba(0,0,0,.35),
     0 4px 14px rgba(0,0,0,.18);
 
-  z-index:121;
-
-  box-sizing:border-box;
-
-  animation:sfNotificationMenuIn .15s ease-out;
+  animation:sf-notification-open .15s ease-out;
 }
 
-@keyframes sfNotificationMenuIn{
+@keyframes sf-notification-open{
   from{
     opacity:0;
     transform:translateY(-5px);
@@ -154,31 +152,18 @@
   }
 }
 
-/* RTL */
-
-[dir="rtl"] .sf-notification-menu{
-  right:auto;
-  left:0;
-}
-
-/* =========================
-   HEADER
-   ========================= */
+/* Header */
 
 .sf-notification-head{
-  min-height:58px;
-
-  padding:12px 14px;
-
   display:flex;
   align-items:center;
   justify-content:space-between;
 
   gap:12px;
 
-  border-bottom:1px solid var(--border);
+  padding:13px 14px;
 
-  background:var(--panel);
+  border-bottom:1px solid var(--border);
 
   box-sizing:border-box;
 }
@@ -197,35 +182,30 @@
 
   color:var(--muted);
 
-  font-size:11px;
-  line-height:15px;
+  font-size:10px;
+  line-height:14px;
 }
 
 .sf-notification-readall{
-  padding:6px 8px;
+  margin:0;
+  padding:5px 7px;
 
   border:0;
   border-radius:6px;
 
   background:transparent;
-
   color:var(--gold);
 
-  font-size:11px;
+  font-size:10px;
   font-weight:600;
 
   cursor:pointer;
 
   white-space:nowrap;
-
-  transition:
-    background .18s ease,
-    color .18s ease;
 }
 
 .sf-notification-readall:hover{
   background:var(--panel-raised);
-  color:var(--text);
 }
 
 .sf-notification-readall:disabled{
@@ -233,16 +213,15 @@
   cursor:default;
 }
 
-/* =========================
-   LIST
-   ========================= */
+/* List */
 
 .sf-notification-list{
   width:100%;
+
   max-height:420px;
 
-  overflow-y:auto;
   overflow-x:hidden;
+  overflow-y:auto;
 
   box-sizing:border-box;
 
@@ -263,15 +242,14 @@
   border-radius:10px;
 }
 
-/* =========================
-   ITEM
-   ========================= */
+/* Item */
 
 .sf-notification-item{
   position:relative;
 
   width:100%;
-  min-height:68px;
+
+  min-height:66px;
 
   padding:11px 38px 11px 13px;
 
@@ -280,16 +258,16 @@
 
   gap:10px;
 
-  background:transparent;
-
   border:0;
   border-bottom:1px solid var(--border);
 
+  background:transparent;
+
   color:var(--text);
 
-  cursor:pointer;
-
   box-sizing:border-box;
+
+  cursor:pointer;
 
   transition:background .18s ease;
 }
@@ -310,17 +288,13 @@
   background:rgba(212,168,67,.08);
 }
 
-/* =========================
-   ICON
-   ========================= */
+/* Item icon */
 
 .sf-notification-icon{
   width:32px;
   height:32px;
 
   min-width:32px;
-
-  margin-top:1px;
 
   display:flex;
   align-items:center;
@@ -329,36 +303,30 @@
   border-radius:50%;
 
   background:var(--panel-raised);
-
   border:1px solid var(--border);
 
   font-size:15px;
-
   line-height:1;
 
   box-sizing:border-box;
 }
 
-/* =========================
-   CONTENT
-   ========================= */
+/* Content */
 
 .sf-notification-content{
   min-width:0;
   flex:1;
 
-  padding:0;
-
   overflow:hidden;
 }
 
 .sf-notification-title-row{
-  min-width:0;
-
   display:flex;
   align-items:center;
 
   gap:6px;
+
+  min-width:0;
 }
 
 .sf-notification-dot{
@@ -370,8 +338,6 @@
   border-radius:50%;
 
   background:var(--gold);
-
-  display:block;
 }
 
 .sf-notification-item-title{
@@ -384,9 +350,9 @@
 
   line-height:17px;
 
-  white-space:nowrap;
   overflow:hidden;
   text-overflow:ellipsis;
+  white-space:nowrap;
 }
 
 .sf-notification-message{
@@ -402,7 +368,6 @@
   -webkit-line-clamp:2;
 
   overflow:hidden;
-
   word-break:break-word;
 }
 
@@ -417,18 +382,16 @@
   line-height:13px;
 }
 
-/* =========================
-   DELETE
-   ========================= */
+/* Delete */
 
 .sf-notification-delete{
   position:absolute;
 
   top:50%;
-  right:8px;
+  right:7px;
 
-  width:25px;
-  height:25px;
+  width:24px;
+  height:24px;
 
   padding:0;
 
@@ -442,12 +405,9 @@
   border-radius:6px;
 
   background:transparent;
-
   color:var(--muted);
 
-  font-size:18px;
-  font-weight:300;
-
+  font-size:17px;
   line-height:1;
 
   cursor:pointer;
@@ -455,9 +415,9 @@
   opacity:0;
 
   transition:
-    opacity .18s ease,
-    color .18s ease,
-    background .18s ease;
+    opacity .15s ease,
+    color .15s ease,
+    background .15s ease;
 }
 
 .sf-notification-item:hover .sf-notification-delete{
@@ -469,12 +429,10 @@
   background:rgba(239,107,107,.1);
 }
 
-/* =========================
-   LOADING / EMPTY
-   ========================= */
+/* Loading / empty */
 
 .sf-notification-state{
-  min-height:145px;
+  min-height:140px;
 
   padding:25px 20px;
 
@@ -490,9 +448,13 @@
   box-sizing:border-box;
 }
 
-.sf-notification-state strong{
-  margin-top:8px;
+.sf-notification-empty-icon{
+  margin-bottom:8px;
 
+  font-size:28px;
+}
+
+.sf-notification-state strong{
   color:var(--text);
 
   font-size:13px;
@@ -502,29 +464,12 @@
 .sf-notification-state span{
   margin-top:4px;
 
+  color:var(--muted);
+
   font-size:11px;
 }
 
-.sf-notification-empty-icon{
-  width:38px;
-  height:38px;
-
-  display:flex;
-  align-items:center;
-  justify-content:center;
-
-  border-radius:50%;
-
-  background:var(--panel-raised);
-
-  border:1px solid var(--border);
-
-  font-size:16px;
-}
-
-/* =========================
-   TABLET
-   ========================= */
+/* Tablet */
 
 @media(max-width:700px){
 
@@ -538,25 +483,11 @@
     width:36px;
     height:36px;
   }
-
-  .sf-notification-menu{
-    width:350px;
-    max-width:calc(100vw - 20px);
-  }
 }
 
-/* =========================
-   MOBILE
-   ========================= */
+/* Mobile */
 
 @media(max-width:480px){
-
-  /*
-    Important:
-    Navbar.css hides .icon-btn on mobile.
-    Notifications has its own isolated class,
-    therefore it stays visible beside the avatar.
-  */
 
   .sf-notification-wrap{
     width:35px;
@@ -569,25 +500,23 @@
     height:35px;
   }
 
+  /*
+    Navbar.css hides only .icon-btn on phones.
+    Notifications therefore stays visible.
+  */
+
   .sf-notification-menu{
     position:fixed;
 
-    top:58px;
+    top:59px;
     right:10px;
-
-    left:auto;
 
     width:calc(100vw - 20px);
     max-width:none;
 
-    max-height:calc(100vh - 72px);
+    max-height:calc(100vh - 75px);
 
     border-radius:12px;
-  }
-
-  [dir="rtl"] .sf-notification-menu{
-    right:auto;
-    left:10px;
   }
 
   .sf-notification-list{
@@ -599,9 +528,7 @@
   }
 }
 
-/* =========================
-   VERY SMALL PHONES
-   ========================= */
+/* Very small phones */
 
 @media(max-width:360px){
 
@@ -616,31 +543,10 @@
     height:33px;
   }
 
-  .sf-notification-btn svg{
-    width:16px;
-    height:16px;
-  }
-
   .sf-notification-menu{
-    top:55px;
+    top:56px;
     right:8px;
 
     width:calc(100vw - 16px);
-  }
-
-  [dir="rtl"] .sf-notification-menu{
-    right:auto;
-    left:8px;
-  }
-
-  .sf-notification-item{
-    padding-left:11px;
-    padding-right:36px;
-  }
-
-  .sf-notification-icon{
-    width:30px;
-    height:30px;
-    min-width:30px;
   }
 }
