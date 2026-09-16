@@ -111,8 +111,7 @@ function getVidlinkEpisodeUrl(
 function getYapgridMovieUrl(tmdbId) {
   if (!tmdbId) return null;
 
-  return `${YAPGRID_BASE_URL}/embed/movie/${encodeURIComponent(
-    tmdbId
+  return `${YAPGRID_BASE_URL}/embed/movie/${encodeURIComponent(tmdbId)}?server=x`;
   )}`;
 }
 
@@ -129,9 +128,8 @@ function getYapgridEpisodeUrl(
     season
   )}/${encodeURIComponent(
     episode
-  )}`;
+  )}?server=x`;
 }
-
 /* =========================================================
    COMPONENT
    ========================================================= */
@@ -709,39 +707,6 @@ export default function VideoPlayer({
     currentServer?.url || '',
   ].join('-');
 
-  /* =========================================================
-     YAPGRID POPUP PROTECTION
-     ========================================================= */
-
-  const isYapgrid =
-    currentServer?.provider ===
-    'YapGrid';
-
-  /*
-   * YapGrid is external.
-   *
-   * We cannot remove HTML/ads that are rendered
-   * inside YapGrid itself because the iframe is
-   * cross-origin.
-   *
-   * But sandbox without "allow-popups" prevents
-   * the iframe from opening popup windows.
-   *
-   * We keep scripts/forms/media functionality
-   * enabled so the actual player can continue
-   * working.
-   */
-
-  const yapgridSandbox =
-    isYapgrid
-      ? [
-          'allow-scripts',
-          'allow-same-origin',
-          'allow-forms',
-          'allow-presentation',
-        ].join(' ')
-      : undefined;
-
   return (
     <div
       style={{
@@ -786,9 +751,6 @@ export default function VideoPlayer({
             allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
             allowFullScreen
             referrerPolicy="no-referrer"
-            sandbox={
-              yapgridSandbox
-            }
             title={`${currentServer.provider} External Player`}
           />
         ) : (
