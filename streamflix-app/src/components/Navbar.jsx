@@ -88,10 +88,8 @@ export default function Navbar() {
             </svg>
           </button>
 
-          {/* Notifications */}
           {user && <Notifications />}
 
-          {/* Profile */}
           <button
             className={`avatar ${isPremium ? 'vip' : ''}`}
             onClick={() => navigate('/settings')}
