@@ -111,7 +111,6 @@ function getYapgridMovieUrl(tmdbId) {
   if (!tmdbId) return null;
 
   return `${YAPGRID_BASE_URL}/embed/movie/${encodeURIComponent(tmdbId)}?server=x`;
-  )}`;
 }
 
 function getYapgridEpisodeUrl(
