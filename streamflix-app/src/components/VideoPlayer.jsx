@@ -11,28 +11,98 @@ import {
   sendMessage,
 } from '../lib/api';
 
-const STREAMSRC_BASE_URL =
-  'https://streamsrc.cc';
+/* =========================================================
+   VIDEO SOURCES
+   ========================================================= */
 
-function getStreamSrcMovieUrl(
-  tmdbId
-) {
+const VIDSRC_BASE_URL =
+  'https://vidsrc.me';
+
+const STELLAR_BASE_URL =
+  'https://stellar.rip';
+
+const VIDLINK_BASE_URL =
+  'https://vidlink.pro';
+
+/* =========================================================
+   URL BUILDERS
+   ========================================================= */
+
+function getVidsrcMovieUrl(tmdbId) {
   if (!tmdbId) return null;
 
-  return `${STREAMSRC_BASE_URL}/watch/movie/tmdbid=${encodeURIComponent(
+  return `${VIDSRC_BASE_URL}/embed/movie?tmdb=${encodeURIComponent(
     tmdbId
   )}`;
 }
 
-function getStreamSrcSeriesUrl(
-  tmdbId
+function getVidsrcEpisodeUrl(
+  tmdbId,
+  season,
+  episode
 ) {
   if (!tmdbId) return null;
 
-  return `${STREAMSRC_BASE_URL}/watch/series/tmdbid=${encodeURIComponent(
+  return `${VIDSRC_BASE_URL}/embed/tv?tmdb=${encodeURIComponent(
+    tmdbId
+  )}&season=${encodeURIComponent(
+    season
+  )}&episode=${encodeURIComponent(
+    episode
+  )}`;
+}
+
+function getStellarMovieUrl(tmdbId) {
+  if (!tmdbId) return null;
+
+  return `${STELLAR_BASE_URL}/en/watch/embed/movie/${encodeURIComponent(
     tmdbId
   )}`;
 }
+
+function getStellarEpisodeUrl(
+  tmdbId,
+  season,
+  episode
+) {
+  if (!tmdbId) return null;
+
+  return `${STELLAR_BASE_URL}/en/watch/embed/tv/${encodeURIComponent(
+    tmdbId
+  )}-${encodeURIComponent(
+    season
+  )}-${encodeURIComponent(
+    episode
+  )}`;
+}
+
+function getVidlinkMovieUrl(tmdbId) {
+  if (!tmdbId) return null;
+
+  return `${VIDLINK_BASE_URL}/movie/${encodeURIComponent(
+    tmdbId
+  )}`;
+}
+
+function getVidlinkEpisodeUrl(
+  tmdbId,
+  season,
+  episode
+) {
+  if (!tmdbId) return null;
+
+  return `${VIDLINK_BASE_URL}/tv/${encodeURIComponent(
+    tmdbId
+  )}/${encodeURIComponent(
+    season
+  )}/${encodeURIComponent(
+    episode
+  )}`;
+}
+
+/* =========================================================
+   COMPONENT
+   ========================================================= */
 
 export default function VideoPlayer({
   tmdbId,
@@ -76,11 +146,19 @@ export default function VideoPlayer({
   const [error, setError] =
     useState('');
 
+  /* =========================================================
+     REAL TMDB ID
+     ========================================================= */
+
   const realTmdb =
     tmdbId ||
     title?.tmdb_id ||
     title?.tmdbId ||
     null;
+
+  /* =========================================================
+     CONTENT TYPE
+     ========================================================= */
 
   const contentType =
     type === 'series' ||
@@ -89,6 +167,10 @@ export default function VideoPlayer({
     title?.type === 'tv'
       ? 'tv'
       : 'movie';
+
+  /* =========================================================
+     EPISODE DATA
+     ========================================================= */
 
   const currentEpisodeId =
     episodeId ||
@@ -109,103 +191,114 @@ export default function VideoPlayer({
         1
     );
 
-  /*
-   * الحلقات تأتي من TitleDetail
-   * داخل current_episode_stream_urls.
-   */
-  const episodeStreamUrls =
-    title?.current_episode_stream_urls ||
-    title?.stream_urls ||
-    {};
+  /* =========================================================
+     SERVER URLS
+     
+     IMPORTANT:
+     We intentionally DO NOT use old database URLs here.
+     
+     This prevents old StreamSrc links from appearing again.
+     Every server is generated live.
+     ========================================================= */
 
-  const databaseServer1 =
-    episodeStreamUrls &&
-    typeof episodeStreamUrls ===
-      'object'
-      ? (
-          episodeStreamUrls.server1 ||
-          episodeStreamUrls.stelar ||
-          episodeStreamUrls.stelar_rip ||
-          null
-        )
-      : null;
+  const server1Url = useMemo(() => {
+    if (!realTmdb) {
+      return null;
+    }
 
-  const databaseServer2 =
-    episodeStreamUrls &&
-    typeof episodeStreamUrls ===
-      'object'
-      ? (
-          episodeStreamUrls.server2 ||
-          episodeStreamUrls.streamsrc ||
-          null
-        )
-      : null;
-
-  /*
-   * Server 1:
-   *
-   * للمسلسل نستعمل رابط الحلقة المخزن.
-   * للفيلم نستعمل titles.url.
-   */
-  const server1Url =
-    databaseServer1 ||
-    title?.url ||
-    null;
-
-  /*
-   * Server 2:
-   *
-   * إذا عندنا رابط مخزن في episode
-   * نستعمله.
-   *
-   * وإلا نستعمل الصيغة الموثقة
-   * الخاصة بالفيلم/المسلسل.
-   */
-  const generatedStreamSrcUrl =
-    useMemo(() => {
-      if (!realTmdb) {
-        return null;
-      }
-
-      if (
-        contentType === 'movie'
-      ) {
-        return getStreamSrcMovieUrl(
-          realTmdb
-        );
-      }
-
-      return getStreamSrcSeriesUrl(
+    if (contentType === 'movie') {
+      return getVidsrcMovieUrl(
         realTmdb
       );
-    }, [
-      realTmdb,
-      contentType,
-    ]);
+    }
 
-  const server2Url =
-    databaseServer2 ||
-    generatedStreamSrcUrl ||
-    null;
+    return getVidsrcEpisodeUrl(
+      realTmdb,
+      currentSeason,
+      currentEpisodeNumber
+    );
+  }, [
+    realTmdb,
+    contentType,
+    currentSeason,
+    currentEpisodeNumber,
+  ]);
+
+  const server2Url = useMemo(() => {
+    if (!realTmdb) {
+      return null;
+    }
+
+    if (contentType === 'movie') {
+      return getStellarMovieUrl(
+        realTmdb
+      );
+    }
+
+    return getStellarEpisodeUrl(
+      realTmdb,
+      currentSeason,
+      currentEpisodeNumber
+    );
+  }, [
+    realTmdb,
+    contentType,
+    currentSeason,
+    currentEpisodeNumber,
+  ]);
+
+  const server3Url = useMemo(() => {
+    if (!realTmdb) {
+      return null;
+    }
+
+    if (contentType === 'movie') {
+      return getVidlinkMovieUrl(
+        realTmdb
+      );
+    }
+
+    return getVidlinkEpisodeUrl(
+      realTmdb,
+      currentSeason,
+      currentEpisodeNumber
+    );
+  }, [
+    realTmdb,
+    contentType,
+    currentSeason,
+    currentEpisodeNumber,
+  ]);
+
+  /* =========================================================
+     SERVERS
+     ========================================================= */
 
   const servers = useMemo(
     () => [
       {
         id: 0,
         name: 'سيرفر 1',
-        provider: 'Stellar',
+        provider: 'Vidsrc',
         url: server1Url,
       },
       {
         id: 1,
         name: 'سيرفر 2',
-        provider: 'StreamSrc',
+        provider: 'Stellar',
         url: server2Url,
+      },
+      {
+        id: 2,
+        name: 'سيرفر 3',
+        provider: 'VidLink',
+        url: server3Url,
       },
     ],
     [
       server1Url,
       server2Url,
+      server3Url,
     ]
   );
 
@@ -213,32 +306,39 @@ export default function VideoPlayer({
     servers[selectedServer] ||
     servers[0];
 
-  useEffect(() => {
-    /*
-     * إذا السيرفر المحدد ما عندوش URL
-     * نحاول الانتقال للسيرفر الآخر.
-     */
-    if (
-      !currentServer?.url
-    ) {
-      const otherIndex =
-        selectedServer === 0
-          ? 1
-          : 0;
+  /* =========================================================
+     AUTO FALLBACK
+     ========================================================= */
 
-      if (
-        servers[otherIndex]?.url
-      ) {
-        setSelectedServer(
-          otherIndex
-        );
-      }
+  useEffect(() => {
+    if (currentServer?.url) {
+      return;
+    }
+
+    const firstAvailable =
+      servers.find(
+        (server) =>
+          Boolean(server.url)
+      );
+
+    if (
+      firstAvailable &&
+      firstAvailable.id !==
+        selectedServer
+    ) {
+      setSelectedServer(
+        firstAvailable.id
+      );
     }
   }, [
     currentServer,
     selectedServer,
     servers,
   ]);
+
+  /* =========================================================
+     RESET ERROR
+     ========================================================= */
 
   useEffect(() => {
     setError('');
@@ -249,6 +349,10 @@ export default function VideoPlayer({
     currentEpisodeNumber,
     currentEpisodeId,
   ]);
+
+  /* =========================================================
+     LOAD FRIENDS
+     ========================================================= */
 
   useEffect(() => {
     if (
@@ -299,6 +403,10 @@ export default function VideoPlayer({
     user?.id,
   ]);
 
+  /* =========================================================
+     FRIEND SELECTION
+     ========================================================= */
+
   function toggleFriend(
     friendId
   ) {
@@ -322,6 +430,10 @@ export default function VideoPlayer({
       }
     );
   }
+
+  /* =========================================================
+     WATCH PARTY
+     ========================================================= */
 
   async function createParty() {
     if (!user?.id) {
@@ -419,6 +531,10 @@ export default function VideoPlayer({
         server:
           selectedServer,
 
+        server_provider:
+          currentServer?.provider ||
+          null,
+
         watch_party: true,
       };
 
@@ -426,6 +542,7 @@ export default function VideoPlayer({
        * نبقي kind = title_share
        * للتوافق مع messages.kind.
        */
+
       await Promise.all(
         selectedFriends.map(
           (friendId) =>
@@ -468,6 +585,10 @@ export default function VideoPlayer({
     }
   }
 
+  /* =========================================================
+     NO TMDB
+     ========================================================= */
+
   if (!realTmdb) {
     return (
       <div
@@ -496,8 +617,14 @@ export default function VideoPlayer({
     );
   }
 
+  /* =========================================================
+     PLAYER KEY
+     ========================================================= */
+
   const playerKey = [
     selectedServer,
+    currentServer?.provider ||
+      '',
     realTmdb,
     contentType,
     currentSeason,
@@ -518,7 +645,9 @@ export default function VideoPlayer({
         position: 'relative',
       }}
     >
-      {/* PLAYER */}
+      {/* =====================================================
+          PLAYER
+          ===================================================== */}
 
       <div
         style={{
@@ -548,18 +677,12 @@ export default function VideoPlayer({
             allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
             allowFullScreen
             referrerPolicy="no-referrer"
-            title={
-              currentServer.provider ===
-              'Stellar'
-                ? 'Stellar External Player'
-                : 'StreamSrc External Player'
-            }
+            title={`${currentServer.provider} External Player`}
           />
         ) : (
           <div
             style={{
-              minHeight:
-                '420px',
+              minHeight: '420px',
               display: 'flex',
               flexDirection:
                 'column',
@@ -570,14 +693,12 @@ export default function VideoPlayer({
               gap: '10px',
               color: '#aaa',
               padding: '20px',
-              textAlign:
-                'center',
+              textAlign: 'center',
             }}
           >
             <div
               style={{
-                fontSize:
-                  '30px',
+                fontSize: '30px',
               }}
             >
               🎬
@@ -589,12 +710,9 @@ export default function VideoPlayer({
 
             <div
               style={{
-                fontSize:
-                  '11px',
-                  color:
-                    '#666',
-                direction:
-                  'ltr',
+                fontSize: '11px',
+                color: '#666',
+                direction: 'ltr',
               }}
             >
               {currentServer?.provider ||
@@ -604,32 +722,28 @@ export default function VideoPlayer({
         )}
       </div>
 
-      {/* SERVERS + SHARE */}
+      {/* =====================================================
+          SERVERS + SHARE
+          ===================================================== */}
 
       <div
         style={{
-          padding:
-            '12px 15px',
-          background:
-            '#111',
+          padding: '12px 15px',
+          background: '#111',
           borderTop:
             '1px solid #222',
           display: 'flex',
           justifyContent:
             'center',
-          alignItems:
-            'center',
+          alignItems: 'center',
           gap: '10px',
-          flexWrap:
-            'wrap',
+          flexWrap: 'wrap',
         }}
       >
         <span
           style={{
-            fontSize:
-              '13px',
-            color:
-              '#aaa',
+            fontSize: '13px',
+            color: '#aaa',
           }}
         >
           السيرفرات:
@@ -664,11 +778,13 @@ export default function VideoPlayer({
                     server.id
                       ? '1px solid #d4af37'
                       : '1px solid #333',
+
                   background:
                     selectedServer ===
                     server.id
                       ? '#d4af37'
                       : '#181818',
+
                   color:
                     selectedServer ===
                     server.id
@@ -676,18 +792,24 @@ export default function VideoPlayer({
                       : available
                         ? '#ddd'
                         : '#555',
+
                   padding:
                     '8px 14px',
+
                   borderRadius:
                     '8px',
+
                   cursor:
                     available
                       ? 'pointer'
                       : 'not-allowed',
+
                   fontSize:
                     '12px',
+
                   fontWeight:
                     700,
+
                   opacity:
                     available
                       ? 1
@@ -711,8 +833,7 @@ export default function VideoPlayer({
               '1px solid #d4af37',
             background:
               'linear-gradient(135deg,#d4af37,#b89222)',
-            color:
-              '#111',
+            color: '#111',
             padding:
               '8px 16px',
             borderRadius:
@@ -729,7 +850,9 @@ export default function VideoPlayer({
         </button>
       </div>
 
-      {/* SHARE MODAL */}
+      {/* =====================================================
+          SHARE MODAL
+          ===================================================== */}
 
       {shareOpen && (
         <div
@@ -738,21 +861,17 @@ export default function VideoPlayer({
             setShareOpen(false)
           }
           style={{
-            position:
-              'fixed',
+            position: 'fixed',
             inset: 0,
-            zIndex:
-              99999,
+            zIndex: 99999,
             background:
               'rgba(0,0,0,.75)',
-            display:
-              'flex',
+            display: 'flex',
             alignItems:
               'center',
             justifyContent:
               'center',
-            padding:
-              '20px',
+            padding: '20px',
           }}
         >
           <div
@@ -762,22 +881,15 @@ export default function VideoPlayer({
               event.stopPropagation()
             }
             style={{
-              width:
-                '100%',
-              maxWidth:
-                '470px',
-              maxHeight:
-                '85vh',
-              overflowY:
-                'auto',
-              background:
-                '#151515',
+              width: '100%',
+              maxWidth: '470px',
+              maxHeight: '85vh',
+              overflowY: 'auto',
+              background: '#151515',
               border:
                 '1px solid rgba(212,175,55,.25)',
-              borderRadius:
-                '18px',
-              padding:
-                '20px',
+              borderRadius: '18px',
+              padding: '20px',
               boxShadow:
                 '0 25px 80px rgba(0,0,0,.55)',
             }}
@@ -786,8 +898,7 @@ export default function VideoPlayer({
 
             <div
               style={{
-                display:
-                  'flex',
+                display: 'flex',
                 alignItems:
                   'center',
                 justifyContent:
@@ -817,8 +928,7 @@ export default function VideoPlayer({
                 <h3
                   style={{
                     margin: 0,
-                    color:
-                      '#fff',
+                    color: '#fff',
                     fontSize:
                       '20px',
                   }}
@@ -838,18 +948,15 @@ export default function VideoPlayer({
                   )
                 }
                 style={{
-                  width:
-                    '34px',
-                  height:
-                    '34px',
+                  width: '34px',
+                  height: '34px',
                   borderRadius:
                     '50%',
                   border:
                     '1px solid #333',
                   background:
                     '#222',
-                  color:
-                    '#fff',
+                  color: '#fff',
                   cursor:
                     'pointer',
                   fontSize:
@@ -864,12 +971,9 @@ export default function VideoPlayer({
 
             <div
               style={{
-                display:
-                  'flex',
-                gap:
-                  '12px',
-                padding:
-                  '12px',
+                display: 'flex',
+                gap: '12px',
+                padding: '12px',
                 borderRadius:
                   '13px',
                 background:
@@ -893,10 +997,8 @@ export default function VideoPlayer({
                   }
                   alt=""
                   style={{
-                    width:
-                      '58px',
-                    height:
-                      '82px',
+                    width: '58px',
+                    height: '82px',
                     objectFit:
                       'cover',
                     borderRadius:
@@ -906,16 +1008,13 @@ export default function VideoPlayer({
               ) : (
                 <div
                   style={{
-                    width:
-                      '58px',
-                    height:
-                      '82px',
+                    width: '58px',
+                    height: '82px',
                     borderRadius:
                       '8px',
                     background:
                       '#222',
-                    display:
-                      'flex',
+                    display: 'flex',
                     alignItems:
                       'center',
                     justifyContent:
@@ -936,14 +1035,12 @@ export default function VideoPlayer({
                     'column',
                   justifyContent:
                     'center',
-                  gap:
-                    '5px',
+                  gap: '5px',
                 }}
               >
                 <strong
                   style={{
-                    color:
-                      '#fff',
+                    color: '#fff',
                     fontSize:
                       '15px',
                   }}
@@ -955,8 +1052,7 @@ export default function VideoPlayer({
 
                 <span
                   style={{
-                    color:
-                      '#888',
+                    color: '#888',
                     fontSize:
                       '12px',
                   }}
@@ -965,6 +1061,19 @@ export default function VideoPlayer({
                   'tv'
                     ? `مسلسل • موسم ${currentSeason} • حلقة ${currentEpisodeNumber}`
                     : 'فيلم'}
+                </span>
+
+                <span
+                  style={{
+                    color: '#666',
+                    fontSize:
+                      '10px',
+                    direction:
+                      'ltr',
+                  }}
+                >
+                  {currentServer?.provider ||
+                    ''}
                 </span>
               </div>
             </div>
@@ -998,8 +1107,7 @@ export default function VideoPlayer({
 
             <div
               style={{
-                color:
-                  '#aaa',
+                color: '#aaa',
                 fontSize:
                   '12px',
                 marginBottom:
@@ -1012,12 +1120,10 @@ export default function VideoPlayer({
             {loadingFriends ? (
               <div
                 style={{
-                  padding:
-                    '30px',
+                  padding: '30px',
                   textAlign:
                     'center',
-                  color:
-                    '#888',
+                  color: '#888',
                 }}
               >
                 جاري جلب الأصدقاء...
@@ -1026,12 +1132,10 @@ export default function VideoPlayer({
               0 ? (
               <div
                 style={{
-                  padding:
-                    '25px',
+                  padding: '25px',
                   textAlign:
                     'center',
-                  color:
-                    '#888',
+                  color: '#888',
                   background:
                     '#101010',
                   borderRadius:
@@ -1047,8 +1151,7 @@ export default function VideoPlayer({
                     'flex',
                   flexDirection:
                     'column',
-                  gap:
-                    '7px',
+                  gap: '7px',
                   maxHeight:
                     '300px',
                   overflowY:
@@ -1080,14 +1183,12 @@ export default function VideoPlayer({
                           )
                         }
                         style={{
-                          width:
-                            '100%',
+                          width: '100%',
                           display:
                             'flex',
                           alignItems:
                             'center',
-                          gap:
-                            '10px',
+                          gap: '10px',
                           padding:
                             '10px',
                           borderRadius:
@@ -1100,8 +1201,7 @@ export default function VideoPlayer({
                             selected
                               ? 'rgba(212,175,55,.08)'
                               : '#101010',
-                          color:
-                            '#fff',
+                          color: '#fff',
                           cursor:
                             'pointer',
                           textAlign:
@@ -1214,8 +1314,7 @@ export default function VideoPlayer({
                 createParty
               }
               style={{
-                width:
-                  '100%',
+                width: '100%',
                 marginTop:
                   '15px',
                 padding:
