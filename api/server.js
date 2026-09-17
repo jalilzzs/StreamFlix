@@ -4,48 +4,110 @@ const url = require('url');
 
 const PORT = process.env.PORT || 3000;
 
-function fetchJson(targetUrl) {
+// استدعاء متغير FlareSolverr المربوط لديك في البيئة (أو الرابط الافتراضي)
+const FLARESOLVERR_URL = process.env.FLARESOLVERR_URL || 'https://flaresolverr-latest.onrender.com/v1';
+
+// دالة جلب البيانات مع إمكانية التمرير عبر FlareSolverr لتجاوز الحظر 403
+function fetchJson(targetUrl, useFlareSolverr = false) {
   return new Promise((resolve, reject) => {
-    const parsed = url.parse(targetUrl);
-
-    const options = {
-      hostname: parsed.hostname,
-      port: 443,
-      path: parsed.path,
-      method: 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'application/json'
-      },
-      timeout: 10000
-    };
-
-    const req = https.request(options, (res) => {
-      let rawData = '';
-
-      res.on('data', (chunk) => { rawData += chunk; });
-
-      res.on('end', () => {
-        if (res.statusCode < 200 || res.statusCode >= 300) {
-          return reject(new Error(`HTTP Status: ${res.statusCode}`));
-        }
-
-        try {
-          const parsedData = JSON.parse(rawData);
-          resolve(parsedData);
-        } catch (e) {
-          reject(new Error('فشل تفكيك استجابة JSON'));
-        }
+    if (useFlareSolverr) {
+      // تحويل الطلب عبر FlareSolverr
+      const postData = JSON.stringify({
+        cmd: 'request.get',
+        url: targetUrl,
+        maxTimeout: 60000
       });
-    });
 
-    req.on('error', (err) => reject(err));
-    req.on('timeout', () => {
-      req.destroy();
-      reject(new Error('انتهت مهلة الاتصال'));
-    });
+      const parsedFlare = url.parse(FLARESOLVERR_URL);
+      const isHttps = parsedFlare.protocol === 'https:';
+      const client = isHttps ? https : http;
 
-    req.end();
+      const options = {
+        hostname: parsedFlare.hostname,
+        port: parsedFlare.port || (isHttps ? 443 : 80),
+        path: parsedFlare.path || '/v1',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(postData)
+        },
+        timeout: 65000
+      };
+
+      const req = client.request(options, (res) => {
+        let rawData = '';
+        res.on('data', (chunk) => { rawData += chunk; });
+        res.on('end', () => {
+          try {
+            const parsedData = JSON.parse(rawData);
+            if (parsedData.status === 'ok' && parsedData.solution) {
+              let responseText = parsedData.solution.response;
+
+              // تنظيف الاستجابة واستخراج JSON في حال كانت محاطة بـ HTML
+              if (responseText.includes('<pre>')) {
+                responseText = responseText.split('<pre>')[1].split('</pre>')[0];
+              } else if (responseText.includes('<body>')) {
+                responseText = responseText.replace(/<[^>]*>?/gm, '');
+              }
+
+              resolve(JSON.parse(responseText.trim()));
+            } else {
+              reject(new Error(parsedData.message || 'فشل FlareSolverr في تجاوز الحماية'));
+            }
+          } catch (e) {
+            reject(new Error('فشل تفكيك استجابة JSON عبر FlareSolverr'));
+          }
+        });
+      });
+
+      req.on('error', (err) => reject(err));
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('انتهت مهلة استجابة FlareSolverr'));
+      });
+
+      req.write(postData);
+      req.end();
+
+    } else {
+      // الاتصال المادي العادي
+      const parsed = url.parse(targetUrl);
+      const options = {
+        hostname: parsed.hostname,
+        port: 443,
+        path: parsed.path,
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'application/json'
+        },
+        timeout: 10000
+      };
+
+      const req = https.request(options, (res) => {
+        let rawData = '';
+        res.on('data', (chunk) => { rawData += chunk; });
+        res.on('end', () => {
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            return reject(new Error(`HTTP Status: ${res.statusCode}`));
+          }
+          try {
+            const parsedData = JSON.parse(rawData);
+            resolve(parsedData);
+          } catch (e) {
+            reject(new Error('فشل تفكيك استجابة JSON'));
+          }
+        });
+      });
+
+      req.on('error', (err) => reject(err));
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('انتهت مهلة الاتصال'));
+      });
+
+      req.end();
+    }
   });
 }
 
@@ -69,16 +131,16 @@ async function getImdbId(query, type) {
     // 2. استخدام TVMaze للمسلسلات
     if (type === 'tv' || type === 'series') {
       const tvmazeUrl = `https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(cleanQuery)}`;
-      const tvData = await fetchJson(tvmazeUrl);
+      const tvData = await fetchJson(tvmazeUrl, false);
       if (tvData && tvData.externals && tvData.externals.imdb) {
         return tvData.externals.imdb;
       }
     }
 
-    // 3. استخدام Cinemeta بديل مفتوح بدون API Key
+    // 3. استخدام Cinemeta عبر FlareSolverr لمنع خطأ 403
     const catalogType = (type === 'tv' || type === 'series') ? 'series' : 'movie';
     const searchUrl = `https://v3-cinemeta.strem.fun/catalog/${catalogType}/top/search=${encodeURIComponent(cleanQuery)}.json`;
-    const cinemetaData = await fetchJson(searchUrl);
+    const cinemetaData = await fetchJson(searchUrl, true);
 
     if (cinemetaData && cinemetaData.metas && cinemetaData.metas.length > 0) {
       return cinemetaData.metas[0].id;
@@ -129,12 +191,19 @@ const server = http.createServer(async (req, res) => {
         }));
       }
 
+      // 1. تجربة جلب البيانات عبر Torrentio أولاً بدون FlareSolverr
       let torrentioUrl = `https://torrentio.strem.fun/stream/movie/${imdbId}.json`;
       if (type === 'tv' || type === 'series') {
         torrentioUrl = `https://torrentio.strem.fun/stream/series/${imdbId}:${season}:${episode}.json`;
       }
 
-      const torrentData = await fetchJson(torrentioUrl);
+      let torrentData;
+      try {
+        torrentData = await fetchJson(torrentioUrl, false);
+      } catch (err) {
+        // في حال حظر الطلب المباشر (403/Timeout)، يتم التمرير مباشرة عبر FlareSolverr
+        torrentData = await fetchJson(torrentioUrl, true);
+      }
 
       if (!torrentData.streams || torrentData.streams.length === 0) {
         res.writeHead(200);
