@@ -13,12 +13,12 @@ import {
 } from '../lib/api';
 
 /* =========================================================
-   VIDEO SOURCES & BASE URLS
+   UPDATED VIDEO SOURCES & BASE URLS
    ========================================================= */
 
-const VIDSRC_BASE_URL = 'https://vidsrc.me';
-const VIDBINGE_BASE_URL = 'https://vidbinge.dev';
-const AUTOEMBED_BASE_URL = 'https://autoembed.cc';
+const VIDSRC_BASE_URL = 'https://vidsrc.xyz'; // تم التحديث لنطاق أكثر استقراراً
+const VIDBINGE_BASE_URL = 'https://vidsrc.pro'; // البديل المستقر لـ Vidbinge
+const AUTOEMBED_BASE_URL = 'https://player.autoembed.cc';
 const BACKEND_URL = 'https://streamflix-api-x0ku.onrender.com';
 
 /* =========================================================
@@ -28,12 +28,12 @@ const BACKEND_URL = 'https://streamflix-api-x0ku.onrender.com';
 // 1. Vidsrc
 function getVidsrcMovieUrl(tmdbId) {
   if (!tmdbId) return null;
-  return `${VIDSRC_BASE_URL}/embed/movie?tmdb=${encodeURIComponent(tmdbId)}`;
+  return `${VIDSRC_BASE_URL}/embed/movie/${encodeURIComponent(tmdbId)}`;
 }
 
 function getVidsrcEpisodeUrl(tmdbId, season, episode) {
   if (!tmdbId) return null;
-  return `${VIDSRC_BASE_URL}/embed/tv?tmdb=${encodeURIComponent(tmdbId)}&season=${encodeURIComponent(season)}&episode=${encodeURIComponent(episode)}`;
+  return `${VIDSRC_BASE_URL}/embed/tv/${encodeURIComponent(tmdbId)}/${encodeURIComponent(season)}/${encodeURIComponent(episode)}`;
 }
 
 // 2. Pirate Bay
@@ -50,7 +50,7 @@ function getPirateBayUrl(query, type = 'movie', season = 1, episode = 1) {
   return `${BACKEND_URL}/api/piratebay?${params.toString()}`;
 }
 
-// 3. Vidbinge (بدون إعلانات)
+// 3. Vidbinge / Vidsrc Pro
 function getVidbingeMovieUrl(tmdbId) {
   if (!tmdbId) return null;
   return `${VIDBINGE_BASE_URL}/embed/movie/${encodeURIComponent(tmdbId)}`;
@@ -95,6 +95,10 @@ export default function VideoPlayer({
   const [sharing, setSharing] = useState(false);
   const [error, setError] = useState('');
 
+  // حالة التحكم بالاسم اليدوي لسيرفر Pirate Bay
+  const [customSearchQuery, setCustomSearchQuery] = useState('');
+  const [activePirateQuery, setActivePirateQuery] = useState('');
+
   /* =========================================================
      PREMIUM STATUS
      ========================================================= */
@@ -119,7 +123,13 @@ export default function VideoPlayer({
   const currentSeason = Number(title?.current_season || title?.season || 1);
   const currentEpisodeNumber = Number(title?.current_episode_number || title?.episode_number || 1);
 
-  const contentTitleName = title?.name || title?.title || '';
+  const defaultTitleName = title?.name || title?.title || '';
+
+  // تحديث البحث المبدئي تلقائياً عند تغيير المحتوى
+  useEffect(() => {
+    setCustomSearchQuery(defaultTitleName);
+    setActivePirateQuery(defaultTitleName);
+  }, [defaultTitleName]);
 
   /* =========================================================
      SERVER URL GENERATORS
@@ -133,17 +143,17 @@ export default function VideoPlayer({
       : getVidsrcEpisodeUrl(realTmdb, currentSeason, currentEpisodeNumber);
   }, [realTmdb, contentType, currentSeason, currentEpisodeNumber]);
 
-  // سيرفر 2: Pirate Bay
+  // سيرفر 2: Pirate Bay (يعتمد على البحث اليدوي أو الاسم التلقائي)
   const server2Url = useMemo(() => {
-    if (!contentTitleName) return null;
+    if (!activePirateQuery) return null;
 
     return getPirateBayUrl(
-      contentTitleName,
+      activePirateQuery,
       contentType,
       currentSeason,
       currentEpisodeNumber
     );
-  }, [contentTitleName, contentType, currentSeason, currentEpisodeNumber]);
+  }, [activePirateQuery, contentType, currentSeason, currentEpisodeNumber]);
 
   // سيرفر 3: Vidbinge
   const server3Url = useMemo(() => {
@@ -267,6 +277,13 @@ export default function VideoPlayer({
     }
   }
 
+  const handlePirateSearchSubmit = (e) => {
+    e.preventDefault();
+    if (!customSearchQuery.trim()) return;
+    setActivePirateQuery(customSearchQuery.trim());
+    setSelectedServer(1); // الانتقال لسيرفر Pirate Bay مباشرة
+  };
+
   /* =========================================================
      WATCH PARTY CREATION
      ========================================================= */
@@ -362,7 +379,7 @@ export default function VideoPlayer({
      RENDER
      ========================================================= */
 
-  const playerKey = `${selectedServer}-${currentServer?.provider}-${realTmdb}-${contentType}-${currentSeason}-${currentEpisodeNumber}-${currentEpisodeId || ''}`;
+  const playerKey = `${selectedServer}-${currentServer?.provider}-${realTmdb}-${contentType}-${currentSeason}-${currentEpisodeNumber}-${currentEpisodeId || ''}-${activePirateQuery}`;
 
   return (
     <div style={{ width: '100%', background: '#000', borderRadius: '8px', overflow: 'hidden', color: '#fff', direction: 'rtl', position: 'relative' }}>
@@ -376,7 +393,7 @@ export default function VideoPlayer({
             style={{ width: '100%', height: '420px', border: 'none', background: '#000' }}
             allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
             allowFullScreen
-            referrerPolicy="no-referrer"
+            referrerPolicy="no-referrer-when-downgrade"
             {...(currentServer.useSandbox ? { sandbox: "allow-scripts allow-same-origin allow-forms allow-presentation" } : {})}
             title={`${currentServer.provider} External Player`}
           />
@@ -385,7 +402,7 @@ export default function VideoPlayer({
             <div style={{ fontSize: '40px' }}>🏴‍☠️</div>
             <div style={{ fontSize: '16px', fontWeight: 700, color: '#fff' }}>Pirate Bay Engine</div>
             <div style={{ fontSize: '12px', color: '#888', maxWidth: '350px', lineHeight: 1.5 }}>
-              سيرفر Pirate Bay مجهز للربط مع الباك إند وتوليد الستريم المباشر.
+              يرجى كتابة الاسم الدقيق للفيلم أو المسلسل باللغة الإنجليزية في الخانة أسفله.
             </div>
             {currentServer?.url && (
               <a
@@ -394,7 +411,7 @@ export default function VideoPlayer({
                 rel="noopener noreferrer"
                 style={{ marginTop: '10px', padding: '10px 20px', background: '#d4af37', color: '#111', borderRadius: '8px', textDecoration: 'none', fontWeight: 900, fontSize: '13px' }}
               >
-                بحث في Pirate Bay ↗
+                اختبار رابط الـ API مباشرة ↗
               </a>
             )}
           </div>
@@ -454,6 +471,43 @@ export default function VideoPlayer({
         </button>
       </div>
 
+      {/* PIRATE BAY MANUAL SEARCH INPUT */}
+      <div style={{ padding: '10px 15px', background: '#181818', borderTop: '1px solid #282828', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <form onSubmit={handlePirateSearchSubmit} style={{ display: 'flex', gap: '8px', width: '100%', maxWidth: '500px' }}>
+          <input
+            type="text"
+            value={customSearchQuery}
+            onChange={(e) => setCustomSearchQuery(e.target.value)}
+            placeholder="أدخل اسم الفيلم/المسلسل بالإنجليزية لسيرفر Pirate Bay..."
+            style={{
+              flex: 1,
+              padding: '8px 12px',
+              borderRadius: '6px',
+              border: '1px solid #333',
+              background: '#0d0d0d',
+              color: '#fff',
+              fontSize: '12px',
+              outline: 'none',
+            }}
+          />
+          <button
+            type="submit"
+            style={{
+              padding: '8px 16px',
+              borderRadius: '6px',
+              border: 'none',
+              background: '#d4af37',
+              color: '#111',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+            }}
+          >
+            إرسال وتجربة
+          </button>
+        </form>
+      </div>
+
       {/* VIP LOCK MODAL */}
       {vipModalOpen && (
         <div onClick={() => setVipModalOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 100000, background: 'rgba(0,0,0,.78)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
@@ -463,7 +517,7 @@ export default function VideoPlayer({
             <h3 style={{ margin: '0 0 10px', fontSize: '22px', fontWeight: 900 }}>هذا السيرفر خاص بـ VIP</h3>
             <p style={{ margin: 0, color: '#999', fontSize: '13px', lineHeight: 1.7 }}>متاح فقط للمشتركين في باقة VIP.</p>
             <button type="button" onClick={() => { setVipModalOpen(false); navigate('/subscription'); }} style={{ width: '100%', marginTop: '20px', padding: '13px', border: 'none', borderRadius: '11px', background: 'linear-gradient(135deg,#ffd700,#b8860b)', color: '#171100', fontWeight: 900, cursor: 'pointer', fontSize: '13px' }}>⭐ اشترك في VIP</button>
-            <button type="button" onClick={() => setVipModalOpen(false)} style={{ width: '100%', marginTop: '8px', padding: '11px', border: '1px solid #333', borderRadius: '11px', background: '#171717', color: '#aaa', fontWeight: 700, cursor: 'pointer', fontSize: '12px' }}>إغلاق</button>
+            <button type="button" onClick={() => setVipModalOpen(false)} style={{ width: '100%', marginTop: '8px', padding: '11px', border: '1px solid #333', borderRadius: '11px', background: '#171717', color: '#aaa', fontWeight 700, cursor: 'pointer', fontSize: '12px' }}>إغلاق</button>
           </div>
         </div>
       )}
@@ -474,7 +528,7 @@ export default function VideoPlayer({
           <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: '470px', maxHeight: '85vh', overflowY: 'auto', background: '#151515', border: '1px solid rgba(212,175,55,.25)', borderRadius: '18px', padding: '20px', boxShadow: '0 25px 80px rgba(0,0,0,.55)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
               <div>
-                <div style={{ color: '#d4af37', fontSize: '11px', fontWeight: 900, letterSpacing: '1px', marginBottom: '5px' }}>WATCH PARTY</div>
+                <div style={{ color: '#d4af37', fontSize: '11px', fontWeight 900, letterSpacing: '1px', marginBottom: '5px' }}>WATCH PARTY</div>
                 <h3 style={{ margin: 0, color: '#fff', fontSize: '20px' }}>🎬 مشاركة المشاهدة</h3>
               </div>
               <button type="button" disabled={sharing} onClick={() => setShareOpen(false)} style={{ width: '34px', height: '34px', borderRadius: '50%', border: '1px solid #333', background: '#222', color: '#fff', cursor: 'pointer', fontSize: '20px' }}>×</button>
@@ -487,7 +541,7 @@ export default function VideoPlayer({
                 <div style={{ width: '58px', height: '82px', borderRadius: '8px', background: '#222', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '25px' }}>🎬</div>
               )}
               <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '5px' }}>
-                <strong style={{ color: '#fff', fontSize: '15px' }}>{contentTitleName || 'المحتوى الحالي'}</strong>
+                <strong style={{ color: '#fff', fontSize: '15px' }}>{defaultTitleName || 'المحتوى الحالي'}</strong>
                 <span style={{ color: '#888', fontSize: '12px' }}>{contentType === 'tv' ? `مسلسل • موسم ${currentSeason} • حلقة ${currentEpisodeNumber}` : 'فيلم'}</span>
                 <span style={{ color: '#666', fontSize: '10px', direction: 'ltr' }}>
                   {currentServer?.provider || ''}
@@ -513,7 +567,7 @@ export default function VideoPlayer({
 
                   return (
                     <button key={friend.id} type="button" onClick={() => toggleFriend(friend.id)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '10px', border: selected ? '1px solid #d4af37' : '1px solid #292929', background: selected ? 'rgba(212,175,55,.08)' : '#101010', color: '#fff', cursor: 'pointer', textAlign: 'right' }}>
-                      <div style={{ width: '38px', height: '38px', borderRadius: '50%', overflow: 'hidden', background: '#252525', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#d4af37', fontWeight: 900 }}>
+                      <div style={{ width: '38px', height: '38px', borderRadius: '50%', overflow: 'hidden', background: '#252525', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#d4af37', fontWeight 900 }}>
                         {friend.avatar_url ? (
                           <img src={friend.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : (
@@ -521,7 +575,7 @@ export default function VideoPlayer({
                         )}
                       </div>
                       <span style={{ flex: 1, fontSize: '13px' }}>{name}</span>
-                      <span style={{ width: '23px', height: '23px', borderRadius: '50%', border: selected ? '1px solid #d4af37' : '1px solid #444', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#d4af37', fontWeight: 900 }}>
+                      <span style={{ width: '23px', height: '23px', borderRadius: '50%', border: selected ? '1px solid #d4af37' : '1px solid #444', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#d4af37', fontWeight 900 }}>
                         {selected ? '✓' : ''}
                       </span>
                     </button>
@@ -534,7 +588,7 @@ export default function VideoPlayer({
               type="button"
               disabled={sharing || selectedFriends.length === 0}
               onClick={createParty}
-              style={{ width: '100%', marginTop: '15px', padding: '13px', border: 'none', borderRadius: '10px', background: selectedFriends.length && !sharing ? '#d4af37' : '#333', color: selectedFriends.length && !sharing ? '#111' : '#777', cursor: selectedFriends.length && !sharing ? 'pointer' : 'not-allowed', fontWeight: 900, fontSize: '13px' }}
+              style={{ width: '100%', marginTop: '15px', padding: '13px', border: 'none', borderRadius: '10px', background: selectedFriends.length && !sharing ? '#d4af37' : '#333', color: selectedFriends.length && !sharing ? '#111' : '#777', cursor: selectedFriends.length && !sharing ? 'pointer' : 'not-allowed', fontWeight 900, fontSize: '13px' }}
             >
               {sharing ? 'جاري إرسال الدعوة...' : selectedFriends.length ? `إرسال الدعوة إلى ${selectedFriends.length} صديق` : 'اختر صديقًا أولاً'}
             </button>
