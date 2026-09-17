@@ -49,24 +49,28 @@ function fetchJson(targetUrl) {
   });
 }
 
-// دالة جلب IMDb ID مباشرة وبدون الحاجة لـ API Key محظور
+// دالة جلب IMDb ID مضمونة عبر أكثر من مصدر مفتوح
 async function getImdbId(query, type) {
   try {
-    // 1. تجربة جلب المعرف عبر TVMaze للمسلسلات
-    if (type === 'tv' || type === 'series') {
+    // المصدر الأول: البحث عبر Cinemeta المحدث للسينما
+    const isTv = (type === 'tv' || type === 'series');
+    const catalogType = isTv ? 'series' : 'movie';
+    const searchUrl = `https://v3-cinemeta.strem.fun/catalog/${catalogType}/top/search=${encodeURIComponent(query)}.json`;
+    
+    const cinemetaData = await fetchJson(searchUrl);
+
+    if (cinemetaData && cinemetaData.metas && cinemetaData.metas.length > 0) {
+      // إرجاع id الفيلم الأول المتطابق (مثلاً tt0816692)
+      return cinemetaData.metas[0].id;
+    }
+
+    // المصدر الثاني (احتياطي للمسلسلات): TVMaze API
+    if (isTv) {
       const tvmazeUrl = `https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(query)}`;
       const tvData = await fetchJson(tvmazeUrl);
       if (tvData && tvData.externals && tvData.externals.imdb) {
         return tvData.externals.imdb;
       }
-    }
-
-    // 2. تجربة جلب المعرف عبر محرك البحث المفتوح للسينما
-    const searchUrl = `https://v3-cinemeta.strem.fun/catalog/${type === 'tv' || type === 'series' ? 'series' : 'movie'}/top/search=${encodeURIComponent(query)}.json`;
-    const cinemetaData = await fetchJson(searchUrl);
-
-    if (cinemetaData && cinemetaData.metas && cinemetaData.metas.length > 0) {
-      return cinemetaData.metas[0].id; // يرجع imdb_id مباشرة مثل tt0816692
     }
 
     return null;
@@ -103,8 +107,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     try {
-      // 1. جلب IMDb ID بدون أي API Key خارجي معرض للحظر
-      const imdbId = await getImdbId(q, type);
+      // 1. جلب الـ IMDb ID
+      const imdbId = await getImdbId(q.trim(), type);
 
       if (!imdbId) {
         res.writeHead(200);
@@ -116,7 +120,7 @@ const server = http.createServer(async (req, res) => {
         }));
       }
 
-      // 2. الاستعلام عبر Torrentio API المضمون والسريع
+      // 2. الاستعلام عن روابط التورنت عبر Torrentio
       let torrentioUrl = `https://torrentio.strem.fun/stream/movie/${imdbId}.json`;
       if (type === 'tv' || type === 'series') {
         torrentioUrl = `https://torrentio.strem.fun/stream/series/${imdbId}:${season}:${episode}.json`;
@@ -129,7 +133,7 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({
           success: false,
           imdbId: imdbId,
-          message: 'لا توجد روابط تورنت متاحة لهذا المحتوى',
+          message: 'لا توجد روابط تورنت متاحة لهذا المحتوى حالياً',
           results: []
         }));
       }
