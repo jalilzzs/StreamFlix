@@ -4,13 +4,8 @@ const url = require('url');
 
 const PORT = process.env.PORT || 3000;
 
-// دالة جلب البيانات تدعم تتبع التحويلات (Follow Redirects / 301 / 302)
-function fetchTorrentData(targetUrl, maxRedirects = 3) {
+function fetchJson(targetUrl) {
   return new Promise((resolve, reject) => {
-    if (maxRedirects === 0) {
-      return reject(new Error('تجاوز الحد الأقصى للتحويلات (Too many redirects)'));
-    }
-
     const parsed = url.parse(targetUrl);
 
     const options = {
@@ -19,32 +14,22 @@ function fetchTorrentData(targetUrl, maxRedirects = 3) {
       path: parsed.path,
       method: 'GET',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Accept': 'application/json'
       },
       timeout: 8000
     };
 
     const req = https.request(options, (res) => {
-      // التعامل مع إعادة التوجيه (301, 302, 307, 308)
-      if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
-        const redirectUrl = res.headers.location;
-        if (!redirectUrl) {
-          return reject(new Error(`Redirected with status ${res.statusCode} but no location header`));
-        }
-        // تتبع الرابط الجديد تلقائياً
-        const nextUrl = redirectUrl.startsWith('http') ? redirectUrl : `https://${parsed.hostname}${redirectUrl}`;
-        return resolve(fetchTorrentData(nextUrl, maxRedirects - 1));
-      }
-
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        return reject(new Error(`API Status Code: ${res.statusCode}`));
-      }
-
       let rawData = '';
+
       res.on('data', (chunk) => { rawData += chunk; });
 
       res.on('end', () => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          return reject(new Error(`API Error Code: ${res.statusCode}`));
+        }
+
         try {
           const parsedData = JSON.parse(rawData);
           resolve(parsedData);
@@ -57,7 +42,7 @@ function fetchTorrentData(targetUrl, maxRedirects = 3) {
     req.on('error', (err) => reject(err));
     req.on('timeout', () => {
       req.destroy();
-      reject(new Error('انتهت مهلة الاتصال بالسيرفر'));
+      reject(new Error('انتهت مهلة الاتصال'));
     });
 
     req.end();
@@ -69,7 +54,6 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname;
   const query = parsedUrl.query;
 
-  // إعدادات CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -80,65 +64,59 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
-  // 1. Endpoint للتجربة المباشرة وإرجاع النتيجة
   if (pathname === '/api/test-pirate') {
     const q = query.q;
-    const type = query.type || 'movie';
-    const season = query.season || 1;
-    const episode = query.episode || 1;
-
     if (!q) {
       res.writeHead(400);
       return res.end(JSON.stringify({ error: 'يرجى إرسال كلمة البحث عبر q' }));
     }
 
-    let searchQuery = q.trim();
-    if (type === 'tv' || type === 'series') {
-      const s = String(season).padStart(2, '0');
-      const e = String(episode).padStart(2, '0');
-      searchQuery += ` S${s}E${e}`;
-    }
-
     try {
-      const initialApiUrl = `https://solidtorrents.net/api/v1/search?q=${encodeURIComponent(searchQuery)}`;
-      const data = await fetchTorrentData(initialApiUrl);
+      // الاستعلام عبر YTS API الرسمي (سريع ومضمون مع السيرفرات السحابية)
+      const ytsUrl = `https://yts.mx/api/v2/list_movies.json?query_term=${encodeURIComponent(q.trim())}`;
+      const data = await fetchJson(ytsUrl);
 
-      if (!data || !data.results || data.results.length === 0) {
+      if (!data || !data.data || !data.data.movies || data.data.movies.length === 0) {
         res.writeHead(200);
         return res.end(JSON.stringify({
           success: false,
-          queryUsed: searchQuery,
-          message: 'لم يتم العثور على أي نتائج متطابقة',
+          queryUsed: q,
+          message: 'لم يتم العثور على نتائج متطابقة',
           results: []
         }));
       }
 
-      const formattedResults = data.results.slice(0, 10).map((item) => ({
-        title: item.title,
-        size_mb: (item.size / (1024 * 1024)).toFixed(2) + ' MB',
-        seeders: item.swarm ? item.swarm.seeders : 0,
-        leechers: item.swarm ? item.swarm.leechers : 0,
-        magnet: item.magnet,
-        info_hash: item.infohash
+      const movie = data.data.movies[0];
+      const formattedResults = movie.torrents.map((t) => ({
+        title: `${movie.title_long} [${t.quality}] [${t.type}]`,
+        quality: t.quality,
+        size_mb: t.size,
+        seeders: t.seeds,
+        leechers: t.peers,
+        hash: t.hash,
+        magnet: `magnet:?xt=urn:btih:${t.hash}&dn=${encodeURIComponent(movie.title_long)}&tr=udp://open.demonii.com:1337/announce&tr=udp://tracker.openbittorrent.com:80`
       }));
 
       res.writeHead(200);
       return res.end(JSON.stringify({
         success: true,
-        queryUsed: searchQuery,
-        totalFound: data.results.length,
+        queryUsed: q,
+        movieTitle: movie.title_long,
+        rating: movie.rating,
+        cover: movie.medium_cover_image,
+        totalFound: formattedResults.length,
         results: formattedResults
       }));
+
     } catch (err) {
       res.writeHead(500);
       return res.end(JSON.stringify({ success: false, error: err.message }));
     }
   }
 
-  // الصفحة الرئيسية
   if (pathname === '/') {
     res.writeHead(200);
-    return res.end(JSON.stringify({ message: 'StreamFlix Torrent API is active' }));
+    return res.end(JSON.stringify({ message: 'StreamFlix YTS API Service is active' }));
   }
 
   res.writeHead(404);
