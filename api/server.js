@@ -4,40 +4,54 @@ const url = require('url');
 
 const PORT = process.env.PORT || 3000;
 
-// دالة جلب البيانات مع إرسال User-Agent لمنع الحظر
-function fetchJson(apiUrl) {
+// دالة جلب البيانات باستخدام HTTPS المعياري مع إعدادات متكاملة
+function fetchJson(targetUrl) {
   return new Promise((resolve, reject) => {
+    const parsed = url.parse(targetUrl);
+    
     const options = {
+      hostname: parsed.hostname,
+      port: 443,
+      path: parsed.path,
+      method: 'GET',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*'
-      }
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      timeout: 8000 // قطع الاتصال بعد 8 ثواني في حال عدم الاستجابة
     };
 
-    https.get(apiUrl, options, (res) => {
+    const req = https.request(options, (res) => {
       let rawData = '';
 
       res.on('data', (chunk) => { rawData += chunk; });
 
       res.on('end', () => {
-        // إذا أرجع السيرفر كود غير 200
-        if (res.statusCode !== 200) {
-          return reject(new Error(`Server responded with status code ${res.statusCode}`));
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          return reject(new Error(`HTTP Status ${res.statusCode}`));
         }
 
         try {
-          // التحقق مما إذا كانت الاستجابة تبدأ بـ HTML (صفحة حظر)
           if (rawData.trim().startsWith('<')) {
-            return reject(new Error('المصدر أرجع صفحة HTML بدلاً من JSON (احتمال حظر أو حماية)'));
+            return reject(new Error('أرجع السيرفر صفحة HTML بدلاً من JSON'));
           }
 
-          const parsed = JSON.parse(rawData);
-          resolve(parsed);
+          const parsedData = JSON.parse(rawData);
+          resolve(parsedData);
         } catch (e) {
-          reject(new Error(`خطأ في تفكيك JSON: ${e.message} - المحتوى المستلم: ${rawData.substring(0, 100)}...`));
+          reject(new Error('فشل تفكيك الـ JSON المستلم'));
         }
       });
-    }).on('error', (err) => reject(err));
+    });
+
+    req.on('error', (err) => reject(err));
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('انتهت مهلة الاتصال (Timeout)'));
+    });
+
+    req.end();
   });
 }
 
@@ -77,19 +91,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     try {
-      // تجربة API احتياطي لـ Pirate Bay إذا فشل الأول
-      const primaryUrl = `https://apibay.org/q.php?q=${encodeURIComponent(searchQuery)}`;
-      let data;
-      
-      try {
-        data = await fetchJson(primaryUrl);
-      } catch (primaryErr) {
-        // استخدام API بديل في حال حظر apibay.org
-        const backupUrl = `https://piratebay-api.vytal.io/search?q=${encodeURIComponent(searchQuery)}`;
-        data = await fetchJson(backupUrl);
-      }
+      // تجربة API apibay المستقر
+      const apiUrl = `https://apibay.org/q.php?q=${encodeURIComponent(searchQuery)}`;
+      const data = await fetchJson(apiUrl);
 
-      if (!data || data.length === 0 || data[0].id === '0') {
+      if (!data || !Array.isArray(data) || data.length === 0 || data[0].id === '0') {
         res.writeHead(200);
         return res.end(JSON.stringify({
           success: false,
@@ -105,13 +111,13 @@ const server = http.createServer(async (req, res) => {
         queryUsed: searchQuery,
         totalFound: data.length,
         results: data.slice(0, 10).map((item) => ({
-          id: item.id || item.id,
-          name: item.name || item.title,
-          info_hash: item.info_hash || item.hash,
-          size_mb: item.size ? (Number(item.size) / (1024 * 1024)).toFixed(2) + ' MB' : 'N/A',
-          seeders: Number(item.seeders || 0),
-          leechers: Number(item.leechers || 0),
-          magnet: item.magnet || `magnet:?xt=urn:btih:${item.info_hash || item.hash}&dn=${encodeURIComponent(item.name || item.title)}`
+          id: item.id,
+          name: item.name,
+          info_hash: item.info_hash,
+          size_mb: (Number(item.size) / (1024 * 1024)).toFixed(2) + ' MB',
+          seeders: Number(item.seeders),
+          leechers: Number(item.leechers),
+          magnet: `magnet:?xt=urn:btih:${item.info_hash}&dn=${encodeURIComponent(item.name)}`
         }))
       }));
     } catch (err) {
@@ -120,7 +126,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 2. Endpoint الرئيسي للواجهة
+  // 2. Endpoint الرئيسي
   if (pathname === '/api/piratebay') {
     const q = query.q;
     if (!q) {
