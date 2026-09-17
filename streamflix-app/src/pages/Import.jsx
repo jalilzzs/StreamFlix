@@ -1,224 +1,119 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
-/*
-  ============================================================
-  StreamFlix - Secure Import Dashboard
-  ============================================================
+/* =========================================================
+   TMDB
+========================================================= */
 
-  Features:
-  - Supabase Auth + admin_users
-  - Individual TMDB search/import
-  - Bulk popular import
-  - Trending import
-  - Series / episodes import
-  - Database repair tools
-  - 🌍 Bulk import by country
-  - 🌎 All countries
-  - Movies / Series / Both
-  - Custom number of items
-  - Newest / Popular / Rating sorting
-  - Full TMDB metadata
-  - Duplicate protection using tmdb_id
+const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY || '';
+const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
 
-  Playback:
-  - VideoPlayer generates servers live from TMDB ID
-  - Vidsrc
-  - Stellar
-  - VidLink
-  - YapGrid VIP
-*/
-
-/* ============================================================
-   TMDB CONFIG
-============================================================ */
-
-const TMDB_API_KEY =
-  import.meta.env.VITE_TMDB_API_KEY || '';
-
-const TMDB_BASE_URL =
-  'https://api.themoviedb.org/3';
-
-const TMDB_IMAGE_BASE =
-  'https://image.tmdb.org/t/p';
-
-/* ============================================================
-   VIDEO SERVERS
-============================================================ */
+/* =========================================================
+   PLAYERS
+========================================================= */
 
 const VIDSRC_MOVIE = (tmdbId) =>
-  `https://vidsrc.me/embed/movie?tmdb=${tmdbId}`;
+  `https://vidsrc.me/embed/movie?tmdb=${encodeURIComponent(tmdbId)}`;
 
-const VIDSRC_EPISODE = (
-  tmdbId,
-  season,
-  episode
-) =>
-  `https://vidsrc.me/embed/tv?tmdb=${tmdbId}&season=${season}&episode=${episode}`;
+const VIDSRC_EPISODE = (tmdbId, season, episode) =>
+  `https://vidsrc.me/embed/tv?tmdb=${encodeURIComponent(tmdbId)}&season=${encodeURIComponent(
+    season
+  )}&episode=${encodeURIComponent(episode)}`;
 
 const STELLAR_MOVIE = (tmdbId) =>
-  `https://stellar.rip/en/watch/embed/movie/${tmdbId}`;
+  `https://stellar.rip/en/watch/embed/movie/${encodeURIComponent(tmdbId)}`;
 
-const STELLAR_EPISODE = (
-  tmdbId,
-  season,
-  episode
-) =>
-  `https://stellar.rip/en/watch/embed/tv/${tmdbId}-${season}-${episode}`;
+const STELLAR_EPISODE = (tmdbId, season, episode) =>
+  `https://stellar.rip/en/watch/embed/tv/${encodeURIComponent(
+    tmdbId
+  )}-${encodeURIComponent(season)}-${encodeURIComponent(episode)}`;
 
-const sleep = (ms) =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+const VIDLINK_MOVIE = (tmdbId) =>
+  `https://vidlink.pro/movie/${encodeURIComponent(tmdbId)}`;
 
-/* ============================================================
-   COUNTRY LIST
-============================================================ */
+const VIDLINK_EPISODE = (tmdbId, season, episode) =>
+  `https://vidlink.pro/tv/${encodeURIComponent(tmdbId)}/${encodeURIComponent(
+    season
+  )}/${encodeURIComponent(episode)}`;
 
-const COUNTRIES = [
-  { code: 'TR', name: '🇹🇷 تركيا' },
-  { code: 'DZ', name: '🇩🇿 الجزائر' },
-  { code: 'EG', name: '🇪🇬 مصر' },
-  { code: 'SA', name: '🇸🇦 السعودية' },
-  { code: 'AE', name: '🇦🇪 الإمارات' },
-  { code: 'MA', name: '🇲🇦 المغرب' },
-  { code: 'TN', name: '🇹🇳 تونس' },
-  { code: 'IQ', name: '🇮🇶 العراق' },
-  { code: 'SY', name: '🇸🇾 سوريا' },
-  { code: 'JO', name: '🇯🇴 الأردن' },
-  { code: 'LB', name: '🇱🇧 لبنان' },
-  { code: 'PS', name: '🇵🇸 فلسطين' },
-  { code: 'KW', name: '🇰🇼 الكويت' },
-  { code: 'QA', name: '🇶🇦 قطر' },
-  { code: 'BH', name: '🇧🇭 البحرين' },
-  { code: 'OM', name: '🇴🇲 عُمان' },
-  { code: 'YE', name: '🇾🇪 اليمن' },
-  { code: 'IR', name: '🇮🇷 إيران' },
-  { code: 'IN', name: '🇮🇳 الهند' },
-  { code: 'PK', name: '🇵🇰 باكستان' },
-  { code: 'KR', name: '🇰🇷 كوريا الجنوبية' },
-  { code: 'JP', name: '🇯🇵 اليابان' },
-  { code: 'CN', name: '🇨🇳 الصين' },
-  { code: 'TH', name: '🇹🇭 تايلاند' },
-  { code: 'ID', name: '🇮🇩 إندونيسيا' },
-  { code: 'MY', name: '🇲🇾 ماليزيا' },
-  { code: 'PH', name: '🇵🇭 الفلبين' },
-  { code: 'US', name: '🇺🇸 الولايات المتحدة' },
-  { code: 'GB', name: '🇬🇧 بريطانيا' },
-  { code: 'FR', name: '🇫🇷 فرنسا' },
-  { code: 'DE', name: '🇩🇪 ألمانيا' },
-  { code: 'IT', name: '🇮🇹 إيطاليا' },
-  { code: 'ES', name: '🇪🇸 إسبانيا' },
-  { code: 'PT', name: '🇵🇹 البرتغال' },
-  { code: 'NL', name: '🇳🇱 هولندا' },
-  { code: 'BE', name: '🇧🇪 بلجيكا' },
-  { code: 'SE', name: '🇸🇪 السويد' },
-  { code: 'NO', name: '🇳🇴 النرويج' },
-  { code: 'DK', name: '🇩🇰 الدنمارك' },
-  { code: 'FI', name: '🇫🇮 فنلندا' },
-  { code: 'PL', name: '🇵🇱 بولندا' },
-  { code: 'RU', name: '🇷🇺 روسيا' },
-  { code: 'UA', name: '🇺🇦 أوكرانيا' },
-  { code: 'BR', name: '🇧🇷 البرازيل' },
-  { code: 'MX', name: '🇲🇽 المكسيك' },
-  { code: 'AR', name: '🇦🇷 الأرجنتين' },
-  { code: 'CO', name: '🇨🇴 كولومبيا' },
-  { code: 'CL', name: '🇨🇱 تشيلي' },
-  { code: 'AU', name: '🇦🇺 أستراليا' },
-  { code: 'CA', name: '🇨🇦 كندا' },
-  { code: 'ZA', name: '🇿🇦 جنوب أفريقيا' },
-  { code: 'NG', name: '🇳🇬 نيجيريا' },
-];
+const YAPGRID_MOVIE = (tmdbId) =>
+  `https://yapgrid.com/embed/movie/${encodeURIComponent(tmdbId)}?server=x`;
 
-/* ============================================================
+const YAPGRID_EPISODE = (tmdbId, season, episode) =>
+  `https://yapgrid.com/embed/tv/${encodeURIComponent(
+    tmdbId
+  )}/${encodeURIComponent(season)}/${encodeURIComponent(episode)}?server=x`;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const PLAYER_NAMES = ['Vidsrc', 'Stellar', 'VidLink', 'YapGrid'];
+
+const getPlayerUrls = (tmdbId) => {
+  if (!tmdbId) return [];
+
+  return [
+    {
+      id: 0,
+      name: 'سيرفر 1',
+      provider: 'Vidsrc',
+      url: VIDSRC_MOVIE(tmdbId),
+    },
+    {
+      id: 1,
+      name: 'سيرفر 2',
+      provider: 'Stellar',
+      url: STELLAR_MOVIE(tmdbId),
+    },
+    {
+      id: 2,
+      name: 'سيرفر 3',
+      provider: 'VidLink',
+      url: VIDLINK_MOVIE(tmdbId),
+    },
+    {
+      id: 3,
+      name: 'سيرفر 4',
+      provider: 'YapGrid',
+      url: YAPGRID_MOVIE(tmdbId),
+    },
+  ];
+};
+
+/* =========================================================
    HELPERS
-============================================================ */
+========================================================= */
 
 function normalizeType(type) {
-  return type === 'tv' || type === 'series'
-    ? 'series'
-    : 'movie';
+  return type === 'tv' || type === 'series' ? 'series' : 'movie';
 }
 
 function getTmdbEndpoint(type) {
-  return normalizeType(type) === 'series'
-    ? 'tv'
-    : 'movie';
+  return normalizeType(type) === 'series' ? 'tv' : 'movie';
 }
 
 function getYear(item) {
-  const date =
-    item?.release_date ||
-    item?.first_air_date ||
-    '';
-
-  const year = parseInt(
-    String(date).slice(0, 4),
-    10
-  );
-
-  return Number.isFinite(year)
-    ? year
-    : null;
+  const date = item?.release_date || item?.first_air_date || '';
+  return date ? Number(String(date).slice(0, 4)) || null : null;
 }
 
 function getTitle(item) {
-  return (
-    item?.title ||
-    item?.name ||
-    'بدون عنوان'
-  );
+  return item?.title || item?.name || 'بدون عنوان';
 }
 
 function getPoster(item) {
-  if (!item?.poster_path) {
-    return null;
-  }
-
-  if (
-    String(item.poster_path).startsWith(
-      'http://'
-    ) ||
-    String(item.poster_path).startsWith(
-      'https://'
-    )
-  ) {
-    return item.poster_path;
-  }
-
+  if (!item?.poster_path) return null;
   return `${TMDB_IMAGE_BASE}/w500${item.poster_path}`;
 }
 
 function getBackdrop(item) {
-  if (!item?.backdrop_path) {
-    return null;
-  }
-
-  if (
-    String(item.backdrop_path).startsWith(
-      'http://'
-    ) ||
-    String(item.backdrop_path).startsWith(
-      'https://'
-    )
-  ) {
-    return item.backdrop_path;
-  }
-
+  if (!item?.backdrop_path) return null;
   return `${TMDB_IMAGE_BASE}/w1280${item.backdrop_path}`;
 }
 
 function getGenres(item) {
   if (Array.isArray(item?.genres)) {
-    return item.genres
-      .map((genre) => {
-        if (
-          typeof genre === 'string'
-        ) {
-          return genre;
-        }
-
-        return genre?.name;
-      })
-      .filter(Boolean);
+    return item.genres.map((genre) => genre.name).filter(Boolean);
   }
 
   if (Array.isArray(item?.genre_ids)) {
@@ -229,147 +124,85 @@ function getGenres(item) {
 }
 
 function getRating(item) {
-  const value = Number(
-    item?.vote_average
-  );
-
-  return Number.isFinite(value)
-    ? Number(value.toFixed(1))
-    : 0;
+  const value = Number(item?.vote_average);
+  return Number.isFinite(value) ? value : 0;
 }
 
 function formatNumber(value) {
-  return Number(value || 0).toLocaleString(
-    'en-US'
-  );
+  return Number(value || 0).toLocaleString('en-US');
 }
 
-/* ============================================================
+/* =========================================================
    COMPONENT
-============================================================ */
+========================================================= */
 
 export default function Import() {
-  /* ============================================================
+  /* =======================================================
      AUTH / ADMIN
-  ============================================================ */
+  ======================================================= */
 
   const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] =
-    useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [adminLoading, setAdminLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminError, setAdminError] = useState('');
 
-  const [adminLoading, setAdminLoading] =
-    useState(true);
-
-  const [isAdmin, setIsAdmin] =
-    useState(false);
-
-  const [adminError, setAdminError] =
-    useState('');
-
-  /* ============================================================
+  /* =======================================================
      SEARCH
-============================================================ */
+  ======================================================= */
 
-  const [searchQuery, setSearchQuery] =
-    useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchType, setSearchType] = useState('movie');
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
 
-  const [searchType, setSearchType] =
-    useState('movie');
+  /* =======================================================
+     BULK
+  ======================================================= */
 
-  const [searchResults, setSearchResults] =
-    useState([]);
+  const [bulkType, setBulkType] = useState('both');
+  const [pageCount, setPageCount] = useState(5);
+  const [isBulkLoading, setIsBulkLoading] = useState(false);
 
-  const [isSearching, setIsSearching] =
-    useState(false);
+  /* =======================================================
+     COUNTRY
+  ======================================================= */
 
-  /* ============================================================
-     BULK IMPORT
-============================================================ */
+  const [countryCode, setCountryCode] = useState('TR');
+  const [countryType, setCountryType] = useState('movie');
+  const [countryCount, setCountryCount] = useState(50);
+  const [countrySort, setCountrySort] = useState('newest');
+  const [countryImportEpisodes, setCountryImportEpisodes] = useState(true);
+  const [countrySeasonLimit, setCountrySeasonLimit] = useState(100);
+  const [countryEpisodesLimit, setCountryEpisodesLimit] = useState(500);
+  const [isCountryLoading, setIsCountryLoading] = useState(false);
 
-  const [bulkType, setBulkType] =
-    useState('both');
-
-  const [pageCount, setPageCount] =
-    useState(5);
-
-  const [isBulkLoading, setIsBulkLoading] =
-    useState(false);
-
-  /* ============================================================
-     COUNTRY IMPORT
-============================================================ */
-
-  const [countryCode, setCountryCode] =
-    useState('TR');
-
-  const [countryType, setCountryType] =
-    useState('movie');
-
-  const [countryCount, setCountryCount] =
-    useState(50);
-
-  const [countrySort, setCountrySort] =
-    useState('newest');
-
-  const [
-    countryImportEpisodes,
-    setCountryImportEpisodes,
-  ] = useState(true);
-
-  const [
-    countrySeasonLimit,
-    setCountrySeasonLimit,
-  ] = useState(100);
-
-  const [
-    countryEpisodesLimit,
-    setCountryEpisodesLimit,
-  ] = useState(500);
-
-  const [
-    isCountryLoading,
-    setIsCountryLoading,
-  ] = useState(false);
-
-  /* ============================================================
+  /* =======================================================
      TRENDING
-============================================================ */
+  ======================================================= */
 
-  const [
-    isTrendingLoading,
-    setIsTrendingLoading,
-  ] = useState(false);
+  const [isTrendingLoading, setIsTrendingLoading] = useState(false);
 
-  /* ============================================================
+  /* =======================================================
      SERIES EPISODES
-============================================================ */
+  ======================================================= */
 
-  const [seriesTmdbId, setSeriesTmdbId] =
-    useState('');
+  const [seriesTmdbId, setSeriesTmdbId] = useState('');
+  const [seasonCount, setSeasonCount] = useState(1);
+  const [episodesPerSeason, setEpisodesPerSeason] = useState(10);
+  const [isEpisodeLoading, setIsEpisodeLoading] = useState(false);
 
-  const [seasonCount, setSeasonCount] =
-    useState(1);
-
-  const [
-    episodesPerSeason,
-    setEpisodesPerSeason,
-  ] = useState(10);
-
-  const [
-    isEpisodeLoading,
-    setIsEpisodeLoading,
-  ] = useState(false);
-
-  /* ============================================================
+  /* =======================================================
      TOOLS
-============================================================ */
+  ======================================================= */
 
-  const [isToolLoading, setIsToolLoading] =
-    useState(false);
+  const [isToolLoading, setIsToolLoading] = useState(false);
+  const [isRefreshingPlayers, setIsRefreshingPlayers] = useState(false);
+  const [isScanningPlayers, setIsScanningPlayers] = useState(false);
 
-  /* ============================================================
+  /* =======================================================
      LOGS / STATS
-============================================================ */
+  ======================================================= */
 
   const [logs, setLogs] = useState([]);
 
@@ -383,52 +216,38 @@ export default function Import() {
     total: 0,
   });
 
-  const [
-    currentOperation,
-    setCurrentOperation,
-  ] = useState('');
+  const [currentOperation, setCurrentOperation] = useState('');
+  const [progress, setProgress] = useState(0);
 
-  const [progress, setProgress] =
-    useState(0);
-
-  /* ============================================================
+  /* =======================================================
      AUTH
-============================================================ */
+  ======================================================= */
 
   useEffect(() => {
     let mounted = true;
 
-    const initializeAuth = async () => {
+    const initAuth = async () => {
       setAuthLoading(true);
 
       const {
         data: { session },
-        error,
       } = await supabase.auth.getSession();
 
-      if (!mounted) return;
-
-      if (error) {
-        setAdminError(error.message);
-        setUser(null);
-      } else {
+      if (mounted) {
         setUser(session?.user || null);
+        setAuthLoading(false);
       }
-
-      setAuthLoading(false);
     };
 
-    initializeAuth();
+    initAuth();
 
     const {
       data: { subscription },
-    } =
-      supabase.auth.onAuthStateChange(
-        (_event, session) => {
-          if (!mounted) return;
-          setUser(session?.user || null);
-        }
-      );
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (mounted) {
+        setUser(session?.user || null);
+      }
+    });
 
     return () => {
       mounted = false;
@@ -436,9 +255,9 @@ export default function Import() {
     };
   }, []);
 
-  /* ============================================================
+  /* =======================================================
      ADMIN CHECK
-============================================================ */
+  ======================================================= */
 
   useEffect(() => {
     let mounted = true;
@@ -454,12 +273,11 @@ export default function Import() {
       setAdminError('');
 
       try {
-        const { data, error } =
-          await supabase
-            .from('admin_users')
-            .select('user_id')
-            .eq('user_id', user.id)
-            .maybeSingle();
+        const { data, error } = await supabase
+          .from('admin_users')
+          .select('user_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
 
         if (error) throw error;
 
@@ -471,20 +289,15 @@ export default function Import() {
 
         setIsAdmin(false);
 
-        const message = String(
-          error?.message || ''
-        ).toLowerCase();
+        const message = String(error?.message || '').toLowerCase();
 
-        if (
-          message.includes('admin_users')
-        ) {
+        if (message.includes('admin_users')) {
           setAdminError(
             'تعذر الوصول إلى جدول صلاحيات الإدارة. تأكد من تطبيق SQL الحماية في Supabase.'
           );
         } else {
           setAdminError(
-            error?.message ||
-              'تعذر التحقق من صلاحيات الإدارة.'
+            error?.message || 'تعذر التحقق من صلاحيات الإدارة.'
           );
         }
       } finally {
@@ -501,21 +314,14 @@ export default function Import() {
     };
   }, [user]);
 
-  /* ============================================================
+  /* =======================================================
      LOGGING
-============================================================ */
+  ======================================================= */
 
-  const addLog = (
-    message,
-    type = 'info'
-  ) => {
-    const time =
-      new Date().toLocaleTimeString(
-        'en-US',
-        {
-          hour12: false,
-        }
-      );
+  const addLog = (message, type = 'info') => {
+    const time = new Date().toLocaleTimeString('en-US', {
+      hour12: false,
+    });
 
     setLogs((prev) => [
       {
@@ -549,250 +355,142 @@ export default function Import() {
     setProgress(0);
   };
 
-  /* ============================================================
-     TMDB REQUEST
-============================================================ */
+  /* =======================================================
+     TMDB FETCH
+  ======================================================= */
 
-  const tmdbFetch = async (
-    path,
-    params = {},
-    retryCount = 0
-  ) => {
+  const tmdbFetch = async (endpoint, options = {}) => {
     if (!TMDB_API_KEY) {
       throw new Error(
-        'TMDB API Key غير موجودة. أضف VITE_TMDB_API_KEY في Environment Variables ثم أعد Build/Deploy.'
+        'VITE_TMDB_API_KEY غير موجود في متغيرات البيئة.'
       );
     }
 
-    const url = new URL(
-      `${TMDB_BASE_URL}${path}`
-    );
+    const separator = endpoint.includes('?') ? '&' : '?';
 
-    url.searchParams.set(
-      'api_key',
-      TMDB_API_KEY
-    );
+    const url =
+      `${TMDB_BASE_URL}${endpoint}${separator}` +
+      `api_key=${encodeURIComponent(TMDB_API_KEY)}` +
+      `&language=ar-SA`;
 
-    url.searchParams.set(
-      'language',
-      'ar-SA'
-    );
+    let lastError = null;
 
-    Object.entries(params).forEach(
-      ([key, value]) => {
-        if (
-          value !== undefined &&
-          value !== null &&
-          value !== ''
-        ) {
-          url.searchParams.set(
-            key,
-            value
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const response = await fetch(url, options);
+
+        if (response.status === 429) {
+          const retryAfter =
+            Number(response.headers.get('retry-after')) || 2;
+
+          await sleep(retryAfter * 1000);
+          continue;
+        }
+
+        if (response.status === 401) {
+          throw new Error(
+            'TMDB API Key غير صحيحة أو غير صالحة.'
           );
         }
-      }
-    );
 
-    const response = await fetch(
-      url.toString()
-    );
-
-    let data = null;
-
-    try {
-      data = await response.json();
-    } catch {
-      data = null;
-    }
-
-    if (
-      response.status === 429 &&
-      retryCount < 3
-    ) {
-      const retryAfter =
-        Number(
-          response.headers.get(
-            'retry-after'
-          )
-        ) || 2;
-
-      await sleep(
-        Math.max(
-          1000,
-          retryAfter * 1000
-        )
-      );
-
-      return tmdbFetch(
-        path,
-        params,
-        retryCount + 1
-      );
-    }
-
-    if (!response.ok) {
-      const message =
-        data?.status_message ||
-        `TMDB HTTP ${response.status}`;
-
-      if (response.status === 401) {
-        throw new Error(
-          'TMDB API Key غير صالحة أو لم يتم تحميل المفتاح الجديد. تأكد من VITE_TMDB_API_KEY ثم أعد Build جديد.'
-        );
-      }
-
-      if (response.status === 429) {
-        throw new Error(
-          'TMDB رفض الطلبات مؤقتاً بسبب كثرتها. انتظر قليلاً ثم أعد العملية.'
-        );
-      }
-
-      throw new Error(message);
-    }
-
-    if (
-      data?.status_code &&
-      data?.status_message
-    ) {
-      throw new Error(
-        data.status_message
-      );
-    }
-
-    return data;
-  };
-
-  /* ============================================================
-     GET FULL TMDB DETAILS
-============================================================ */
-
-  const getFullTmdbDetails =
-    async (
-      tmdbId,
-      type
-    ) => {
-      if (!tmdbId) {
-        throw new Error(
-          'TMDB ID غير موجود.'
-        );
-      }
-
-      const endpoint =
-        getTmdbEndpoint(type);
-
-      return tmdbFetch(
-        `/${endpoint}/${tmdbId}`,
-        {
-          append_to_response:
-            'credits',
+        if (!response.ok) {
+          throw new Error(
+            `TMDB HTTP ${response.status}`
+          );
         }
-      );
-    };
 
-  /* ============================================================
-     DATABASE
-============================================================ */
+        return await response.json();
+      } catch (error) {
+        lastError = error;
 
-  const findExistingTitle =
-    async (tmdbId) => {
-      const { data, error } =
-        await supabase
-          .from('titles')
-          .select('*')
-          .eq(
-            'tmdb_id',
-            String(tmdbId)
-          )
-          .limit(1)
-          .maybeSingle();
+        if (attempt < 3) {
+          await sleep(1000 * attempt);
+        }
+      }
+    }
 
-      if (error) throw error;
-
-      return data || null;
-    };
-
-  const buildTitleData = (
-    item,
-    type
-  ) => {
-    return {
-      type: normalizeType(type),
-      name: getTitle(item),
-      synopsis:
-        item?.overview || null,
-      poster_url:
-        getPoster(item),
-      release_year:
-        getYear(item),
-      genres:
-        getGenres(item),
-      rating_avg:
-        getRating(item),
-      is_premium: false,
-      tmdb_id: String(item.id),
-    };
+    throw lastError || new Error('فشل طلب TMDB.');
   };
 
-  const saveTitle = async (
-    item,
-    type
-  ) => {
-    const normalizedType =
-      normalizeType(type);
+  /* =======================================================
+     TMDB DETAILS
+  ======================================================= */
 
-    const titleData =
-      buildTitleData(
-        item,
-        normalizedType
-      );
+  const getFullTmdbDetails = async (tmdbId, type) => {
+    const endpoint = getTmdbEndpoint(type);
 
-    const existing =
-      await findExistingTitle(
-        item.id
-      );
+    return tmdbFetch(
+      `/${endpoint}/${encodeURIComponent(
+        tmdbId
+      )}?append_to_response=credits`
+    );
+  };
+
+  /* =======================================================
+     DB HELPERS
+  ======================================================= */
+
+  const findExistingTitle = async (tmdbId) => {
+    const { data, error } = await supabase
+      .from('titles')
+      .select('*')
+      .eq('tmdb_id', String(tmdbId))
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    return data || null;
+  };
+
+  const buildTitleData = (item, type) => ({
+    type: normalizeType(type),
+    name: getTitle(item),
+    synopsis: item?.overview || null,
+    poster_url: getPoster(item),
+    release_year: getYear(item),
+    genres: getGenres(item),
+    rating_avg: getRating(item),
+    is_premium: false,
+    tmdb_id: String(item.id),
+    is_hidden: false,
+  });
+
+  /* =======================================================
+     SAVE TITLE
+  ======================================================= */
+
+  const saveTitle = async (item, type) => {
+    const normalizedType = normalizeType(type);
+
+    const existing = await findExistingTitle(item.id);
+
+    const titleData = buildTitleData(
+      item,
+      normalizedType
+    );
 
     if (existing) {
       const updateData = {
-        type:
-          titleData.type,
-        name:
-          titleData.name,
-        synopsis:
-          titleData.synopsis,
-        poster_url:
-          titleData.poster_url,
-        release_year:
-          titleData.release_year,
-        genres:
-          titleData.genres,
-        rating_avg:
-          titleData.rating_avg,
-        is_premium:
-          typeof existing.is_premium ===
-          'boolean'
-            ? existing.is_premium
-            : false,
+        type: titleData.type,
+        name: titleData.name,
+        synopsis: titleData.synopsis,
+        poster_url: titleData.poster_url,
+        release_year: titleData.release_year,
+        genres: titleData.genres,
+        rating_avg: titleData.rating_avg,
+        is_premium: false,
       };
 
-      if (
-        normalizedType === 'movie' &&
-        item.id
-      ) {
-        updateData.url =
-          VIDSRC_MOVIE(item.id);
+      if (normalizedType === 'movie') {
+        updateData.url = VIDSRC_MOVIE(item.id);
       }
 
-      const {
-        data,
-        error,
-      } = await supabase
+      const { data, error } = await supabase
         .from('titles')
         .update(updateData)
-        .eq(
-          'id',
-          existing.id
-        )
-        .select('*')
+        .eq('id', existing.id)
+        .select()
         .single();
 
       if (error) throw error;
@@ -808,40 +506,17 @@ export default function Import() {
       ...titleData,
     };
 
-    if (
-      normalizedType === 'movie'
-    ) {
-      insertData.url =
-        VIDSRC_MOVIE(item.id);
+    if (normalizedType === 'movie') {
+      insertData.url = VIDSRC_MOVIE(item.id);
     }
 
-    const {
-      data,
-      error,
-    } = await supabase
+    const { data, error } = await supabase
       .from('titles')
       .insert(insertData)
-      .select('*')
+      .select()
       .single();
 
-    if (error) {
-      if (
-        error.code === '23505' &&
-        String(
-          error.message || ''
-        )
-          .toLowerCase()
-          .includes(
-            'titles_name_key'
-          )
-      ) {
-        throw new Error(
-          `العنوان "${titleData.name}" موجود مسبقاً باسم مختلف عن TMDB ID ${item.id}.`
-        );
-      }
-
-      throw error;
-    }
+    if (error) throw error;
 
     return {
       title: data,
@@ -850,2030 +525,1464 @@ export default function Import() {
     };
   };
 
-  /* ============================================================
+  /* =======================================================
      EPISODES
-============================================================ */
+  ======================================================= */
 
-  const saveEpisodesForTitle =
-    async (
-      titleId,
-      tmdbId,
-      seasons,
-      maxEpisodesPerSeason
-    ) => {
-      let count = 0;
+  const saveEpisodesForTitle = async (
+    titleId,
+    tmdbId,
+    seasons,
+    maxEpisodesPerSeason
+  ) => {
+    const totalSeasons = Math.min(
+      Number(seasons) || 0,
+      100
+    );
 
-      for (const season of seasons) {
-        const seasonNumber =
-          season.season_number;
+    for (
+      let season = 1;
+      season <= totalSeasons;
+      season++
+    ) {
+      try {
+        const seasonData = await tmdbFetch(
+          `/tv/${encodeURIComponent(
+            tmdbId
+          )}/season/${season}`
+        );
 
-        if (seasonNumber === 0) {
-          continue;
-        }
+        const episodes = Array.isArray(
+          seasonData?.episodes
+        )
+          ? seasonData.episodes.slice(
+              0,
+              Number(maxEpisodesPerSeason) || 500
+            )
+          : [];
 
-        const detail =
-          await tmdbFetch(
-            `/tv/${tmdbId}/season/${seasonNumber}`
-          );
-
-        const episodes =
-          Array.isArray(
-            detail?.episodes
-          )
-            ? detail.episodes
-            : [];
-
-        const selected =
-          episodes.slice(
-            0,
-            maxEpisodesPerSeason
-          );
-
-        for (const episode of selected) {
-          const episodeNumber =
-            episode.episode_number;
+        for (const episode of episodes) {
+          const episodeNumber = episode.episode_number;
 
           const streamUrls = {
-            server1:
-              VIDSRC_EPISODE(
-                tmdbId,
-                seasonNumber,
-                episodeNumber
-              ),
-
-            server2:
-              STELLAR_EPISODE(
-                tmdbId,
-                seasonNumber,
-                episodeNumber
-              ),
+            server1: VIDSRC_EPISODE(
+              tmdbId,
+              season,
+              episodeNumber
+            ),
+            server2: STELLAR_EPISODE(
+              tmdbId,
+              season,
+              episodeNumber
+            ),
+            server3: VIDLINK_EPISODE(
+              tmdbId,
+              season,
+              episodeNumber
+            ),
+            server4: YAPGRID_EPISODE(
+              tmdbId,
+              season,
+              episodeNumber
+            ),
           };
 
-          const episodeData = {
-            title_id:
-              titleId,
-
-            season:
-              seasonNumber,
-
-            episode_number:
-              episodeNumber,
-
+          const payload = {
+            title_id: titleId,
+            season,
+            episode_number: episodeNumber,
             name:
               episode.name ||
-              `الحلقة ${episodeNumber}`,
-
-            duration_seconds:
-              episode.runtime
-                ? Number(
-                    episode.runtime
-                  ) * 60
-                : null,
-
-            stream_urls:
-              streamUrls,
+              `Episode ${episodeNumber}`,
+            synopsis: episode.overview || null,
+            still_url: episode.still_path
+              ? `${TMDB_IMAGE_BASE}/w500${episode.still_path}`
+              : null,
+            air_date:
+              episode.air_date || null,
+            rating_avg: getRating(episode),
+            stream_urls: streamUrls,
           };
 
-          const {
-            data:
-              existingEpisode,
-            error:
-              findError,
-          } =
-            await supabase
-              .from('episodes')
-              .select('id')
-              .eq(
-                'title_id',
-                titleId
-              )
-              .eq(
-                'season',
-                seasonNumber
-              )
-              .eq(
-                'episode_number',
-                episodeNumber
-              )
-              .limit(1)
-              .maybeSingle();
+          const { error } = await supabase
+            .from('episodes')
+            .upsert(payload, {
+              onConflict:
+                'title_id,season,episode_number',
+            });
 
-          if (findError) {
-            throw findError;
-          }
-
-          if (existingEpisode) {
-            const {
-              error:
-                updateError,
-            } =
-              await supabase
-                .from('episodes')
-                .update({
-                  name:
-                    episodeData.name,
-
-                  duration_seconds:
-                    episodeData.duration_seconds,
-
-                  stream_urls:
-                    episodeData.stream_urls,
-                })
-                .eq(
-                  'id',
-                  existingEpisode.id
-                );
-
-            if (updateError) {
-              throw updateError;
-            }
-          } else {
-            const {
-              error:
-                insertError,
-            } =
-              await supabase
-                .from('episodes')
-                .insert(
-                  episodeData
-                );
-
-            if (insertError) {
-              throw insertError;
-            }
-          }
-
-          count++;
+          if (error) throw error;
 
           setStats((prev) => ({
             ...prev,
-            episodes:
-              prev.episodes + 1,
+            episodes: prev.episodes + 1,
           }));
         }
-      }
-
-      return count;
-    };
-
-  /* ============================================================
-     INDIVIDUAL SEARCH
-============================================================ */
-
-  const handleSingleSearch =
-    async (event) => {
-      event.preventDefault();
-
-      if (
-        !searchQuery.trim()
-      ) {
-        addLog(
-          '⚠️ أدخل اسم العمل أو TMDB ID أولاً.',
-          'warning'
-        );
-        return;
-      }
-
-      setIsSearching(true);
-      setSearchResults([]);
-
-      try {
-        addLog(
-          `🔎 البحث عن "${searchQuery}"...`,
-          'info'
-        );
-
-        if (
-          /^\d+$/.test(
-            searchQuery.trim()
-          )
-        ) {
-          const item =
-            await tmdbFetch(
-              `/${searchType}/${searchQuery.trim()}`
-            );
-
-          setSearchResults([
-            item,
-          ]);
-
-          addLog(
-            `✅ تم العثور على: ${getTitle(
-              item
-            )}`,
-            'success'
-          );
-        } else {
-          const data =
-            await tmdbFetch(
-              `/search/${searchType}`,
-              {
-                query:
-                  searchQuery.trim(),
-                page: 1,
-              }
-            );
-
-          const results =
-            data?.results || [];
-
-          setSearchResults(
-            results
-          );
-
-          addLog(
-            results.length
-              ? `✅ تم العثور على ${results.length} نتيجة.`
-              : '⚠️ لا توجد نتائج.',
-            results.length
-              ? 'success'
-              : 'warning'
-          );
-        }
       } catch (error) {
         addLog(
-          `❌ فشل البحث: ${error.message}`,
+          `❌ فشل جلب الموسم ${season} للعمل ${tmdbId}: ${error.message}`,
           'error'
         );
-      } finally {
-        setIsSearching(false);
       }
-    };
 
-  /* ============================================================
-     INDIVIDUAL IMPORT
-============================================================ */
+      await sleep(80);
+    }
+  };
 
-  const importSingleItem =
-    async (item) => {
-      if (!isAdmin) return;
+  /* =======================================================
+     SINGLE IMPORT
+  ======================================================= */
 
-      setIsToolLoading(true);
+  const importSingleItem = async (
+    item,
+    type,
+    options = {}
+  ) => {
+    const normalizedType = normalizeType(type);
 
-      try {
-        const type =
-          searchType === 'tv'
-            ? 'series'
-            : 'movie';
-
-        setCurrentOperation(
-          `استيراد ${getTitle(item)}`
-        );
-
-        const details =
-          await getFullTmdbDetails(
-            item.id,
-            type
-          );
-
-        const result =
-          await saveTitle(
-            details,
-            type
-          );
-
-        updateStats({
-          imported:
-            result.created
-              ? 1
-              : 0,
-
-          updated:
-            result.created
-              ? 0
-              : 1,
-        });
-
-        addLog(
-          result.created
-            ? `🎉 تم إنشاء "${getTitle(details)}".`
-            : `🔄 تم تحديث "${getTitle(details)}".`,
-          'success'
-        );
-
-        if (
-          type === 'series'
-        ) {
-          const seasons =
-            Array.isArray(
-              details?.seasons
-            )
-              ? details.seasons.filter(
-                  (season) =>
-                    season.season_number >
-                    0
-                )
-              : [];
-
-          if (seasons.length) {
-            await saveEpisodesForTitle(
-              result.title.id,
-              details.id,
-              seasons,
-              9999
+    try {
+      const details =
+        item?.overview !== undefined
+          ? item
+          : await getFullTmdbDetails(
+              item.id,
+              normalizedType
             );
 
-            addLog(
-              `🎞️ تم تحديث حلقات "${getTitle(details)}".`,
-              'success'
-            );
-          }
-        }
-      } catch (error) {
+      const result = await saveTitle(
+        details,
+        normalizedType
+      );
+
+      if (result.created) {
         setStats((prev) => ({
           ...prev,
-          failed:
-            prev.failed + 1,
+          imported: prev.imported + 1,
         }));
 
         addLog(
-          `❌ فشل الاستيراد: ${error.message}`,
-          'error'
-        );
-      } finally {
-        setCurrentOperation('');
-        setIsToolLoading(false);
-      }
-    };
-
-  /* ============================================================
-     BULK IMPORT
-============================================================ */
-
-  const getBulkTypes = () => {
-    if (bulkType === 'movie') {
-      return ['movie'];
-    }
-
-    if (bulkType === 'series') {
-      return ['tv'];
-    }
-
-    return ['movie', 'tv'];
-  };
-
-  const importBulkPages =
-    async ({
-      endpointFactory,
-      label,
-    }) => {
-      if (!isAdmin) return;
-
-      setIsBulkLoading(true);
-      resetOperationStats();
-
-      try {
-        const types =
-          getBulkTypes();
-
-        const estimatedTotal =
-          Number(pageCount) *
-          20 *
-          types.length;
-
-        updateStats({
-          total:
-            estimatedTotal,
-        });
-
-        let processed = 0;
-
-        for (const type of types) {
-          for (
-            let page = 1;
-            page <=
-            Number(pageCount);
-            page++
-          ) {
-            setCurrentOperation(
-              `${label} — ${
-                type === 'movie'
-                  ? 'أفلام'
-                  : 'مسلسلات'
-              } — ${page}/${pageCount}`
-            );
-
-            const data =
-              await tmdbFetch(
-                endpointFactory(
-                  type,
-                  page
-                )
-              );
-
-            const results =
-              data?.results || [];
-
-            for (const item of results) {
-              processed++;
-
-              try {
-                const details =
-                  await getFullTmdbDetails(
-                    item.id,
-                    type
-                  );
-
-                const result =
-                  await saveTitle(
-                    details,
-                    type
-                  );
-
-                setStats((prev) => ({
-                  ...prev,
-                  imported:
-                    prev.imported +
-                    (result.created
-                      ? 1
-                      : 0),
-                  updated:
-                    prev.updated +
-                    (result.created
-                      ? 0
-                      : 1),
-                  processed,
-                }));
-
-                setProgress(
-                  Math.min(
-                    100,
-                    Math.round(
-                      (processed /
-                        Math.max(
-                          estimatedTotal,
-                          1
-                        )) *
-                        100
-                    )
-                  )
-                );
-              } catch (error) {
-                setStats((prev) => ({
-                  ...prev,
-                  failed:
-                    prev.failed + 1,
-                  processed,
-                }));
-
-                addLog(
-                  `❌ ${getTitle(item)}: ${error.message}`,
-                  'error'
-                );
-              }
-
-              await sleep(80);
-            }
-
-            await sleep(150);
-          }
-        }
-
-        setProgress(100);
-
-        addLog(
-          `🎉 اكتملت عملية ${label}.`,
+          `✅ تمت إضافة ${getTitle(details)}`,
           'success'
         );
-      } catch (error) {
+      } else if (result.updated) {
+        setStats((prev) => ({
+          ...prev,
+          updated: prev.updated + 1,
+        }));
+
         addLog(
-          `❌ توقفت العملية: ${error.message}`,
-          'error'
+          `🔄 تم تحديث ${getTitle(details)}`,
+          'success'
         );
-      } finally {
-        setIsBulkLoading(false);
-        setCurrentOperation('');
       }
-    };
 
-  const handleBulkPopularImport =
-    () => {
-      importBulkPages({
-        endpointFactory:
-          (type, page) =>
-            `/${type}/popular?page=${page}`,
+      if (
+        normalizedType === 'series' &&
+        options.importEpisodes !== false
+      ) {
+        const seasons =
+          options.seasonLimit ??
+          details?.number_of_seasons ??
+          0;
 
-        label:
-          'استيراد الأعمال الشائعة',
-      });
-    };
+        const maxEpisodes =
+          options.episodesLimit ?? 500;
 
-  /* ============================================================
-     🌍 COUNTRY IMPORT
-============================================================ */
+        await saveEpisodesForTitle(
+          result.title.id,
+          details.id,
+          seasons,
+          maxEpisodes
+        );
+      }
 
-  const getCountrySort = (
-    type
-  ) => {
-    if (countrySort === 'popular') {
-      return 'popularity.desc';
+      return result;
+    } catch (error) {
+      setStats((prev) => ({
+        ...prev,
+        failed: prev.failed + 1,
+      }));
+
+      addLog(
+        `❌ فشل ${getTitle(item)}: ${error.message}`,
+        'error'
+      );
+
+      return null;
     }
-
-    if (countrySort === 'rating') {
-      return 'vote_average.desc';
-    }
-
-    if (type === 'movie') {
-      return 'primary_release_date.desc';
-    }
-
-    return 'first_air_date.desc';
   };
 
-  const getCountryEndpoint =
-    (type, page) => {
+  /* =======================================================
+     SEARCH
+  ======================================================= */
+
+  const handleSearch = async () => {
+    if (!isAdmin || !searchQuery.trim()) return;
+
+    setIsSearching(true);
+    setSearchResults([]);
+
+    try {
       const endpoint =
-        type === 'movie'
-          ? '/discover/movie'
-          : '/discover/tv';
+        normalizeType(searchType) === 'series'
+          ? 'tv'
+          : 'movie';
 
-      return {
-        path: endpoint,
+      const data = await tmdbFetch(
+        `/search/${endpoint}?query=${encodeURIComponent(
+          searchQuery.trim()
+        )}&page=1&include_adult=false`
+      );
 
-        params: {
-          page,
+      setSearchResults(
+        Array.isArray(data?.results)
+          ? data.results
+          : []
+      );
 
-          ...(countryCode !== 'ALL'
-            ? {
-                with_origin_country:
-                  countryCode,
-              }
-            : {}),
+      addLog(
+        `🔎 تم العثور على ${
+          data?.results?.length || 0
+        } نتيجة.`,
+        'success'
+      );
+    } catch (error) {
+      addLog(
+        `❌ فشل البحث: ${error.message}`,
+        'error'
+      );
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
-          sort_by:
-            getCountrySort(type),
+  const handleImportSearchResult = async (
+    item
+  ) => {
+    resetOperationStats();
 
-          include_adult: false,
+    setCurrentOperation(
+      `استيراد ${getTitle(item)}`
+    );
 
-          include_video: false,
+    await importSingleItem(
+      item,
+      searchType,
+      {
+        importEpisodes:
+          normalizeType(searchType) === 'series',
+        seasonLimit: 100,
+        episodesLimit: 500,
+      }
+    );
 
-          ...(countrySort ===
-          'rating'
-            ? {
-                'vote_count.gte':
-                  20,
-              }
-            : {}),
-        },
-      };
-    };
+    setCurrentOperation('');
+  };
 
-  const getCountryResults =
-    async (
-      type,
-      requiredCount
-    ) => {
-      const results = [];
-      const seen = new Set();
+  /* =======================================================
+     BULK
+  ======================================================= */
 
-      let page = 1;
+  const getBulkTypes = () => {
+    if (bulkType === 'movie') return ['movie'];
+    if (bulkType === 'series') return ['series'];
 
-      while (
-        results.length <
-          requiredCount &&
-        page <= 500
-      ) {
-        const request =
-          getCountryEndpoint(
-            type,
-            page
-          );
+    return ['movie', 'series'];
+  };
 
-        const data =
-          await tmdbFetch(
-            request.path,
-            request.params
-          );
+  const importBulkPages = async (
+    type,
+    pages
+  ) => {
+    const endpoint =
+      normalizeType(type) === 'series'
+        ? 'tv'
+        : 'movie';
 
-        const pageResults =
-          Array.isArray(
-            data?.results
-          )
-            ? data.results
-            : [];
+    for (let page = 1; page <= pages; page++) {
+      const data = await tmdbFetch(
+        `/movie/popular?page=${page}`
+      );
 
-        if (!pageResults.length) {
-          break;
-        }
+      const results =
+        normalizeType(type) === 'movie'
+          ? data?.results || []
+          : (
+              await tmdbFetch(
+                `/tv/popular?page=${page}`
+              )
+            )?.results || [];
 
-        for (
-          const item of pageResults
-        ) {
-          if (
-            !item?.id ||
-            seen.has(
-              String(item.id)
-            )
-          ) {
-            continue;
+      for (const item of results) {
+        await importSingleItem(
+          item,
+          type,
+          {
+            importEpisodes:
+              normalizeType(type) === 'series',
+            seasonLimit: countrySeasonLimit,
+            episodesLimit:
+              countryEpisodesLimit,
           }
-
-          seen.add(
-            String(item.id)
-          );
-
-          results.push(item);
-
-          if (
-            results.length >=
-            requiredCount
-          ) {
-            break;
-          }
-        }
-
-        if (
-          page >=
-          Number(
-            data?.total_pages || 1
-          )
-        ) {
-          break;
-        }
-
-        page++;
-
-        await sleep(100);
+        );
       }
 
-      return results;
-    };
+      addLog(
+        `📦 انتهت صفحة ${page}/${pages} لـ ${endpoint}.`,
+        'info'
+      );
 
-  const importCountryItem =
-    async (
-      item,
-      type,
-      index,
-      total
-    ) => {
-      const normalizedType =
-        normalizeType(type);
+      await sleep(250);
+    }
+  };
 
-      try {
+  const handleBulkPopularImport = async () => {
+    if (!isAdmin) return;
+
+    setIsBulkLoading(true);
+    resetOperationStats();
+
+    const types = getBulkTypes();
+
+    try {
+      for (const type of types) {
         setCurrentOperation(
-          `🌍 ${index}/${total} — ${getTitle(
-            item
-          )}`
+          `استيراد ${type === 'movie' ? 'الأفلام' : 'المسلسلات'}`
         );
 
-        const details =
-          await getFullTmdbDetails(
-            item.id,
-            normalizedType
-          );
+        await importBulkPages(
+          type,
+          Math.max(1, Number(pageCount) || 1)
+        );
+      }
 
-        const result =
-          await saveTitle(
-            details,
-            normalizedType
-          );
+      addLog(
+        '✅ انتهى الاستيراد الجماعي.',
+        'success'
+      );
+    } catch (error) {
+      addLog(
+        `❌ فشل الاستيراد الجماعي: ${error.message}`,
+        'error'
+      );
+    } finally {
+      setIsBulkLoading(false);
+      setCurrentOperation('');
+    }
+  };
+
+  /* =======================================================
+     COUNTRY
+  ======================================================= */
+
+  const getCountrySort = () => {
+    switch (countrySort) {
+      case 'rating':
+        return 'vote_average.desc';
+      case 'popular':
+        return 'popularity.desc';
+      case 'oldest':
+        return 'primary_release_date.asc';
+      default:
+        return 'primary_release_date.desc';
+    }
+  };
+
+  const getCountryEndpoint = () => {
+    return normalizeType(countryType) === 'series'
+      ? 'tv'
+      : 'movie';
+  };
+
+  const getCountryResults = async () => {
+    const endpoint = getCountryEndpoint();
+
+    const params =
+      endpoint === 'movie'
+        ? `sort_by=${encodeURIComponent(
+            getCountrySort()
+          )}&with_origin_country=${encodeURIComponent(
+            countryCode
+          )}&page=1&include_adult=false`
+        : `sort_by=${encodeURIComponent(
+            getCountrySort()
+          )}&with_origin_country=${encodeURIComponent(
+            countryCode
+          )}&page=1&include_adult=false`;
+
+    const data = await tmdbFetch(
+      `/discover/${endpoint}?${params}`
+    );
+
+    return Array.isArray(data?.results)
+      ? data.results.slice(
+          0,
+          Math.max(1, Number(countryCount) || 50)
+        )
+      : [];
+  };
+
+  const importCountryItem = async (item) => {
+    await importSingleItem(
+      item,
+      countryType,
+      {
+        importEpisodes:
+          normalizeType(countryType) === 'series' &&
+          countryImportEpisodes,
+        seasonLimit: countrySeasonLimit,
+        episodesLimit: countryEpisodesLimit,
+      }
+    );
+  };
+
+  const handleCountryImport = async () => {
+    if (!isAdmin) return;
+
+    setIsCountryLoading(true);
+    resetOperationStats();
+
+    try {
+      const results =
+        await getCountryResults();
+
+      updateStats({
+        total: results.length,
+      });
+
+      for (
+        let index = 0;
+        index < results.length;
+        index++
+      ) {
+        setCurrentOperation(
+          `استيراد ${index + 1}/${results.length}`
+        );
+
+        await importCountryItem(
+          results[index]
+        );
 
         setStats((prev) => ({
           ...prev,
-          imported:
-            prev.imported +
-            (result.created
-              ? 1
-              : 0),
-
-          updated:
-            prev.updated +
-            (result.created
-              ? 0
-              : 1),
-
-          processed:
-            prev.processed + 1,
+          processed: prev.processed + 1,
         }));
 
         setProgress(
           Math.round(
-            (index / total) *
+            ((index + 1) /
+              Math.max(results.length, 1)) *
               100
           )
         );
 
-        addLog(
-          result.created
-            ? `🎬 ${index}/${total} — تم استيراد ${getTitle(
-                details
-              )}`
-            : `🔄 ${index}/${total} — تم تحديث ${getTitle(
-                details
-              )}`,
-          'success'
-        );
-
-        if (
-          normalizedType ===
-            'series' &&
-          countryImportEpisodes
-        ) {
-          const seasons =
-            Array.isArray(
-              details?.seasons
-            )
-              ? details.seasons.filter(
-                  (season) =>
-                    season.season_number >
-                    0
-                )
-              : [];
-
-          const limitedSeasons =
-            seasons.slice(
-              0,
-              Math.max(
-                1,
-                Number(
-                  countrySeasonLimit
-                )
-              )
-            );
-
-          if (
-            limitedSeasons.length
-          ) {
-            await saveEpisodesForTitle(
-              result.title.id,
-              details.id,
-              limitedSeasons,
-              Math.max(
-                1,
-                Number(
-                  countryEpisodesLimit
-                )
-              )
-            );
-
-            addLog(
-              `📺 تم تحديث حلقات ${getTitle(
-                details
-              )}.`,
-              'success'
-            );
-          }
-        }
-
-        return true;
-      } catch (error) {
-        setStats((prev) => ({
-          ...prev,
-          failed:
-            prev.failed + 1,
-          processed:
-            prev.processed + 1,
-        }));
-
-        addLog(
-          `❌ فشل ${getTitle(
-            item
-          )}: ${error.message}`,
-          'error'
-        );
-
-        return false;
+        await sleep(120);
       }
-    };
 
-  const handleCountryImport =
-    async () => {
-      if (!isAdmin) return;
+      addLog(
+        `🌍 انتهى استيراد ${countryCode}.`,
+        'success'
+      );
+    } catch (error) {
+      addLog(
+        `❌ خطأ في استيراد الدولة: ${error.message}`,
+        'error'
+      );
+    } finally {
+      setIsCountryLoading(false);
+      setCurrentOperation('');
+    }
+  };
 
-      const count = Math.max(
-        1,
-        Math.min(
-          5000,
-          Number(countryCount) ||
-            1
-        )
+  /* =======================================================
+     TRENDING
+  ======================================================= */
+
+  const handleTrendingImport = async () => {
+    if (!isAdmin) return;
+
+    setIsTrendingLoading(true);
+    resetOperationStats();
+
+    try {
+      const movieData =
+        await tmdbFetch(
+          '/trending/movie/week'
+        );
+
+      const tvData =
+        await tmdbFetch(
+          '/trending/tv/week'
+        );
+
+      const movies =
+        movieData?.results || [];
+
+      const series =
+        tvData?.results || [];
+
+      const total =
+        movies.length + series.length;
+
+      updateStats({ total });
+
+      let processed = 0;
+
+      for (const item of movies) {
+        await importSingleItem(
+          item,
+          'movie'
+        );
+
+        processed++;
+
+        setProgress(
+          Math.round(
+            (processed /
+              Math.max(total, 1)) *
+              100
+          )
+        );
+      }
+
+      for (const item of series) {
+        await importSingleItem(
+          item,
+          'series',
+          {
+            importEpisodes: true,
+            seasonLimit: 100,
+            episodesLimit: 500,
+          }
+        );
+
+        processed++;
+
+        setProgress(
+          Math.round(
+            (processed /
+              Math.max(total, 1)) *
+              100
+          )
+        );
+      }
+
+      addLog(
+        '🔥 انتهى استيراد Trending.',
+        'success'
+      );
+    } catch (error) {
+      addLog(
+        `❌ فشل Trending: ${error.message}`,
+        'error'
+      );
+    } finally {
+      setIsTrendingLoading(false);
+      setCurrentOperation('');
+    }
+  };
+
+  /* =======================================================
+     MANUAL SERIES EPISODES
+  ======================================================= */
+
+  const handleManualEpisodes = async () => {
+    if (!isAdmin || !seriesTmdbId.trim()) return;
+
+    setIsEpisodeLoading(true);
+    resetOperationStats();
+
+    try {
+      const existing =
+        await findExistingTitle(
+          seriesTmdbId.trim()
+        );
+
+      if (!existing) {
+        throw new Error(
+          'هذا TMDB ID غير موجود في قاعدة البيانات.'
+        );
+      }
+
+      await saveEpisodesForTitle(
+        existing.id,
+        seriesTmdbId.trim(),
+        seasonCount,
+        episodesPerSeason
       );
 
-      setIsCountryLoading(true);
-      resetOperationStats();
+      addLog(
+        '✅ تم تحديث حلقات المسلسل.',
+        'success'
+      );
+    } catch (error) {
+      addLog(
+        `❌ فشل تحديث الحلقات: ${error.message}`,
+        'error'
+      );
+    } finally {
+      setIsEpisodeLoading(false);
+    }
+  };
 
-      try {
-        const selectedCountry =
-          COUNTRIES.find(
-            (country) =>
-              country.code ===
-              countryCode
+  /* =======================================================
+     FIX URLS
+  ======================================================= */
+
+  const handleFixUrls = async () => {
+    if (!isAdmin) return;
+
+    setIsToolLoading(true);
+    resetOperationStats();
+
+    try {
+      const { data: titles, error } =
+        await supabase
+          .from('titles')
+          .select(
+            'id,tmdb_id,name,type,url,is_hidden'
           );
 
-        const countryName =
-          countryCode === 'ALL'
-            ? '🌎 جميع الدول'
-            : selectedCountry?.name ||
-              countryCode;
+      if (error) throw error;
 
-        addLog(
-          `🌍 بدء استيراد ${count} عمل من ${countryName}.`,
-          'info'
-        );
+      const list = titles || [];
 
-        let types = [];
+      updateStats({
+        total: list.length,
+      });
 
-        if (
-          countryType ===
-          'movie'
-        ) {
-          types = ['movie'];
-        } else if (
-          countryType ===
-          'series'
-        ) {
-          types = ['tv'];
-        } else {
-          types = [
-            'movie',
-            'tv',
-          ];
-        }
+      let fixed = 0;
 
-        const perType =
-          types.length === 1
-            ? count
-            : Math.ceil(
-                count /
-                  types.length
-              );
+      for (
+        let index = 0;
+        index < list.length;
+        index++
+      ) {
+        const item = list[index];
 
-        const allItems = [];
-
-        for (
-          const type of types
-        ) {
-          const items =
-            await getCountryResults(
-              type,
-              perType
-            );
-
-          for (
-            const item of items
-          ) {
-            allItems.push({
-              item,
-              type,
-            });
-          }
-        }
-
-        const selectedItems =
-          allItems.slice(
-            0,
-            count
-          );
-
-        updateStats({
-          total:
-            selectedItems.length,
-        });
-
-        if (
-          !selectedItems.length
-        ) {
-          addLog(
-            `⚠️ لم نجد أعمالاً من ${countryName} حسب الفلاتر الحالية.`,
-            'warning'
-          );
-          return;
-        }
-
-        addLog(
-          `📦 TMDB أعاد ${selectedItems.length} عمل للاستيراد.`,
-          'info'
-        );
-
-        for (
-          let index = 0;
-          index <
-          selectedItems.length;
-          index++
-        ) {
-          const entry =
-            selectedItems[index];
-
-          await importCountryItem(
-            entry.item,
-            entry.type,
-            index + 1,
-            selectedItems.length
-          );
-
-          await sleep(120);
-        }
-
-        setProgress(100);
-
-        addLog(
-          `🎉 اكتمل الاستيراد حسب الدولة: ${countryName}.`,
-          'success'
-        );
-      } catch (error) {
-        addLog(
-          `❌ فشل الاستيراد حسب الدولة: ${error.message}`,
-          'error'
-        );
-      } finally {
-        setIsCountryLoading(false);
-        setCurrentOperation('');
-      }
-    };
-
-  /* ============================================================
-     TRENDING
-============================================================ */
-
-  const handleTrendingImport =
-    async () => {
-      if (!isAdmin) return;
-
-      setIsTrendingLoading(true);
-      resetOperationStats();
-
-      try {
-        addLog(
-          '🔥 جاري جلب أحدث 20 عمل من Trending...',
-          'info'
-        );
-
-        const data =
-          await tmdbFetch(
-            '/trending/all/week'
-          );
-
-        const results =
-          Array.isArray(
-            data?.results
-          )
-            ? data.results
-                .filter(
-                  (item) =>
-                    item.media_type ===
-                      'movie' ||
-                    item.media_type ===
-                      'tv'
-                )
-                .slice(0, 20)
-            : [];
-
-        updateStats({
-          total:
-            results.length,
-        });
-
-        for (
-          let index = 0;
-          index < results.length;
-          index++
-        ) {
-          const item =
-            results[index];
-
-          try {
-            const type =
-              item.media_type ===
-              'tv'
-                ? 'series'
-                : 'movie';
-
-            const details =
-              await getFullTmdbDetails(
-                item.id,
-                type
-              );
-
-            const result =
-              await saveTitle(
-                details,
-                type
-              );
-
-            setStats((prev) => ({
-              ...prev,
-              imported:
-                prev.imported +
-                (result.created
-                  ? 1
-                  : 0),
-
-              updated:
-                prev.updated +
-                (result.created
-                  ? 0
-                  : 1),
-
-              processed:
-                index + 1,
-            }));
-
+        try {
+          if (!item.tmdb_id) {
             setProgress(
               Math.round(
                 ((index + 1) /
-                  results.length) *
+                  Math.max(list.length, 1)) *
                   100
               )
             );
 
-            addLog(
-              `✅ ${
-                index + 1
-              }/${results.length} — ${getTitle(
-                details
-              )}`,
-              'success'
-            );
-
-            await sleep(100);
-          } catch (error) {
-            setStats((prev) => ({
-              ...prev,
-              failed:
-                prev.failed + 1,
-              processed:
-                index + 1,
-            }));
-
-            addLog(
-              `❌ ${getTitle(
-                item
-              )}: ${error.message}`,
-              'error'
-            );
+            continue;
           }
-        }
 
-        addLog(
-          '🔥 اكتمل استيراد Trending.',
-          'success'
-        );
-      } catch (error) {
-        addLog(
-          `❌ فشل Trending: ${error.message}`,
-          'error'
-        );
-      } finally {
-        setIsTrendingLoading(false);
-      }
-    };
+          const normalizedType =
+            normalizeType(item.type);
 
-  /* ============================================================
-     SERIES / EPISODES MANUAL
-============================================================ */
+          const updateData = {
+            type: normalizedType,
+          };
 
-  const handleSeriesEpisodesImport =
-    async () => {
-      if (!isAdmin) return;
+          if (normalizedType === 'movie') {
+            updateData.url =
+              VIDSRC_MOVIE(item.tmdb_id);
+          }
 
-      const tmdbId =
-        seriesTmdbId.trim();
+          const { error: updateError } =
+            await supabase
+              .from('titles')
+              .update(updateData)
+              .eq('id', item.id);
 
-      if (
-        !/^\d+$/.test(tmdbId)
-      ) {
-        addLog(
-          '⚠️ أدخل TMDB ID صحيح للمسلسل.',
-          'warning'
-        );
-        return;
-      }
+          if (updateError) {
+            throw updateError;
+          }
 
-      setIsEpisodeLoading(true);
-      resetOperationStats();
+          fixed++;
 
-      try {
-        const series =
-          await tmdbFetch(
-            `/tv/${tmdbId}`
-          );
-
-        const titleResult =
-          await saveTitle(
-            series,
-            'series'
-          );
-
-        updateStats({
-          imported:
-            titleResult.created
-              ? 1
-              : 0,
-
-          updated:
-            titleResult.created
-              ? 0
-              : 1,
-        });
-
-        const seasons =
-          Array.isArray(
-            series?.seasons
-          )
-            ? series.seasons
-                .filter(
-                  (season) =>
-                    season.season_number >
-                    0
-                )
-                .slice(
-                  0,
-                  Math.max(
-                    1,
-                    Number(
-                      seasonCount
-                    )
-                  )
-                )
-            : [];
-
-        if (!seasons.length) {
-          addLog(
-            '⚠️ لا توجد مواسم متاحة.',
-            'warning'
-          );
-          return;
-        }
-
-        addLog(
-          `📚 سيتم استيراد ${seasons.length} موسم.`,
-          'info'
-        );
-
-        let episodeTotal = 0;
-
-        for (
-          let index = 0;
-          index < seasons.length;
-          index++
-        ) {
-          const season =
-            seasons[index];
-
-          setCurrentOperation(
-            `الموسم ${season.season_number} — ${
-              index + 1
-            }/${seasons.length}`
-          );
-
-          const detail =
-            await tmdbFetch(
-              `/tv/${tmdbId}/season/${season.season_number}`
-            );
-
-          const episodes =
-            Array.isArray(
-              detail?.episodes
+          setProgress(
+            Math.round(
+              ((index + 1) /
+                Math.max(list.length, 1)) *
+                100
             )
-              ? detail.episodes.slice(
-                  0,
-                  Math.max(
-                    1,
-                    Number(
-                      episodesPerSeason
-                    )
-                  )
-                )
-              : [];
+          );
 
-          for (
-            const episode of episodes
-          ) {
-            try {
-              const episodeNumber =
-                episode.episode_number;
+          await sleep(60);
+        } catch (error) {
+          setStats((prev) => ({
+            ...prev,
+            failed: prev.failed + 1,
+          }));
 
-              const streamUrls = {
-                server1:
-                  VIDSRC_EPISODE(
-                    tmdbId,
-                    season.season_number,
-                    episodeNumber
-                  ),
+          addLog(
+            `❌ فشل إصلاح URL لـ ${item.name}: ${error.message}`,
+            'error'
+          );
+        }
+      }
 
-                server2:
-                  STELLAR_EPISODE(
-                    tmdbId,
-                    season.season_number,
-                    episodeNumber
-                  ),
-              };
+      updateStats({
+        updated: fixed,
+        processed: list.length,
+      });
 
-              const episodeData = {
-                title_id:
-                  titleResult.title.id,
+      addLog(
+        `🔗 انتهى إصلاح الروابط. تم تحديث ${fixed} سجل.`,
+        'success'
+      );
+    } catch (error) {
+      addLog(
+        `❌ خطأ في إصلاح الروابط: ${error.message}`,
+        'error'
+      );
+    } finally {
+      setIsToolLoading(false);
+      setCurrentOperation('');
+    }
+  };
 
-                season:
-                  season.season_number,
+  /* =======================================================
+     REFRESH ALL FOUR PLAYERS
+  ======================================================= */
 
-                episode_number:
-                  episodeNumber,
+  const handleRefreshAllPlayerLinks = async () => {
+    if (!isAdmin || isRefreshingPlayers) return;
 
-                name:
-                  episode.name ||
-                  `الحلقة ${episodeNumber}`,
+    setIsRefreshingPlayers(true);
+    resetOperationStats();
+    setCurrentOperation(
+      'تجديد روابط جميع اللاعبين...'
+    );
 
-                duration_seconds:
-                  episode.runtime
-                    ? Number(
-                        episode.runtime
-                      ) * 60
-                    : null,
+    try {
+      const { data: titles, error } =
+        await supabase
+          .from('titles')
+          .select(
+            'id,tmdb_id,name,type,url,is_hidden'
+          )
+          .not('tmdb_id', 'is', null);
 
-                stream_urls:
-                  streamUrls,
-              };
+      if (error) throw error;
 
-              const {
-                data:
-                  existingEpisode,
-                error:
-                  findError,
-              } =
-                await supabase
-                  .from('episodes')
-                  .select('id')
-                  .eq(
-                    'title_id',
-                    titleResult.title.id
-                  )
-                  .eq(
-                    'season',
-                    season.season_number
-                  )
-                  .eq(
-                    'episode_number',
-                    episodeNumber
-                  )
-                  .limit(1)
-                  .maybeSingle();
+      const list = titles || [];
 
-              if (findError) {
-                throw findError;
-              }
+      updateStats({
+        total: list.length,
+      });
 
-              if (existingEpisode) {
-                const {
-                  error:
-                    updateError,
-                } =
-                  await supabase
-                    .from('episodes')
-                    .update(
-                      episodeData
-                    )
-                    .eq(
-                      'id',
-                      existingEpisode.id
-                    );
+      let updated = 0;
+      let failed = 0;
 
-                if (updateError) {
-                  throw updateError;
-                }
-              } else {
-                const {
-                  error:
-                    insertError,
-                } =
-                  await supabase
-                    .from('episodes')
-                    .insert(
-                      episodeData
-                    );
+      for (
+        let index = 0;
+        index < list.length;
+        index++
+      ) {
+        const item = list[index];
 
-                if (insertError) {
-                  throw insertError;
-                }
-              }
+        try {
+          const tmdbId = String(
+            item.tmdb_id || ''
+          ).trim();
 
-              episodeTotal++;
+          if (!tmdbId) {
+            failed++;
 
-              setStats((prev) => ({
-                ...prev,
-                episodes:
-                  prev.episodes + 1,
-                processed:
-                  prev.processed + 1,
-              }));
-            } catch (error) {
-              setStats((prev) => ({
-                ...prev,
-                failed:
-                  prev.failed + 1,
-              }));
+            addLog(
+              `⚠️ ${item.name}: لا يوجد TMDB ID.`,
+              'warning'
+            );
 
-              addLog(
-                `❌ فشل S${season.season_number} E${episode.episode_number}: ${error.message}`,
-                'error'
-              );
-            }
+            continue;
           }
+
+          /*
+           * نفس TMDB ID يولّد دائماً نفس نظام
+           * الروابط الأربعة المستعمل في VideoPlayer.
+           */
+          const players =
+            getPlayerUrls(tmdbId);
+
+          /*
+           * titles.url هو الرابط legacy الموجود
+           * حالياً في الجدول، لذلك نخليه على Player 1.
+           *
+           * الروابط الأربعة نفسها لا نحتاج تخزينها
+           * في titles لأن VideoPlayer يولدها مباشرة
+           * من tmdb_id.
+           */
+          const { error: updateError } =
+            await supabase
+              .from('titles')
+              .update({
+                url: players[0].url,
+                type: normalizeType(item.type),
+              })
+              .eq('id', item.id);
+
+          if (updateError) {
+            throw updateError;
+          }
+
+          updated++;
+
+          setStats((prev) => ({
+            ...prev,
+            updated,
+            processed: index + 1,
+          }));
+
+          setProgress(
+            Math.round(
+              ((index + 1) /
+                Math.max(list.length, 1)) *
+                100
+            )
+          );
+
+          addLog(
+            `🔄 ${item.name} — تم تجديد 4 Players باستخدام TMDB ${tmdbId}`,
+            'success'
+          );
+
+          await sleep(70);
+        } catch (error) {
+          failed++;
+
+          setStats((prev) => ({
+            ...prev,
+            failed,
+            processed: index + 1,
+          }));
+
+          addLog(
+            `❌ فشل تجديد Players لـ ${item.name}: ${error.message}`,
+            'error'
+          );
+        }
+      }
+
+      addLog(
+        `✅ انتهى تجديد اللاعبين: ${updated} ناجح / ${failed} فشل.`,
+        'success'
+      );
+    } catch (error) {
+      addLog(
+        `❌ خطأ في تجديد جميع الروابط: ${error.message}`,
+        'error'
+      );
+    } finally {
+      setIsRefreshingPlayers(false);
+      setCurrentOperation('');
+    }
+  };
+
+  /* =======================================================
+     PLAYER HEALTH CHECK
+  ======================================================= */
+
+  const testExternalPlayer = (
+    url,
+    timeout = 9000
+  ) =>
+    new Promise((resolve) => {
+      let finished = false;
+
+      const iframe =
+        document.createElement('iframe');
+
+      iframe.style.position = 'fixed';
+      iframe.style.left = '-10000px';
+      iframe.style.top = '-10000px';
+      iframe.style.width = '1px';
+      iframe.style.height = '1px';
+      iframe.style.opacity = '0';
+      iframe.style.pointerEvents = 'none';
+
+      const finish = (result) => {
+        if (finished) return;
+
+        finished = true;
+
+        clearTimeout(timer);
+
+        iframe.onload = null;
+        iframe.onerror = null;
+
+        try {
+          iframe.remove();
+        } catch {
+          // ignore
         }
 
-        setProgress(100);
+        resolve(result);
+      };
 
-        addLog(
-          `🎉 اكتمل استيراد الحلقات. تم تحديث ${episodeTotal} حلقة.`,
-          'success'
+      const timer = setTimeout(() => {
+        finish(false);
+      }, timeout);
+
+      iframe.onload = () => {
+        /*
+         * بسبب Same-Origin Policy ما نقدرش نقرأ
+         * محتوى player خارجي أو نتأكد من الفيديو نفسه.
+         *
+         * وصول iframe لمرحلة load يعتبر نجاحاً
+         * في اختبار الـembed فقط.
+         */
+        finish(true);
+      };
+
+      iframe.onerror = () => {
+        finish(false);
+      };
+
+      iframe.src = url;
+
+      document.body.appendChild(iframe);
+    });
+
+  const scanTitlePlayers = async (item) => {
+    const tmdbId = String(
+      item?.tmdb_id || ''
+    ).trim();
+
+    if (!tmdbId) {
+      return {
+        working: false,
+        results: [],
+      };
+    }
+
+    const players =
+      getPlayerUrls(tmdbId);
+
+    const results = [];
+
+    for (const player of players) {
+      const working =
+        await testExternalPlayer(
+          player.url
         );
-      } catch (error) {
-        addLog(
-          `❌ فشل استيراد المواسم والحلقات: ${error.message}`,
-          'error'
-        );
-      } finally {
-        setIsEpisodeLoading(false);
-        setCurrentOperation('');
+
+      results.push({
+        ...player,
+        working,
+      });
+
+      if (working) {
+        /*
+         * واحد خدم، ما نحتاجوش نجرب باقي
+         * السيرفرات لهذا الفيلم.
+         */
+        break;
       }
+
+      await sleep(150);
+    }
+
+    return {
+      working: results.some(
+        (player) => player.working
+      ),
+      results,
     };
+  };
 
-  /* ============================================================
-     FIX URLS
-============================================================ */
+  /* =======================================================
+     SCAN ALL PLAYERS + HIDE BROKEN TITLES
+  ======================================================= */
 
-  const handleFixUrls =
+  const handleScanAndHideBrokenPlayers =
     async () => {
-      if (!isAdmin) return;
+      if (!isAdmin || isScanningPlayers) return;
 
-      setIsToolLoading(true);
+      setIsScanningPlayers(true);
       resetOperationStats();
+      setCurrentOperation(
+        'فحص Players...'
+      );
 
       try {
-        const {
-          data: titles,
-          error,
-        } =
+        const { data: titles, error } =
           await supabase
             .from('titles')
             .select(
-              'id,tmdb_id,name,type,url'
-            );
+              'id,tmdb_id,name,type,is_hidden'
+            )
+            .not('tmdb_id', 'is', null);
 
         if (error) throw error;
 
-        const list =
-          titles || [];
+        const list = titles || [];
 
         updateStats({
-          total:
-            list.length,
+          total: list.length,
         });
 
-        let fixed = 0;
+        let visible = 0;
+        let hidden = 0;
+        let failed = 0;
 
         for (
           let index = 0;
           index < list.length;
           index++
         ) {
-          const item =
-            list[index];
+          const item = list[index];
 
           try {
-            if (!item.tmdb_id) {
-              setProgress(
-                Math.round(
-                  ((index + 1) /
-                    Math.max(
-                      list.length,
-                      1
-                    )) *
-                    100
-                )
-              );
+            setCurrentOperation(
+              `فحص ${index + 1}/${list.length}: ${item.name}`
+            );
 
-              continue;
-            }
+            const result =
+              await scanTitlePlayers(item);
 
-            const normalizedType =
-              normalizeType(
-                item.type
-              );
-
-            const updateData = {
-              type:
-                normalizedType,
-            };
-
-            /*
-              The legacy titles.url field is
-              maintained for movie records.
-
-              Series playback is generated
-              from TMDB ID by VideoPlayer.
-            */
-
-            if (
-              normalizedType ===
-              'movie'
-            ) {
-              updateData.url =
-                VIDSRC_MOVIE(
-                  item.tmdb_id
+            if (result.working) {
+              const workingPlayer =
+                result.results.find(
+                  (player) =>
+                    player.working
                 );
-            }
 
-            const {
-              error:
-                updateError,
-            } =
+              const { error: updateError } =
+                await supabase
+                  .from('titles')
+                  .update({
+                    is_hidden: false,
+                  })
+                  .eq('id', item.id);
+
+              if (updateError) {
+                throw updateError;
+              }
+
+              visible++;
+
+              addLog(
+                `✅ ${item.name} — Player يعمل: ${
+                  workingPlayer?.provider ||
+                  'غير معروف'
+                } — بقي ظاهر.`,
+                'success'
+              );
+            } else {
+              const { error: updateError } =
+                await supabase
+                  .from('titles')
+                  .update({
+                    is_hidden: true,
+                  })
+                  .eq('id', item.id);
+
+              if (updateError) {
+                throw updateError;
+              }
+
+              hidden++;
+
+              addLog(
+                `🚫 ${item.name} — فشل Players الأربعة — تم إخفاؤه.`,
+                'warning'
+              );
+            }
+          } catch (error) {
+            failed++;
+
+            addLog(
+              `❌ فشل فحص ${item.name}: ${error.message}`,
+              'error'
+            );
+          }
+
+          setStats((prev) => ({
+            ...prev,
+            processed: index + 1,
+          }));
+
+          setProgress(
+            Math.round(
+              ((index + 1) /
+                Math.max(list.length, 1)) *
+                100
+            )
+          );
+
+          await sleep(100);
+        }
+
+        updateStats({
+          updated: visible,
+          failed,
+        });
+
+        addLog(
+          `🔍 انتهى الفحص — ظاهر: ${visible} | مخفي: ${hidden} | أخطاء الفحص: ${failed}`,
+          'success'
+        );
+      } catch (error) {
+        addLog(
+          `❌ خطأ في فحص Players: ${error.message}`,
+          'error'
+        );
+      } finally {
+        setIsScanningPlayers(false);
+        setCurrentOperation('');
+      }
+    };
+
+  /* =======================================================
+     FIX POSTERS
+  ======================================================= */
+
+  const handleFixPosters = async () => {
+    if (!isAdmin) return;
+
+    setIsToolLoading(true);
+    resetOperationStats();
+
+    try {
+      const { data: titles, error } =
+        await supabase
+          .from('titles')
+          .select(
+            'id,tmdb_id,name,type,poster_url'
+          )
+          .not('tmdb_id', 'is', null);
+
+      if (error) throw error;
+
+      const list = titles || [];
+
+      updateStats({
+        total: list.length,
+      });
+
+      let fixed = 0;
+
+      for (
+        let index = 0;
+        index < list.length;
+        index++
+      ) {
+        const item = list[index];
+
+        try {
+          const details =
+            await getFullTmdbDetails(
+              item.tmdb_id,
+              item.type
+            );
+
+          const poster =
+            getPoster(details);
+
+          if (poster) {
+            const { error: updateError } =
               await supabase
                 .from('titles')
-                .update(
-                  updateData
-                )
-                .eq(
-                  'id',
-                  item.id
-                );
+                .update({
+                  poster_url: poster,
+                })
+                .eq('id', item.id);
 
             if (updateError) {
               throw updateError;
             }
 
             fixed++;
-
-            setProgress(
-              Math.round(
-                ((index + 1) /
-                  Math.max(
-                    list.length,
-                    1
-                  )) *
-                  100
-              )
-            );
-
-            await sleep(60);
-          } catch (error) {
-            setStats((prev) => ({
-              ...prev,
-              failed:
-                prev.failed + 1,
-            }));
-
-            addLog(
-              `❌ فشل إصلاح URL لـ ${item.name}: ${error.message}`,
-              'error'
-            );
           }
+        } catch (error) {
+          setStats((prev) => ({
+            ...prev,
+            failed: prev.failed + 1,
+          }));
+
+          addLog(
+            `❌ فشل Poster لـ ${item.name}: ${error.message}`,
+            'error'
+          );
         }
 
-        updateStats({
-          updated: fixed,
-          processed:
-            list.length,
-        });
+        setProgress(
+          Math.round(
+            ((index + 1) /
+              Math.max(list.length, 1)) *
+              100
+          )
+        );
 
-        addLog(
-          `🔗 انتهى إصلاح الروابط. تم تحديث ${fixed} سجل.`,
-          'success'
-        );
-      } catch (error) {
-        addLog(
-          `❌ خطأ في إصلاح الروابط: ${error.message}`,
-          'error'
-        );
-      } finally {
-        setIsToolLoading(false);
-        setCurrentOperation('');
+        await sleep(100);
       }
-    };
 
-  /* ============================================================
-     POSTERS
-============================================================ */
-
-  const handleFixPosters =
-    async () => {
-      if (!isAdmin) return;
-
-      setIsToolLoading(true);
-      resetOperationStats();
-
-      try {
-        const {
-          data: titles,
-          error,
-        } =
-          await supabase
-            .from('titles')
-            .select(
-              'id,tmdb_id,name,type,poster_url'
-            );
-
-        if (error) throw error;
-
-        const list =
-          titles || [];
-
-        updateStats({
-          total:
-            list.length,
-        });
-
-        let fixed = 0;
-
-        for (
-          let index = 0;
-          index < list.length;
-          index++
-        ) {
-          const item =
-            list[index];
-
-          try {
-            if (!item.tmdb_id) {
-              setProgress(
-                Math.round(
-                  ((index + 1) /
-                    Math.max(
-                      list.length,
-                      1
-                    )) *
-                    100
-                )
-              );
-
-              continue;
-            }
-
-            const tmdbItem =
-              await getFullTmdbDetails(
-                item.tmdb_id,
-                item.type
-              );
-
-            const posterUrl =
-              getPoster(
-                tmdbItem
-              );
-
-            /*
-              Update even when the current
-              poster_url is broken or outdated.
-            */
-
-            if (posterUrl) {
-              const {
-                error:
-                  updateError,
-              } =
-                await supabase
-                  .from('titles')
-                  .update({
-                    poster_url:
-                      posterUrl,
-                  })
-                  .eq(
-                    'id',
-                    item.id
-                  );
-
-              if (updateError) {
-                throw updateError;
-              }
-
-              fixed++;
-            } else {
-              addLog(
-                `⚠️ لا توجد Poster في TMDB لـ ${item.name}.`,
-                'warning'
-              );
-            }
-
-            setProgress(
-              Math.round(
-                ((index + 1) /
-                  Math.max(
-                    list.length,
-                    1
-                  )) *
-                  100
-              )
-            );
-
-            await sleep(80);
-          } catch (error) {
-            setStats((prev) => ({
-              ...prev,
-              failed:
-                prev.failed + 1,
-            }));
-
-            addLog(
-              `❌ Poster ${item.name}: ${error.message}`,
-              'error'
-            );
-          }
-        }
-
-        updateStats({
-          updated: fixed,
-          processed:
-            list.length,
-        });
-
-        addLog(
-          `🖼️ اكتمل إصلاح Posters: تم تحديث ${fixed} سجل.`,
-          'success'
-        );
-      } catch (error) {
-        addLog(
-          `❌ فشل إصلاح Posters: ${error.message}`,
-          'error'
-        );
-      } finally {
-        setIsToolLoading(false);
-        setCurrentOperation('');
-      }
-    };
-
-  /* ============================================================
-     RATINGS
-============================================================ */
-
-  const handleUpdateRatings =
-    async () => {
-      if (!isAdmin) return;
-
-      setIsToolLoading(true);
-      resetOperationStats();
-
-      try {
-        const {
-          data: titles,
-          error,
-        } =
-          await supabase
-            .from('titles')
-            .select(
-              'id,tmdb_id,name,type,rating_avg'
-            );
-
-        if (error) throw error;
-
-        const list =
-          titles || [];
-
-        updateStats({
-          total:
-            list.length,
-        });
-
-        let updated = 0;
-
-        for (
-          let index = 0;
-          index < list.length;
-          index++
-        ) {
-          const item =
-            list[index];
-
-          try {
-            if (!item.tmdb_id) {
-              setProgress(
-                Math.round(
-                  ((index + 1) /
-                    Math.max(
-                      list.length,
-                      1
-                    )) *
-                    100
-                )
-              );
-
-              continue;
-            }
-
-            const tmdbItem =
-              await getFullTmdbDetails(
-                item.tmdb_id,
-                item.type
-              );
-
-            const rating =
-              getRating(
-                tmdbItem
-              );
-
-            const {
-              error:
-                updateError,
-            } =
-              await supabase
-                .from('titles')
-                .update({
-                  rating_avg:
-                    rating,
-                })
-                .eq(
-                  'id',
-                  item.id
-                );
-
-            if (updateError) {
-              throw updateError;
-            }
-
-            updated++;
-
-            setProgress(
-              Math.round(
-                ((index + 1) /
-                  Math.max(
-                    list.length,
-                    1
-                  )) *
-                  100
-              )
-            );
-
-            await sleep(80);
-          } catch (error) {
-            setStats((prev) => ({
-              ...prev,
-              failed:
-                prev.failed + 1,
-            }));
-
-            addLog(
-              `❌ Rating ${item.name}: ${error.message}`,
-              'error'
-            );
-          }
-        }
-
-        updateStats({
-          updated,
-          processed:
-            list.length,
-        });
-
-        addLog(
-          `⭐ تم تحديث ${updated} تقييم.`,
-          'success'
-        );
-      } catch (error) {
-        addLog(
-          `❌ فشل تحديث التقييمات: ${error.message}`,
-          'error'
-        );
-      } finally {
-        setIsToolLoading(false);
-        setCurrentOperation('');
-      }
-    };
-
-  /* ============================================================
-     FULL INFO
-============================================================ */
-
-  const handleUpdateInfo =
-    async () => {
-      if (!isAdmin) return;
-
-      setIsToolLoading(true);
-      resetOperationStats();
-
-      try {
-        const {
-          data: titles,
-          error,
-        } =
-          await supabase
-            .from('titles')
-            .select(
-              'id,tmdb_id,name,type,url,poster_url,release_year,genres,rating_avg,synopsis'
-            );
-
-        if (error) throw error;
-
-        const list =
-          titles || [];
-
-        updateStats({
-          total:
-            list.length,
-        });
-
-        let updated = 0;
-
-        for (
-          let index = 0;
-          index < list.length;
-          index++
-        ) {
-          const item =
-            list[index];
-
-          try {
-            if (!item.tmdb_id) {
-              setProgress(
-                Math.round(
-                  ((index + 1) /
-                    Math.max(
-                      list.length,
-                      1
-                    )) *
-                    100
-                )
-              );
-
-              continue;
-            }
-
-            const normalizedType =
-              normalizeType(
-                item.type
-              );
-
-            const tmdbItem =
-              await getFullTmdbDetails(
-                item.tmdb_id,
-                normalizedType
-              );
-
-            const updateData = {
-              type:
-                normalizedType,
-
-              name:
-                getTitle(
-                  tmdbItem
-                ),
-
-              synopsis:
-                tmdbItem.overview ||
-                null,
-
-              poster_url:
-                getPoster(
-                  tmdbItem
-                ),
-
-              release_year:
-                getYear(
-                  tmdbItem
-                ),
-
-              genres:
-                getGenres(
-                  tmdbItem
-                ),
-
-              rating_avg:
-                getRating(
-                  tmdbItem
-                ),
-            };
-
-            /*
-              Repair legacy movie URL
-              every time, not only when empty.
-            */
-
-            if (
-              normalizedType ===
-              'movie'
-            ) {
-              updateData.url =
-                VIDSRC_MOVIE(
-                  item.tmdb_id
-                );
-            }
-
-            const {
-              error:
-                updateError,
-            } =
-              await supabase
-                .from('titles')
-                .update(
-                  updateData
-                )
-                .eq(
-                  'id',
-                  item.id
-                );
-
-            if (updateError) {
-              throw updateError;
-            }
-
-            updated++;
-
-            setProgress(
-              Math.round(
-                ((index + 1) /
-                  Math.max(
-                    list.length,
-                    1
-                  )) *
-                  100
-              )
-            );
-
-            await sleep(100);
-          } catch (error) {
-            setStats((prev) => ({
-              ...prev,
-              failed:
-                prev.failed + 1,
-            }));
-
-            addLog(
-              `❌ Info ${item.name}: ${error.message}`,
-              'error'
-            );
-          }
-        }
-
-        updateStats({
-          updated,
-          processed:
-            list.length,
-        });
-
-        addLog(
-          `📝 تم تحديث معلومات ${updated} عمل.`,
-          'success'
-        );
-      } catch (error) {
-        addLog(
-          `❌ فشل تحديث المعلومات: ${error.message}`,
-          'error'
-        );
-      } finally {
-        setIsToolLoading(false);
-        setCurrentOperation('');
-      }
-    };
-
-  /* ============================================================
-     UI HELPERS
-============================================================ */
-
-  const clearLogs = () => {
-    setLogs([]);
+      updateStats({
+        updated: fixed,
+        processed: list.length,
+      });
+
+      addLog(
+        `🖼️ انتهى إصلاح Posters: ${fixed}.`,
+        'success'
+      );
+    } catch (error) {
+      addLog(
+        `❌ خطأ في Posters: ${error.message}`,
+        'error'
+      );
+    } finally {
+      setIsToolLoading(false);
+    }
   };
 
+  /* =======================================================
+     UPDATE RATINGS
+  ======================================================= */
+
+  const handleUpdateRatings = async () => {
+    if (!isAdmin) return;
+
+    setIsToolLoading(true);
+    resetOperationStats();
+
+    try {
+      const { data: titles, error } =
+        await supabase
+          .from('titles')
+          .select(
+            'id,tmdb_id,name,type'
+          )
+          .not('tmdb_id', 'is', null);
+
+      if (error) throw error;
+
+      const list = titles || [];
+
+      updateStats({
+        total: list.length,
+      });
+
+      let updated = 0;
+
+      for (
+        let index = 0;
+        index < list.length;
+        index++
+      ) {
+        const item = list[index];
+
+        try {
+          const details =
+            await getFullTmdbDetails(
+              item.tmdb_id,
+              item.type
+            );
+
+          const rating =
+            getRating(details);
+
+          const { error: updateError } =
+            await supabase
+              .from('titles')
+              .update({
+                rating_avg: rating,
+              })
+              .eq('id', item.id);
+
+          if (updateError) {
+            throw updateError;
+          }
+
+          updated++;
+        } catch (error) {
+          setStats((prev) => ({
+            ...prev,
+            failed: prev.failed + 1,
+          }));
+
+          addLog(
+            `❌ فشل Rating لـ ${item.name}: ${error.message}`,
+            'error'
+          );
+        }
+
+        setProgress(
+          Math.round(
+            ((index + 1) /
+              Math.max(list.length, 1)) *
+              100
+          )
+        );
+
+        await sleep(100);
+      }
+
+      updateStats({
+        updated,
+        processed: list.length,
+      });
+
+      addLog(
+        `⭐ انتهى تحديث Ratings: ${updated}.`,
+        'success'
+      );
+    } catch (error) {
+      addLog(
+        `❌ خطأ في Ratings: ${error.message}`,
+        'error'
+      );
+    } finally {
+      setIsToolLoading(false);
+    }
+  };
+
+  /* =======================================================
+     UPDATE INFO
+  ======================================================= */
+
+  const handleUpdateInfo = async () => {
+    if (!isAdmin) return;
+
+    setIsToolLoading(true);
+    resetOperationStats();
+
+    try {
+      const { data: titles, error } =
+        await supabase
+          .from('titles')
+          .select(
+            'id,tmdb_id,name,type'
+          )
+          .not('tmdb_id', 'is', null);
+
+      if (error) throw error;
+
+      const list = titles || [];
+
+      updateStats({
+        total: list.length,
+      });
+
+      let updated = 0;
+
+      for (
+        let index = 0;
+        index < list.length;
+        index++
+      ) {
+        const item = list[index];
+
+        try {
+          const details =
+            await getFullTmdbDetails(
+              item.tmdb_id,
+              item.type
+            );
+
+          const updateData = {
+            type: normalizeType(item.type),
+            name: getTitle(details),
+            synopsis:
+              details?.overview || null,
+            poster_url:
+              getPoster(details),
+            release_year:
+              getYear(details),
+            genres:
+              getGenres(details),
+            rating_avg:
+              getRating(details),
+          };
+
+          if (
+            normalizeType(item.type) ===
+            'movie'
+          ) {
+            updateData.url =
+              VIDSRC_MOVIE(
+                item.tmdb_id
+              );
+          }
+
+          const { error: updateError } =
+            await supabase
+              .from('titles')
+              .update(updateData)
+              .eq('id', item.id);
+
+          if (updateError) {
+            throw updateError;
+          }
+
+          updated++;
+        } catch (error) {
+          setStats((prev) => ({
+            ...prev,
+            failed: prev.failed + 1,
+          }));
+
+          addLog(
+            `❌ فشل تحديث معلومات ${item.name}: ${error.message}`,
+            'error'
+          );
+        }
+
+        setProgress(
+          Math.round(
+            ((index + 1) /
+              Math.max(list.length, 1)) *
+              100
+          )
+        );
+
+        await sleep(100);
+      }
+
+      updateStats({
+        updated,
+        processed: list.length,
+      });
+
+      addLog(
+        `ℹ️ انتهى تحديث المعلومات: ${updated}.`,
+        'success'
+      );
+    } catch (error) {
+      addLog(
+        `❌ خطأ في تحديث المعلومات: ${error.message}`,
+        'error'
+      );
+    } finally {
+      setIsToolLoading(false);
+    }
+  };
+
+  /* =======================================================
+     BUSY
+  ======================================================= */
+
   const busy =
-    isSearching ||
+    authLoading ||
+    adminLoading ||
     isBulkLoading ||
+    isCountryLoading ||
     isTrendingLoading ||
     isEpisodeLoading ||
     isToolLoading ||
-    isCountryLoading;
+    isRefreshingPlayers ||
+    isScanningPlayers;
 
-  const statusText =
-    useMemo(() => {
-      if (authLoading) {
-        return 'جاري التحقق من تسجيل الدخول...';
-      }
+  /* =======================================================
+     UI
+  ======================================================= */
 
-      if (!user) {
-        return 'غير مسجل الدخول';
-      }
-
-      if (adminLoading) {
-        return 'جاري التحقق من صلاحيات الإدارة...';
-      }
-
-      if (!isAdmin) {
-        return 'الحساب ليس Admin';
-      }
-
-      return 'Admin مفعل';
-    }, [
-      authLoading,
-      user,
-      adminLoading,
-      isAdmin,
-    ]);
-
-  /* ============================================================
-     LOADING
-============================================================ */
-
-  if (
-    authLoading ||
-    adminLoading
-  ) {
+  if (authLoading || adminLoading) {
     return (
-      <div style={styles.centerPage}>
-        <div style={styles.loadingCard}>
+      <div style={styles.page}>
+        <div style={styles.centerCard}>
           <div style={styles.spinner} />
-
-          <h2>
-            🔐 {statusText}
+          <h2 style={styles.title}>
+            جاري التحقق من صلاحيات الإدارة...
           </h2>
-
-          <p>
-            يتم التحقق من صلاحيات
-            الوصول...
-          </p>
         </div>
       </div>
     );
@@ -2881,40 +1990,15 @@ export default function Import() {
 
   if (!user) {
     return (
-      <div style={styles.centerPage}>
-        <div style={styles.deniedCard}>
-          <div style={styles.deniedIcon}>
-            🔒
-          </div>
-
-          <h1>
-            صفحة الإدارة محمية
-          </h1>
-
-          <p>
-            يجب تسجيل الدخول بحساب
-            StreamFlix للوصول إلى
-            لوحة الاستيراد.
+      <div style={styles.page}>
+        <div style={styles.centerCard}>
+          <h2 style={styles.title}>
+            تسجيل الدخول مطلوب
+          </h2>
+          <p style={styles.muted}>
+            يجب تسجيل الدخول للوصول إلى لوحة
+            الاستيراد.
           </p>
-
-          <button
-            style={styles.primaryButton}
-            onClick={() =>
-              supabase.auth.signInWithOAuth(
-                {
-                  provider: 'google',
-                  options: {
-                    redirectTo:
-                      window.location
-                        .origin +
-                      '/import',
-                  },
-                }
-              )
-            }
-          >
-            تسجيل الدخول
-          </button>
         </div>
       </div>
     );
@@ -2922,882 +2006,630 @@ export default function Import() {
 
   if (!isAdmin) {
     return (
-      <div style={styles.centerPage}>
-        <div style={styles.deniedCard}>
-          <div style={styles.deniedIcon}>
-            ⛔
+      <div style={styles.page}>
+        <div style={styles.centerCard}>
+          <div style={styles.denied}>
+            🔒
           </div>
 
-          <h1>
-            لا تملك صلاحية Admin
-          </h1>
+          <h2 style={styles.title}>
+            غير مصرح
+          </h2>
 
-          <p>
-            الحساب الحالي:
+          <p style={styles.muted}>
+            هذا القسم متاح للمشرفين فقط.
           </p>
-
-          <strong>
-            {user.email ||
-              user.id}
-          </strong>
 
           {adminError && (
             <div style={styles.errorBox}>
               {adminError}
             </div>
           )}
-
-          <button
-            style={
-              styles.secondaryButton
-            }
-            onClick={async () => {
-              await supabase.auth.signOut();
-            }}
-          >
-            تسجيل الخروج
-          </button>
         </div>
       </div>
     );
   }
-
-  /* ============================================================
-     DASHBOARD
-============================================================ */
 
   return (
     <div style={styles.page}>
       <div style={styles.container}>
 
         {/* HEADER */}
-
-        <header style={styles.header}>
+        <div style={styles.header}>
           <div>
             <div style={styles.badge}>
-              🔐 ADMIN
+              ADMIN
             </div>
 
-            <h1 style={styles.title}>
-              StreamFlix Import Center
+            <h1 style={styles.heading}>
+              StreamFlix Import
             </h1>
 
-            <p style={styles.subtitle}>
-              لوحة الإدارة والاستيراد الآمنة
+            <p style={styles.muted}>
+              إدارة الأفلام والمسلسلات والروابط
+              والمشغلات.
             </p>
           </div>
-
-          <div style={styles.userCard}>
-            <div style={styles.onlineDot} />
-
-            <div>
-              <strong>
-                {user.email}
-              </strong>
-
-              <small style={styles.userRole}>
-                صلاحيات Admin
-              </small>
-            </div>
-
-            <button
-              style={styles.logoutButton}
-              onClick={async () => {
-                await supabase.auth.signOut();
-              }}
-            >
-              خروج
-            </button>
-          </div>
-        </header>
+        </div>
 
         {/* OPERATION */}
-
         {currentOperation && (
-          <div style={styles.operationBar}>
-            <strong>
-              ⚙️ {currentOperation}
-            </strong>
+          <div style={styles.operationCard}>
+            <div style={styles.operationTop}>
+              <strong>
+                {currentOperation}
+              </strong>
+
+              <span>
+                {progress}%
+              </span>
+            </div>
 
             <div style={styles.progressTrack}>
               <div
                 style={{
-                  ...styles.progressFill,
+                  ...styles.progressBar,
                   width: `${progress}%`,
                 }}
               />
             </div>
-
-            <span>
-              {progress}%
-            </span>
           </div>
         )}
 
         {/* STATS */}
-
-        <section style={styles.statsGrid}>
+        <div style={styles.statsGrid}>
           <StatCard
-            icon="🎬"
-            label="مستورد"
-            value={stats.imported}
-          />
-
-          <StatCard
-            icon="🔄"
-            label="محدث"
-            value={stats.updated}
-          />
-
-          <StatCard
-            icon="🎞️"
-            label="الحلقات"
-            value={stats.episodes}
-          />
-
-          <StatCard
-            icon="❌"
-            label="فشل"
-            value={stats.failed}
-          />
-
-          <StatCard
-            icon="📊"
-            label="معالج"
+            label="Processed"
             value={stats.processed}
           />
 
           <StatCard
-            icon="📦"
-            label="الإجمالي"
+            label="Imported"
+            value={stats.imported}
+          />
+
+          <StatCard
+            label="Updated"
+            value={stats.updated}
+          />
+
+          <StatCard
+            label="Episodes"
+            value={stats.episodes}
+          />
+
+          <StatCard
+            label="Failed"
+            value={stats.failed}
+          />
+
+          <StatCard
+            label="Total"
             value={stats.total}
           />
-        </section>
+        </div>
 
         {/* SEARCH */}
-
-        <section style={styles.card}>
-          <SectionTitle
-            icon="🔎"
-            title="استيراد فردي"
-            description="ابحث عن فيلم أو مسلسل ثم استورده مباشرة."
-          />
-
-          <form
-            onSubmit={
-              handleSingleSearch
-            }
-            style={styles.searchRow}
-          >
-            <input
-              value={searchQuery}
-              onChange={(e) =>
-                setSearchQuery(
-                  e.target.value
+        <Section
+          title="🔎 بحث TMDB"
+          description="البحث عن فيلم أو مسلسل واستيراده."
+        >
+          <div style={styles.row}>
+            <select
+              value={searchType}
+              onChange={(event) =>
+                setSearchType(
+                  event.target.value
                 )
               }
-              placeholder="اسم الفيلم / المسلسل أو TMDB ID"
+              style={styles.input}
+              disabled={busy}
+            >
+              <option value="movie">
+                فيلم
+              </option>
+
+              <option value="series">
+                مسلسل
+              </option>
+            </select>
+
+            <input
+              value={searchQuery}
+              onChange={(event) =>
+                setSearchQuery(
+                  event.target.value
+                )
+              }
+              onKeyDown={(event) => {
+                if (
+                  event.key === 'Enter'
+                ) {
+                  handleSearch();
+                }
+              }}
+              placeholder="اسم الفيلم أو المسلسل..."
+              style={styles.input}
+              disabled={busy}
+            />
+
+            <button
+              onClick={handleSearch}
+              disabled={
+                busy ||
+                isSearching ||
+                !searchQuery.trim()
+              }
+              style={styles.primaryButton}
+            >
+              {isSearching
+                ? 'جاري البحث...'
+                : 'بحث'}
+            </button>
+          </div>
+
+          {searchResults.length > 0 && (
+            <div style={styles.resultsGrid}>
+              {searchResults.map((item) => (
+                <div
+                  key={item.id}
+                  style={styles.resultCard}
+                >
+                  <img
+                    src={
+                      getPoster(item) ||
+                      '/placeholder-poster.png'
+                    }
+                    alt={getTitle(item)}
+                    style={styles.poster}
+                  />
+
+                  <div style={styles.resultBody}>
+                    <strong>
+                      {getTitle(item)}
+                    </strong>
+
+                    <span style={styles.small}>
+                      TMDB: {item.id}
+                    </span>
+
+                    <button
+                      onClick={() =>
+                        handleImportSearchResult(
+                          item
+                        )
+                      }
+                      disabled={busy}
+                      style={styles.smallButton}
+                    >
+                      استيراد
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+
+        {/* BULK */}
+        <Section
+          title="📦 استيراد جماعي"
+          description="استيراد Popular من TMDB."
+        >
+          <div style={styles.row}>
+            <select
+              value={bulkType}
+              onChange={(event) =>
+                setBulkType(
+                  event.target.value
+                )
+              }
+              style={styles.input}
+              disabled={busy}
+            >
+              <option value="both">
+                أفلام + مسلسلات
+              </option>
+
+              <option value="movie">
+                أفلام
+              </option>
+
+              <option value="series">
+                مسلسلات
+              </option>
+            </select>
+
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value={pageCount}
+              onChange={(event) =>
+                setPageCount(
+                  Number(event.target.value)
+                )
+              }
+              style={styles.input}
+              disabled={busy}
+            />
+
+            <button
+              onClick={
+                handleBulkPopularImport
+              }
+              disabled={busy}
+              style={styles.primaryButton}
+            >
+              {isBulkLoading
+                ? 'جاري الاستيراد...'
+                : 'بدء الاستيراد'}
+            </button>
+          </div>
+        </Section>
+
+        {/* COUNTRY */}
+        <Section
+          title="🌍 استيراد حسب الدولة"
+          description="جلب أعمال دولة محددة من TMDB."
+        >
+          <div style={styles.grid}>
+            <select
+              value={countryCode}
+              onChange={(event) =>
+                setCountryCode(
+                  event.target.value
+                )
+              }
+              style={styles.input}
+              disabled={busy}
+            >
+              <option value="TR">
+                تركيا
+              </option>
+              <option value="US">
+                الولايات المتحدة
+              </option>
+              <option value="GB">
+                بريطانيا
+              </option>
+              <option value="FR">
+                فرنسا
+              </option>
+              <option value="KR">
+                كوريا الجنوبية
+              </option>
+              <option value="JP">
+                اليابان
+              </option>
+              <option value="IN">
+                الهند
+              </option>
+              <option value="ES">
+                إسبانيا
+              </option>
+              <option value="IT">
+                إيطاليا
+              </option>
+              <option value="DE">
+                ألمانيا
+              </option>
+            </select>
+
+            <select
+              value={countryType}
+              onChange={(event) =>
+                setCountryType(
+                  event.target.value
+                )
+              }
+              style={styles.input}
+              disabled={busy}
+            >
+              <option value="movie">
+                أفلام
+              </option>
+              <option value="series">
+                مسلسلات
+              </option>
+            </select>
+
+            <input
+              type="number"
+              min="1"
+              max="500"
+              value={countryCount}
+              onChange={(event) =>
+                setCountryCount(
+                  Number(event.target.value)
+                )
+              }
               style={styles.input}
               disabled={busy}
             />
 
             <select
-              value={searchType}
-              onChange={(e) =>
-                setSearchType(
-                  e.target.value
+              value={countrySort}
+              onChange={(event) =>
+                setCountrySort(
+                  event.target.value
                 )
               }
-              style={styles.select}
+              style={styles.input}
               disabled={busy}
             >
-              <option value="movie">
-                🎬 فيلم
+              <option value="newest">
+                الأحدث
               </option>
 
-              <option value="tv">
-                📺 مسلسل
+              <option value="oldest">
+                الأقدم
+              </option>
+
+              <option value="popular">
+                الأكثر شعبية
+              </option>
+
+              <option value="rating">
+                التقييم
               </option>
             </select>
-
-            <button
-              type="submit"
-              style={styles.primaryButton}
-              disabled={busy}
-            >
-              {isSearching
-                ? 'جاري البحث...'
-                : '🔎 بحث'}
-            </button>
-          </form>
-
-          {searchResults.length > 0 && (
-            <div style={styles.resultsGrid}>
-              {searchResults.map(
-                (item) => (
-                  <div
-                    key={`${item.id}-${item.media_type || searchType}`}
-                    style={styles.resultCard}
-                  >
-                    {item.poster_path ? (
-                      <img
-                        src={`${TMDB_IMAGE_BASE}/w185${item.poster_path}`}
-                        alt=""
-                        style={styles.poster}
-                      />
-                    ) : (
-                      <div
-                        style={
-                          styles.noPoster
-                        }
-                      >
-                        🎬
-                      </div>
-                    )}
-
-                    <div
-                      style={
-                        styles.resultInfo
-                      }
-                    >
-                      <strong>
-                        {getTitle(item)}
-                      </strong>
-
-                      <small>
-                        TMDB: {item.id}
-                      </small>
-
-                      <small>
-                        ⭐{' '}
-                        {getRating(item)}
-                      </small>
-
-                      <button
-                        style={
-                          styles.smallButton
-                        }
-                        disabled={busy}
-                        onClick={() =>
-                          importSingleItem(
-                            item
-                          )
-                        }
-                      >
-                        ⬇️ استيراد
-                      </button>
-                    </div>
-                  </div>
-                )
-              )}
-            </div>
-          )}
-        </section>
-
-        {/* 🌍 COUNTRY IMPORT */}
-
-        <section style={styles.countryCard}>
-          <SectionTitle
-            icon="🌍"
-            title="استيراد جماعي حسب الدولة"
-            description="جيب أحدث الأفلام أو المسلسلات من دولة تختارها، أو اختر جميع الدول، بعدد أنت تحدده، مع المعلومات والبوسترات وTMDB ID."
-          />
-
-          <div style={styles.countryHero}>
-            <div>
-              <strong>
-                🌍 استيراد المحتوى حسب بلد المنشأ
-              </strong>
-
-              <p>
-                اختر دولة لجلب أعمالها فقط، أو اختر 🌎 جميع الدول لإزالة فلتر بلد المنشأ بالكامل.
-              </p>
-            </div>
-
-            <div style={styles.countryIcon}>
-              🌍
-            </div>
           </div>
 
-          <div style={styles.controlsGrid}>
-
-            <div>
-              <label style={styles.label}>
-                الدولة
-              </label>
-
-              <select
-                value={countryCode}
-                onChange={(e) =>
-                  setCountryCode(
-                    e.target.value
-                  )
-                }
-                style={styles.selectFull}
-                disabled={busy}
-              >
-                <option value="ALL">
-                  🌎 جميع الدول
-                </option>
-
-                {COUNTRIES.map(
-                  (country) => (
-                    <option
-                      key={country.code}
-                      value={country.code}
-                    >
-                      {country.name}
-                    </option>
-                  )
-                )}
-              </select>
-            </div>
-
-            <div>
-              <label style={styles.label}>
-                نوع المحتوى
-              </label>
-
-              <select
-                value={countryType}
-                onChange={(e) =>
-                  setCountryType(
-                    e.target.value
-                  )
-                }
-                style={styles.selectFull}
-                disabled={busy}
-              >
-                <option value="movie">
-                  🎬 أفلام فقط
-                </option>
-
-                <option value="series">
-                  📺 مسلسلات فقط
-                </option>
-
-                <option value="both">
-                  🎬📺 أفلام + مسلسلات
-                </option>
-              </select>
-            </div>
-
-            <div>
-              <label style={styles.label}>
-                عدد الأعمال
-              </label>
-
-              <input
-                type="number"
-                min="1"
-                max="5000"
-                value={countryCount}
-                onChange={(e) =>
-                  setCountryCount(
-                    Math.max(
-                      1,
-                      Math.min(
-                        5000,
-                        Number(
-                          e.target.value
-                        ) || 1
-                      )
-                    )
-                  )
-                }
-                style={styles.input}
-                disabled={busy}
-              />
-            </div>
-
-            <div>
-              <label style={styles.label}>
-                ترتيب النتائج
-              </label>
-
-              <select
-                value={countrySort}
-                onChange={(e) =>
-                  setCountrySort(
-                    e.target.value
-                  )
-                }
-                style={styles.selectFull}
-                disabled={busy}
-              >
-                <option value="newest">
-                  🆕 الأحدث
-                </option>
-
-                <option value="popular">
-                  🔥 الأكثر شعبية
-                </option>
-
-                <option value="rating">
-                  ⭐ الأعلى تقييماً
-                </option>
-              </select>
-            </div>
-          </div>
-
-          {/* SERIES OPTIONS */}
-
-          {countryType !== 'movie' && (
-            <div
-              style={
-                styles.countryOptions
-              }
-            >
-              <div
-                style={
-                  styles.checkboxRow
-                }
-              >
+          {countryType === 'series' && (
+            <div style={styles.grid}>
+              <label style={styles.checkbox}>
                 <input
                   type="checkbox"
                   checked={
                     countryImportEpisodes
                   }
-                  onChange={(e) =>
+                  onChange={(event) =>
                     setCountryImportEpisodes(
-                      e.target.checked
+                      event.target.checked
                     )
                   }
                   disabled={busy}
                 />
-
-                <span>
-                  📺 استيراد مواسم وحلقات المسلسلات تلقائياً
-                </span>
-              </div>
-
-              {countryImportEpisodes && (
-                <div
-                  style={
-                    styles.controlsGrid
-                  }
-                >
-                  <div>
-                    <label
-                      style={
-                        styles.label
-                      }
-                    >
-                      أقصى عدد مواسم لكل مسلسل
-                    </label>
-
-                    <input
-                      type="number"
-                      min="1"
-                      max="100"
-                      value={
-                        countrySeasonLimit
-                      }
-                      onChange={(e) =>
-                        setCountrySeasonLimit(
-                          Math.max(
-                            1,
-                            Math.min(
-                              100,
-                              Number(
-                                e.target
-                                  .value
-                              ) || 1
-                            )
-                          )
-                        )
-                      }
-                      style={
-                        styles.input
-                      }
-                      disabled={busy}
-                    />
-                  </div>
-
-                  <div>
-                    <label
-                      style={
-                        styles.label
-                      }
-                    >
-                      أقصى حلقات لكل موسم
-                    </label>
-
-                    <input
-                      type="number"
-                      min="1"
-                      max="500"
-                      value={
-                        countryEpisodesLimit
-                      }
-                      onChange={(e) =>
-                        setCountryEpisodesLimit(
-                          Math.max(
-                            1,
-                            Math.min(
-                              500,
-                              Number(
-                                e.target
-                                  .value
-                              ) || 1
-                            )
-                          )
-                        )
-                      }
-                      style={
-                        styles.input
-                      }
-                      disabled={busy}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          <button
-            style={
-              styles.countryButton
-            }
-            disabled={busy}
-            onClick={
-              handleCountryImport
-            }
-          >
-            {isCountryLoading
-              ? '🌍 جاري جلب واستيراد المحتوى...'
-              : '🌍 بدء الاستيراد حسب الدولة'}
-          </button>
-
-          <div
-            style={
-              styles.countryInfo
-            }
-          >
-            <span>
-              🖼️ Posters + معلومات كاملة
-            </span>
-
-            <span>
-              🆔 TMDB ID
-            </span>
-
-            <span>
-              🎥 Vidsrc / Stellar / VidLink / YapGrid
-            </span>
-          </div>
-        </section>
-
-        {/* BULK */}
-
-        <section style={styles.card}>
-          <SectionTitle
-            icon="📦"
-            title="الاستيراد الجماعي"
-            description="اختر النوع وعدد صفحات TMDB."
-          />
-
-          <div style={styles.controlsGrid}>
-            <div>
-              <label style={styles.label}>
-                نوع المحتوى
-              </label>
-
-              <select
-                value={bulkType}
-                onChange={(e) =>
-                  setBulkType(
-                    e.target.value
-                  )
-                }
-                style={styles.selectFull}
-                disabled={busy}
-              >
-                <option value="both">
-                  🎬📺 أفلام + مسلسلات
-                </option>
-
-                <option value="movie">
-                  🎬 أفلام فقط
-                </option>
-
-                <option value="series">
-                  📺 مسلسلات فقط
-                </option>
-              </select>
-            </div>
-
-            <div>
-              <label style={styles.label}>
-                عدد الصفحات
-              </label>
-
-              <input
-                type="number"
-                min="1"
-                max="500"
-                value={pageCount}
-                onChange={(e) =>
-                  setPageCount(
-                    Math.max(
-                      1,
-                      Math.min(
-                        500,
-                        Number(
-                          e.target.value
-                        ) || 1
-                      )
-                    )
-                  )
-                }
-                style={styles.input}
-                disabled={busy}
-              />
-            </div>
-          </div>
-
-          <button
-            style={
-              styles.primaryWideButton
-            }
-            disabled={busy}
-            onClick={
-              handleBulkPopularImport
-            }
-          >
-            📦 بدء الاستيراد الجماعي
-          </button>
-        </section>
-
-        {/* TRENDING */}
-
-        <section style={styles.card}>
-          <SectionTitle
-            icon="🔥"
-            title="Trending"
-            description="جلب أحدث 20 عمل Trending من TMDB."
-          />
-
-          <button
-            style={styles.trendingButton}
-            disabled={busy}
-            onClick={
-              handleTrendingImport
-            }
-          >
-            {isTrendingLoading
-              ? '🔥 جاري الاستيراد...'
-              : '🔥 استيراد آخر 20 Trending'}
-          </button>
-        </section>
-
-        {/* EPISODES */}
-
-        <section style={styles.card}>
-          <SectionTitle
-            icon="📺"
-            title="المواسم والحلقات"
-            description="استيراد عدد محدد من المواسم والحلقات."
-          />
-
-          <div style={styles.controlsGrid}>
-            <div>
-              <label style={styles.label}>
-                TMDB ID للمسلسل
-              </label>
-
-              <input
-                value={seriesTmdbId}
-                onChange={(e) =>
-                  setSeriesTmdbId(
-                    e.target.value
-                  )
-                }
-                placeholder="مثال: 108978"
-                style={styles.input}
-                disabled={busy}
-              />
-            </div>
-
-            <div>
-              <label style={styles.label}>
-                عدد المواسم
+                جلب الحلقات
               </label>
 
               <input
                 type="number"
                 min="1"
                 max="100"
-                value={seasonCount}
-                onChange={(e) =>
-                  setSeasonCount(
-                    Math.max(
-                      1,
-                      Math.min(
-                        100,
-                        Number(
-                          e.target.value
-                        ) || 1
-                      )
+                value={countrySeasonLimit}
+                onChange={(event) =>
+                  setCountrySeasonLimit(
+                    Number(
+                      event.target.value
                     )
                   )
                 }
                 style={styles.input}
                 disabled={busy}
+                placeholder="عدد المواسم"
               />
-            </div>
-
-            <div>
-              <label style={styles.label}>
-                الحلقات لكل موسم
-              </label>
 
               <input
                 type="number"
                 min="1"
                 max="500"
-                value={
-                  episodesPerSeason
-                }
-                onChange={(e) =>
-                  setEpisodesPerSeason(
-                    Math.max(
-                      1,
-                      Math.min(
-                        500,
-                        Number(
-                          e.target.value
-                        ) || 1
-                      )
+                value={countryEpisodesLimit}
+                onChange={(event) =>
+                  setCountryEpisodesLimit(
+                    Number(
+                      event.target.value
                     )
                   )
                 }
                 style={styles.input}
                 disabled={busy}
+                placeholder="الحلقات لكل موسم"
               />
             </div>
-          </div>
+          )}
 
           <button
-            style={
-              styles.primaryWideButton
-            }
+            onClick={handleCountryImport}
             disabled={busy}
-            onClick={
-              handleSeriesEpisodesImport
-            }
+            style={styles.primaryButton}
           >
-            📺 استيراد المواسم والحلقات
+            {isCountryLoading
+              ? 'جاري الاستيراد...'
+              : 'استيراد الدولة'}
           </button>
-        </section>
+        </Section>
+
+        {/* TRENDING */}
+        <Section
+          title="🔥 Trending"
+          description="استيراد الأفلام والمسلسلات الرائجة."
+        >
+          <button
+            onClick={handleTrendingImport}
+            disabled={busy}
+            style={styles.primaryButton}
+          >
+            {isTrendingLoading
+              ? 'جاري الاستيراد...'
+              : 'استيراد Trending'}
+          </button>
+        </Section>
+
+        {/* EPISODES */}
+        <Section
+          title="🎬 تحديث حلقات مسلسل"
+          description="إعادة جلب حلقات مسلسل موجود باستعمال TMDB ID."
+        >
+          <div style={styles.row}>
+            <input
+              value={seriesTmdbId}
+              onChange={(event) =>
+                setSeriesTmdbId(
+                  event.target.value
+                )
+              }
+              placeholder="TMDB ID"
+              style={styles.input}
+              disabled={busy}
+            />
+
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value={seasonCount}
+              onChange={(event) =>
+                setSeasonCount(
+                  Number(event.target.value)
+                )
+              }
+              style={styles.input}
+              disabled={busy}
+              placeholder="المواسم"
+            />
+
+            <input
+              type="number"
+              min="1"
+              max="500"
+              value={episodesPerSeason}
+              onChange={(event) =>
+                setEpisodesPerSeason(
+                  Number(event.target.value)
+                )
+              }
+              style={styles.input}
+              disabled={busy}
+              placeholder="الحلقات"
+            />
+
+            <button
+              onClick={handleManualEpisodes}
+              disabled={
+                busy ||
+                !seriesTmdbId.trim()
+              }
+              style={styles.primaryButton}
+            >
+              {isEpisodeLoading
+                ? 'جاري التحديث...'
+                : 'تحديث الحلقات'}
+            </button>
+          </div>
+        </Section>
 
         {/* TOOLS */}
-
-        <section style={styles.card}>
-          <SectionTitle
-            icon="🛠️"
-            title="أدوات قاعدة البيانات"
-            description="عمليات مستقلة لتحديث وإصلاح البيانات."
-          />
-
+        <Section
+          title="🛠️ أدوات قاعدة البيانات"
+          description="إصلاح وتحديث البيانات الحالية."
+        >
           <div style={styles.toolsGrid}>
             <ToolButton
-              icon="🛠️"
-              text="إصلاح الروابط"
-              onClick={
-                handleFixUrls
-              }
+              icon="🔗"
+              title="إصلاح الروابط"
+              description="إعادة بناء رابط Player 1 للأفلام."
+              onClick={handleFixUrls}
               disabled={busy}
             />
 
             <ToolButton
               icon="🖼️"
-              text="إصلاح Posters"
-              onClick={
-                handleFixPosters
-              }
+              title="إصلاح Posters"
+              description="إعادة جلب صور TMDB."
+              onClick={handleFixPosters}
               disabled={busy}
             />
 
             <ToolButton
               icon="⭐"
-              text="تحديث Ratings"
-              onClick={
-                handleUpdateRatings
-              }
+              title="تحديث Ratings"
+              description="تحديث تقييمات TMDB."
+              onClick={handleUpdateRatings}
               disabled={busy}
             />
 
             <ToolButton
-              icon="📝"
-              text="تحديث المعلومات"
-              onClick={
-                handleUpdateInfo
-              }
+              icon="ℹ️"
+              title="تحديث المعلومات"
+              description="تحديث معلومات الأعمال."
+              onClick={handleUpdateInfo}
               disabled={busy}
             />
-          </div>
-        </section>
 
-        {/* SERVERS */}
-
-        <section style={styles.card}>
-          <SectionTitle
-            icon="🎥"
-            title="نظام المشغلات"
-            description="المشغلات تعتمد على TMDB ID ويتم توليد الروابط أثناء التشغيل."
-          />
-
-          <div style={styles.serverGrid}>
-            <ServerCard
-              number="1"
-              name="Vidsrc"
-              description="Server 1"
+            <ToolButton
+              icon="🔄"
+              title="تجديد روابط جميع Players"
+              description="تجديد روابط Vidsrc وStellar وVidLink وYapGrid باستعمال نفس TMDB ID."
+              onClick={
+                handleRefreshAllPlayerLinks
+              }
+              disabled={busy}
+              accent
             />
 
-            <ServerCard
-              number="2"
-              name="Stellar"
-              description="Server 2"
-            />
-
-            <ServerCard
-              number="3"
-              name="VidLink"
-              description="Server 3"
-            />
-
-            <ServerCard
-              number="4"
-              name="YapGrid"
-              description="👑 VIP Server"
-              vip
+            <ToolButton
+              icon="🔍"
+              title="فحص Players وإخفاء المعطّل"
+              description="إذا فشل Players الأربعة يتم وضع is_hidden = true."
+              onClick={
+                handleScanAndHideBrokenPlayers
+              }
+              disabled={busy}
+              danger
             />
           </div>
-        </section>
+        </Section>
+
+        {/* PLAYERS */}
+        <Section
+          title="🎥 نظام المشاهدة"
+          description="المشغلات التي يستعملها VideoPlayer."
+        >
+          <div style={styles.playersGrid}>
+            {PLAYER_NAMES.map(
+              (player, index) => (
+                <div
+                  key={player}
+                  style={styles.playerCard}
+                >
+                  <div
+                    style={styles.playerNumber}
+                  >
+                    {index + 1}
+                  </div>
+
+                  <div>
+                    <strong>
+                      {player}
+                    </strong>
+
+                    <p style={styles.small}>
+                      {index === 0 &&
+                        'Vidsrc Free'}
+                      {index === 1 &&
+                        'Stellar Free'}
+                      {index === 2 &&
+                        'VidLink Free'}
+                      {index === 3 &&
+                        'YapGrid VIP'}
+                    </p>
+                  </div>
+                </div>
+              )
+            )}
+          </div>
+        </Section>
 
         {/* LOGS */}
-
-        <section style={styles.card}>
-          <div style={styles.logsHeader}>
-            <SectionTitle
-              icon="📜"
-              title="سجل العمليات"
-              description={`${logs.length} عملية مسجلة`}
-            />
-
-            <button
-              style={styles.clearButton}
-              onClick={clearLogs}
-              disabled={!logs.length}
-            >
-              مسح السجل
-            </button>
-          </div>
-
+        <Section
+          title="📋 Logs"
+          description="سجل آخر العمليات."
+        >
           <div style={styles.logs}>
             {logs.length === 0 ? (
-              <div style={styles.emptyLogs}>
+              <div style={styles.empty}>
                 لا توجد عمليات بعد.
               </div>
             ) : (
@@ -3806,25 +2638,22 @@ export default function Import() {
                   key={log.id}
                   style={{
                     ...styles.log,
-                    borderRight:
-                      `3px solid ${
-                        log.type ===
-                        'error'
-                          ? '#ef4444'
-                          : log.type ===
-                            'success'
-                          ? '#22c55e'
-                          : log.type ===
-                            'warning'
-                          ? '#f59e0b'
-                          : '#3b82f6'
-                      }`,
+                    ...(log.type ===
+                    'error'
+                      ? styles.logError
+                      : {}),
+                    ...(log.type ===
+                    'warning'
+                      ? styles.logWarning
+                      : {}),
+                    ...(log.type ===
+                    'success'
+                      ? styles.logSuccess
+                      : {}),
                   }}
                 >
                   <span
-                    style={
-                      styles.logTime
-                    }
+                    style={styles.logTime}
                   >
                     {log.time}
                   </span>
@@ -3836,596 +2665,324 @@ export default function Import() {
               ))
             )}
           </div>
-        </section>
+        </Section>
 
         {/* SECURITY */}
-
-        <section
-          style={
-            styles.securityNotice
-          }
+        <Section
+          title="🔐 الحماية"
+          description="هذه الصفحة تعتمد على صلاحية admin_users."
         >
-          <div
-            style={
-              styles.securityIcon
-            }
-          >
-            🔐
-          </div>
+          <div style={styles.securityBox}>
+            <span>
+              👤 المستخدم الحالي
+            </span>
 
-          <div>
-            <strong>
-              الحماية الحالية
-            </strong>
+            <span style={styles.small}>
+              {user.email || user.id}
+            </span>
 
-            <p>
-              الصفحة تعتمد على Supabase
-              Authentication و
-              admin_users، وقاعدة البيانات
-              محمية بواسطة RLS بحيث عمليات
-              INSERT وUPDATE وDELETE لا
-              يسمح بها إلا للحسابات الموجودة
-              في admin_users.
-            </p>
+            <span style={styles.adminPill}>
+              ADMIN
+            </span>
           </div>
-        </section>
+        </Section>
       </div>
     </div>
   );
 }
 
-/* ============================================================
-   SMALL COMPONENTS
-============================================================ */
+/* =========================================================
+   COMPONENTS
+========================================================= */
+
+function Section({
+  title,
+  description,
+  children,
+}) {
+  return (
+    <section style={styles.section}>
+      <div style={styles.sectionHeader}>
+        <div>
+          <h2 style={styles.sectionTitle}>
+            {title}
+          </h2>
+
+          <p style={styles.muted}>
+            {description}
+          </p>
+        </div>
+      </div>
+
+      <div>{children}</div>
+    </section>
+  );
+}
 
 function StatCard({
-  icon,
   label,
   value,
 }) {
   return (
     <div style={styles.statCard}>
-      <div style={styles.statIcon}>
-        {icon}
-      </div>
+      <span style={styles.statLabel}>
+        {label}
+      </span>
 
-      <div>
-        <span style={styles.statLabel}>
-          {label}
-        </span>
-
-        <strong style={styles.statValue}>
-          {formatNumber(value)}
-        </strong>
-      </div>
-    </div>
-  );
-}
-
-function SectionTitle({
-  icon,
-  title,
-  description,
-}) {
-  return (
-    <div style={styles.sectionTitle}>
-      <div style={styles.sectionIcon}>
-        {icon}
-      </div>
-
-      <div>
-        <h2>
-          {title}
-        </h2>
-
-        <p>
-          {description}
-        </p>
-      </div>
+      <strong style={styles.statValue}>
+        {formatNumber(value)}
+      </strong>
     </div>
   );
 }
 
 function ToolButton({
   icon,
-  text,
+  title,
+  description,
   onClick,
   disabled,
+  accent = false,
+  danger = false,
 }) {
   return (
     <button
-      style={styles.toolButton}
       onClick={onClick}
       disabled={disabled}
-      type="button"
+      style={{
+        ...styles.toolButton,
+        ...(accent
+          ? styles.toolAccent
+          : {}),
+        ...(danger
+          ? styles.toolDanger
+          : {}),
+      }}
     >
-      <span>
+      <div style={styles.toolIcon}>
         {icon}
-      </span>
+      </div>
 
-      {text}
+      <div style={styles.toolContent}>
+        <strong>{title}</strong>
+
+        <span>{description}</span>
+      </div>
     </button>
   );
 }
 
-function ServerCard({
-  number,
-  name,
-  description,
-  vip = false,
-}) {
-  return (
-    <div
-      style={{
-        ...styles.serverCard,
-        ...(vip
-          ? styles.vipServerCard
-          : {}),
-      }}
-    >
-      <div
-        style={{
-          ...styles.serverNumber,
-          ...(vip
-            ? styles.vipServerNumber
-            : {}),
-        }}
-      >
-        {number}
-      </div>
-
-      <div>
-        <strong>
-          {vip && '👑 '}
-          {name}
-        </strong>
-
-        <p>
-          {description}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/* ============================================================
+/* =========================================================
    STYLES
-============================================================ */
+========================================================= */
 
 const styles = {
   page: {
     minHeight: '100vh',
     background:
-      'radial-gradient(circle at top, #241018 0%, #090909 38%, #050505 100%)',
+      'linear-gradient(180deg,#090b12 0%,#0d1018 100%)',
     color: '#fff',
+    padding: '30px 16px 60px',
     direction: 'rtl',
-    fontFamily:
-      'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    padding:
-      '24px 14px 60px',
     boxSizing: 'border-box',
   },
 
   container: {
+    width: '100%',
     maxWidth: '1250px',
     margin: '0 auto',
   },
 
-  centerPage: {
-    minHeight: '100vh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: '#070707',
-    color: '#fff',
-    padding: '20px',
-    direction: 'rtl',
-    fontFamily:
-      'Inter, system-ui, sans-serif',
-  },
-
-  loadingCard: {
-    width:
-      'min(450px, 100%)',
+  centerCard: {
+    width: 'min(520px,100%)',
+    margin: '100px auto',
+    padding: '35px',
+    borderRadius: '22px',
+    background: '#121722',
+    border: '1px solid #252c3a',
     textAlign: 'center',
-    padding:
-      '40px 25px',
-    borderRadius: '24px',
-    background:
-      'linear-gradient(145deg, #171717, #0d0d0d)',
-    border:
-      '1px solid rgba(255,255,255,.08)',
-    boxShadow:
-      '0 25px 70px rgba(0,0,0,.55)',
-  },
-
-  deniedCard: {
-    width:
-      'min(500px, 100%)',
-    textAlign: 'center',
-    padding:
-      '42px 28px',
-    borderRadius: '26px',
-    background:
-      'linear-gradient(145deg, #191919, #0b0b0b)',
-    border:
-      '1px solid rgba(229,9,20,.25)',
-    boxShadow:
-      '0 30px 90px rgba(0,0,0,.65)',
-  },
-
-  deniedIcon: {
-    fontSize: '58px',
-    marginBottom: '15px',
-  },
-
-  spinner: {
-    width: '42px',
-    height: '42px',
-    borderRadius: '50%',
-    border:
-      '4px solid rgba(255,255,255,.12)',
-    borderTopColor:
-      '#e50914',
-    margin:
-      '0 auto 20px',
+    boxSizing: 'border-box',
   },
 
   header: {
     display: 'flex',
-    justifyContent:
-      'space-between',
+    justifyContent: 'space-between',
     alignItems: 'center',
     gap: '20px',
-    marginBottom: '24px',
-    flexWrap: 'wrap',
+    marginBottom: '25px',
   },
 
   badge: {
     display: 'inline-flex',
-    padding: '6px 11px',
+    padding: '5px 10px',
     borderRadius: '999px',
-    background:
-      'rgba(229,9,20,.12)',
-    border:
-      '1px solid rgba(229,9,20,.3)',
-    color: '#ff6670',
-    fontSize: '12px',
+    background: '#252c3a',
+    color: '#aeb8cc',
+    fontSize: '11px',
     fontWeight: 800,
-    marginBottom: '10px',
+    letterSpacing: '1px',
+    marginBottom: '8px',
+  },
+
+  heading: {
+    margin: 0,
+    fontSize: '30px',
+    fontWeight: 900,
   },
 
   title: {
-    margin: 0,
-    fontSize:
-      'clamp(27px, 5vw, 44px)',
-    fontWeight: 900,
-    letterSpacing: '-1px',
+    margin: '10px 0',
   },
 
-  subtitle: {
-    color: '#999',
-    margin:
-      '8px 0 0',
-    fontSize: '14px',
+  muted: {
+    margin: '6px 0 0',
+    color: '#8f9aaf',
+    lineHeight: 1.6,
   },
 
-  userCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    padding:
-      '10px 12px',
-    borderRadius: '15px',
-    background:
-      'rgba(255,255,255,.045)',
-    border:
-      '1px solid rgba(255,255,255,.08)',
-  },
-
-  userRole: {
+  small: {
     display: 'block',
-    color: '#888',
-    fontSize: '11px',
-    marginTop: '3px',
+    color: '#8792a7',
+    fontSize: '12px',
+    marginTop: '5px',
   },
 
-  onlineDot: {
-    width: '9px',
-    height: '9px',
-    borderRadius: '50%',
-    background:
-      '#22c55e',
-    boxShadow:
-      '0 0 12px rgba(34,197,94,.7)',
+  denied: {
+    fontSize: '45px',
+    marginBottom: '10px',
   },
 
-  logoutButton: {
-    border: 0,
-    borderRadius: '10px',
-    padding:
-      '8px 12px',
-    background:
-      'rgba(255,255,255,.08)',
-    color: '#fff',
-    cursor: 'pointer',
+  errorBox: {
+    marginTop: '20px',
+    padding: '12px',
+    borderRadius: '12px',
+    background: '#2a1418',
+    border: '1px solid #632b35',
+    color: '#ff9ca8',
   },
 
-  operationBar: {
-    display: 'grid',
-    gridTemplateColumns:
-      'minmax(180px,1fr) minmax(150px,2fr) 50px',
-    alignItems: 'center',
-    gap: '15px',
-    padding:
-      '14px 16px',
+  operationCard: {
     marginBottom: '18px',
+    padding: '16px',
     borderRadius: '16px',
-    background:
-      'rgba(229,9,20,.09)',
-    border:
-      '1px solid rgba(229,9,20,.2)',
+    background: '#111621',
+    border: '1px solid #273043',
+  },
+
+  operationTop: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '15px',
+    marginBottom: '10px',
   },
 
   progressTrack: {
-    height: '9px',
-    background:
-      'rgba(255,255,255,.08)',
+    width: '100%',
+    height: '8px',
     borderRadius: '999px',
     overflow: 'hidden',
+    background: '#252c39',
   },
 
-  progressFill: {
+  progressBar: {
     height: '100%',
-    background:
-      'linear-gradient(90deg,#e50914,#ff5260)',
     borderRadius: '999px',
-    transition:
-      'width .25s ease',
+    background:
+      'linear-gradient(90deg,#5b7cff,#8b5cf6)',
+    transition: 'width .2s ease',
   },
 
   statsGrid: {
     display: 'grid',
     gridTemplateColumns:
-      'repeat(auto-fit,minmax(150px,1fr))',
-    gap: '12px',
+      'repeat(auto-fit,minmax(130px,1fr))',
+    gap: '10px',
     marginBottom: '18px',
   },
 
   statCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '16px',
-    borderRadius: '17px',
-    background:
-      'linear-gradient(145deg,#171717,#101010)',
-    border:
-      '1px solid rgba(255,255,255,.07)',
-  },
-
-  statIcon: {
-    fontSize: '25px',
+    padding: '15px',
+    borderRadius: '16px',
+    background: '#111621',
+    border: '1px solid #222a39',
   },
 
   statLabel: {
     display: 'block',
-    color: '#888',
+    color: '#8d98ac',
     fontSize: '12px',
-    marginBottom: '3px',
+    marginBottom: '5px',
   },
 
   statValue: {
-    display: 'block',
     fontSize: '22px',
   },
 
-  card: {
-    background:
-      'linear-gradient(145deg,rgba(25,25,25,.97),rgba(12,12,12,.97))',
-    border:
-      '1px solid rgba(255,255,255,.075)',
-    borderRadius: '22px',
-    padding: '22px',
+  section: {
     marginBottom: '18px',
-    boxShadow:
-      '0 18px 50px rgba(0,0,0,.18)',
+    padding: '20px',
+    borderRadius: '20px',
+    background: '#111621',
+    border: '1px solid #222a39',
   },
 
-  countryCard: {
-    background:
-      'linear-gradient(145deg,rgba(29,22,14,.98),rgba(12,12,12,.98))',
-    border:
-      '1px solid rgba(245,158,11,.18)',
-    borderRadius: '22px',
-    padding: '22px',
+  sectionHeader: {
     marginBottom: '18px',
-    boxShadow:
-      '0 18px 50px rgba(0,0,0,.25)',
   },
 
-  countryHero: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent:
-      'space-between',
-    gap: '20px',
-    padding: '16px',
-    marginBottom: '18px',
-    borderRadius: '16px',
-    background:
-      'rgba(245,158,11,.055)',
-    border:
-      '1px solid rgba(245,158,11,.12)',
+  sectionTitle: {
+    margin: 0,
+    fontSize: '19px',
+    fontWeight: 800,
   },
 
-  countryIcon: {
-    fontSize: '38px',
-  },
-
-  countryOptions: {
-    marginTop: '4px',
-    marginBottom: '15px',
-    padding: '15px',
-    borderRadius: '14px',
-    background:
-      'rgba(255,255,255,.025)',
-    border:
-      '1px solid rgba(255,255,255,.06)',
-  },
-
-  checkboxRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '9px',
-    marginBottom: '15px',
-    color: '#ddd',
-    fontSize: '14px',
-  },
-
-  countryButton: {
-    width: '100%',
-    border: 0,
-    borderRadius: '14px',
-    background:
-      'linear-gradient(135deg,#f59e0b,#d97706)',
-    color: '#111',
-    fontWeight: 900,
-    cursor: 'pointer',
-    padding: '15px',
-    fontSize: '15px',
-  },
-
-  countryInfo: {
+  row: {
     display: 'flex',
     flexWrap: 'wrap',
-    gap: '8px',
-    marginTop: '12px',
-  },
-
-  searchRow: {
-    display: 'grid',
-    gridTemplateColumns:
-      '1fr 150px 120px',
     gap: '10px',
   },
 
-  controlsGrid: {
+  grid: {
     display: 'grid',
     gridTemplateColumns:
-      'repeat(auto-fit,minmax(180px,1fr))',
-    gap: '12px',
-    marginBottom: '15px',
-  },
-
-  label: {
-    display: 'block',
-    color: '#aaa',
-    fontSize: '13px',
-    marginBottom: '7px',
+      'repeat(auto-fit,minmax(170px,1fr))',
+    gap: '10px',
+    marginBottom: '12px',
   },
 
   input: {
-    width: '100%',
+    flex: '1 1 180px',
+    minWidth: 0,
+    height: '44px',
+    padding: '0 13px',
+    borderRadius: '11px',
+    border: '1px solid #30394b',
+    background: '#0b0f17',
+    color: '#fff',
+    outline: 'none',
     boxSizing: 'border-box',
-    padding:
-      '13px 14px',
-    borderRadius: '12px',
-    border:
-      '1px solid rgba(255,255,255,.1)',
-    background: '#0a0a0a',
-    color: '#fff',
-    outline: 'none',
-    fontSize: '14px',
-  },
-
-  select: {
-    padding:
-      '13px 12px',
-    borderRadius: '12px',
-    border:
-      '1px solid rgba(255,255,255,.1)',
-    background: '#0a0a0a',
-    color: '#fff',
-    outline: 'none',
-  },
-
-  selectFull: {
-    width: '100%',
-    boxSizing: 'border-box',
-    padding:
-      '13px 12px',
-    borderRadius: '12px',
-    border:
-      '1px solid rgba(255,255,255,.1)',
-    background: '#0a0a0a',
-    color: '#fff',
-    outline: 'none',
   },
 
   primaryButton: {
-    border: 0,
-    borderRadius: '12px',
+    minHeight: '44px',
+    padding: '0 18px',
+    borderRadius: '11px',
+    border: '1px solid #536cff',
     background:
-      'linear-gradient(135deg,#e50914,#b0060f)',
+      'linear-gradient(135deg,#536cff,#7658e8)',
     color: '#fff',
     fontWeight: 800,
-    cursor: 'pointer',
-    padding:
-      '0 18px',
-    minHeight: '46px',
-  },
-
-  primaryWideButton: {
-    width: '100%',
-    border: 0,
-    borderRadius: '13px',
-    background:
-      'linear-gradient(135deg,#e50914,#b0060f)',
-    color: '#fff',
-    fontWeight: 850,
-    cursor: 'pointer',
-    padding: '14px',
-    fontSize: '15px',
-  },
-
-  trendingButton: {
-    width: '100%',
-    border:
-      '1px solid rgba(245,158,11,.35)',
-    borderRadius: '13px',
-    background:
-      'rgba(245,158,11,.09)',
-    color: '#fbbf24',
-    fontWeight: 850,
-    cursor: 'pointer',
-    padding: '14px',
-    fontSize: '15px',
-  },
-
-  secondaryButton: {
-    marginTop: '20px',
-    border:
-      '1px solid rgba(255,255,255,.1)',
-    borderRadius: '12px',
-    background:
-      'rgba(255,255,255,.05)',
-    color: '#fff',
-    padding:
-      '12px 20px',
     cursor: 'pointer',
   },
 
   smallButton: {
-    marginTop: 'auto',
-    border: 0,
+    marginTop: '10px',
+    padding: '8px 12px',
     borderRadius: '9px',
-    background: '#e50914',
+    border: '1px solid #35415a',
+    background: '#171e2b',
     color: '#fff',
-    padding:
-      '8px 10px',
     cursor: 'pointer',
-    fontWeight: 750,
   },
 
   resultsGrid: {
@@ -4438,216 +2995,191 @@ const styles = {
 
   resultCard: {
     display: 'flex',
-    gap: '11px',
+    gap: '12px',
     padding: '10px',
-    borderRadius: '15px',
-    background:
-      'rgba(255,255,255,.035)',
-    border:
-      '1px solid rgba(255,255,255,.06)',
-    minHeight: '135px',
+    borderRadius: '14px',
+    background: '#0b0f17',
+    border: '1px solid #242d3d',
+    overflow: 'hidden',
   },
 
   poster: {
-    width: '80px',
-    height: '120px',
+    width: '70px',
+    height: '100px',
     objectFit: 'cover',
     borderRadius: '9px',
-    background: '#111',
+    background: '#171d28',
     flexShrink: 0,
   },
 
-  noPoster: {
-    width: '80px',
-    height: '120px',
-    borderRadius: '9px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: '#111',
-    fontSize: '30px',
-    flexShrink: 0,
-  },
-
-  resultInfo: {
+  resultBody: {
+    minWidth: 0,
     display: 'flex',
     flexDirection: 'column',
-    gap: '6px',
-    minWidth: 0,
+    alignItems: 'flex-start',
   },
 
   toolsGrid: {
+    display: 'grid',
+    gridTemplateColumns:
+      'repeat(auto-fit,minmax(270px,1fr))',
+    gap: '12px',
+  },
+
+  toolButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '13px',
+    width: '100%',
+    minHeight: '92px',
+    padding: '15px',
+    borderRadius: '15px',
+    border: '1px solid #293246',
+    background: '#0c111a',
+    color: '#fff',
+    textAlign: 'right',
+    cursor: 'pointer',
+  },
+
+  toolAccent: {
+    borderColor: '#536cff',
+    background:
+      'linear-gradient(135deg,#11182a,#171b31)',
+  },
+
+  toolDanger: {
+    borderColor: '#713843',
+    background:
+      'linear-gradient(135deg,#171017,#20131a)',
+  },
+
+  toolIcon: {
+    width: '45px',
+    height: '45px',
+    display: 'grid',
+    placeItems: 'center',
+    borderRadius: '12px',
+    background: '#171e2c',
+    fontSize: '22px',
+    flexShrink: 0,
+  },
+
+  toolContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '5px',
+  },
+
+  checkbox: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    minHeight: '44px',
+    color: '#d9dfeb',
+  },
+
+  playersGrid: {
     display: 'grid',
     gridTemplateColumns:
       'repeat(auto-fit,minmax(180px,1fr))',
     gap: '10px',
   },
 
-  toolButton: {
-    border:
-      '1px solid rgba(255,255,255,.08)',
-    borderRadius: '13px',
-    background:
-      'rgba(255,255,255,.04)',
-    color: '#fff',
-    padding: '14px',
-    cursor: 'pointer',
-    fontWeight: 750,
+  playerCard: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: '9px',
-  },
-
-  serverGrid: {
-    display: 'grid',
-    gridTemplateColumns:
-      'repeat(auto-fit,minmax(220px,1fr))',
     gap: '12px',
+    padding: '13px',
+    borderRadius: '14px',
+    background: '#0b0f17',
+    border: '1px solid #242d3d',
   },
 
-  serverCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '14px',
-    padding: '17px',
-    borderRadius: '15px',
-    background:
-      'rgba(255,255,255,.035)',
-    border:
-      '1px solid rgba(255,255,255,.07)',
-  },
-
-  vipServerCard: {
-    background:
-      'linear-gradient(145deg,rgba(245,158,11,.10),rgba(255,255,255,.025))',
-    border:
-      '1px solid rgba(245,158,11,.28)',
-  },
-
-  serverNumber: {
-    width: '42px',
-    height: '42px',
-    borderRadius: '12px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background:
-      'rgba(229,9,20,.12)',
-    color: '#ff6670',
-    fontSize: '18px',
+  playerNumber: {
+    width: '38px',
+    height: '38px',
+    display: 'grid',
+    placeItems: 'center',
+    borderRadius: '10px',
+    background: '#1b2230',
     fontWeight: 900,
   },
 
-  vipServerNumber: {
-    background:
-      'rgba(245,158,11,.14)',
-    color: '#fbbf24',
-  },
-
-  logsHeader: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent:
-      'space-between',
-    gap: '15px',
-  },
-
-  clearButton: {
-    border:
-      '1px solid rgba(255,255,255,.08)',
-    background:
-      'rgba(255,255,255,.04)',
-    color: '#aaa',
-    padding:
-      '8px 12px',
-    borderRadius: '9px',
-    cursor: 'pointer',
-  },
-
   logs: {
-    maxHeight: '450px',
+    maxHeight: '430px',
     overflowY: 'auto',
     display: 'flex',
     flexDirection: 'column',
-    gap: '5px',
-    padding: '5px',
-    background: '#080808',
-    borderRadius: '14px',
+    gap: '7px',
   },
 
   log: {
     display: 'flex',
     gap: '10px',
-    alignItems: 'flex-start',
-    padding:
-      '8px 10px',
-    background:
-      'rgba(255,255,255,.025)',
-    borderRadius: '7px',
+    padding: '9px 11px',
+    borderRadius: '9px',
+    background: '#0b0f17',
+    border: '1px solid #202837',
+    color: '#cbd3e1',
     fontSize: '13px',
     lineHeight: 1.5,
   },
 
   logTime: {
-    color: '#666',
-    fontFamily:
-      'monospace',
+    color: '#68748a',
     direction: 'ltr',
     flexShrink: 0,
   },
 
-  emptyLogs: {
-    padding: '30px',
+  logError: {
+    borderColor: '#65303a',
+    color: '#ff9aa7',
+  },
+
+  logWarning: {
+    borderColor: '#66552a',
+    color: '#f5d681',
+  },
+
+  logSuccess: {
+    borderColor: '#28513e',
+    color: '#8ee4b6',
+  },
+
+  empty: {
+    padding: '25px',
     textAlign: 'center',
-    color: '#666',
+    color: '#68748a',
   },
 
-  sectionTitle: {
-    display: 'flex',
-    gap: '13px',
-    alignItems: 'flex-start',
-    marginBottom: '20px',
-  },
-
-  sectionIcon: {
-    width: '42px',
-    height: '42px',
+  securityBox: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: '13px',
-    background:
-      'rgba(229,9,20,.11)',
-    fontSize: '20px',
-    flexShrink: 0,
+    flexWrap: 'wrap',
+    gap: '12px',
+    padding: '13px',
+    borderRadius: '12px',
+    background: '#0b0f17',
+    border: '1px solid #242d3d',
   },
 
-  securityNotice: {
-    display: 'flex',
-    gap: '15px',
-    padding: '18px',
-    borderRadius: '18px',
-    background:
-      'rgba(34,197,94,.055)',
-    border:
-      '1px solid rgba(34,197,94,.15)',
+  adminPill: {
+    padding: '5px 9px',
+    borderRadius: '999px',
+    background: '#183b2d',
+    color: '#8ee4b6',
+    fontSize: '11px',
+    fontWeight: 900,
   },
 
-  securityIcon: {
-    fontSize: '30px',
-  },
-
-  errorBox: {
-    marginTop: '18px',
-    padding: '12px',
-    borderRadius: '10px',
-    background:
-      'rgba(239,68,68,.1)',
-    border:
-      '1px solid rgba(239,68,68,.2)',
-    color: '#fca5a5',
-    fontSize: '13px',
-    textAlign: 'right',
+  spinner: {
+    width: '35px',
+    height: '35px',
+    margin: '0 auto 15px',
+    borderRadius: '50%',
+    border: '3px solid #293246',
+    borderTopColor: '#687cff',
+    animation:
+      'streamflix-spin 1s linear infinite',
   },
 };
