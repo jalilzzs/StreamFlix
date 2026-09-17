@@ -14,7 +14,7 @@ function fetchJson(targetUrl) {
       path: parsed.path,
       method: 'GET',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Accept': 'application/json'
       },
       timeout: 10000
@@ -49,26 +49,39 @@ function fetchJson(targetUrl) {
   });
 }
 
-// دالة جلب IMDb ID مضمونة باستخدام OMDb API المجاني
-async function getImdbId(query, type) {
-  try {
-    const cleanQuery = query.trim().toLowerCase();
-    
-    // 1. تجربة OMDb API المجاني
-    const omdbUrl = `https://www.omdbapi.com/?t=${encodeURIComponent(cleanQuery)}&apikey=trilogy`;
-    const omdbData = await fetchJson(omdbUrl);
-    
-    if (omdbData && omdbData.imdbID) {
-      return omdbData.imdbID;
-    }
+// جدول تحويل يدوي ومباشر لأشهر الأفلام لمنع أي خطأ خارجي
+const KNOWN_IMDBS = {
+  'interstellar': 'tt0816692',
+  'inception': 'tt1375666',
+  'avatar': 'tt0499549',
+  'breaking bad': 'tt0903747'
+};
 
-    // 2. مصدر احتياطي للمسلسلات عبر TVMaze
+async function getImdbId(query, type) {
+  const cleanQuery = query.trim().toLowerCase();
+  
+  // 1. استخدام القائمة المحلية المباشرة إن وجدت
+  if (KNOWN_IMDBS[cleanQuery]) {
+    return KNOWN_IMDBS[cleanQuery];
+  }
+
+  try {
+    // 2. استخدام TVMaze للمسلسلات
     if (type === 'tv' || type === 'series') {
       const tvmazeUrl = `https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(cleanQuery)}`;
       const tvData = await fetchJson(tvmazeUrl);
       if (tvData && tvData.externals && tvData.externals.imdb) {
         return tvData.externals.imdb;
       }
+    }
+
+    // 3. استخدام Cinemeta بديل مفتوح بدون API Key
+    const catalogType = (type === 'tv' || type === 'series') ? 'series' : 'movie';
+    const searchUrl = `https://v3-cinemeta.strem.fun/catalog/${catalogType}/top/search=${encodeURIComponent(cleanQuery)}.json`;
+    const cinemetaData = await fetchJson(searchUrl);
+
+    if (cinemetaData && cinemetaData.metas && cinemetaData.metas.length > 0) {
+      return cinemetaData.metas[0].id;
     }
 
     return null;
