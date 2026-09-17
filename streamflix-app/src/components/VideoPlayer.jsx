@@ -13,19 +13,16 @@ import {
 } from '../lib/api';
 
 /* =========================================================
-   VIDEO SOURCES & BASE URLS
+   VIDEO SOURCES
    ========================================================= */
 
 const VIDSRC_BASE_URL = 'https://vidsrc.me';
-const VIDBINGE_BASE_URL = 'https://vidbinge.dev';
-const AUTOEMBED_BASE_URL = 'https://autoembed.cc';
 const BACKEND_URL = 'https://streamflix-api-x0ku.onrender.com';
 
 /* =========================================================
    URL BUILDERS
    ========================================================= */
 
-// 1. Vidsrc
 function getVidsrcMovieUrl(tmdbId) {
   if (!tmdbId) return null;
   return `${VIDSRC_BASE_URL}/embed/movie?tmdb=${encodeURIComponent(tmdbId)}`;
@@ -36,27 +33,20 @@ function getVidsrcEpisodeUrl(tmdbId, season, episode) {
   return `${VIDSRC_BASE_URL}/embed/tv?tmdb=${encodeURIComponent(tmdbId)}&season=${encodeURIComponent(season)}&episode=${encodeURIComponent(episode)}`;
 }
 
-// 2. Vidbinge (بدون إعلانات)
-function getVidbingeMovieUrl(tmdbId) {
-  if (!tmdbId) return null;
-  return `${VIDBINGE_BASE_URL}/embed/movie/${encodeURIComponent(tmdbId)}`;
+// رابط سيرفر Pirate Bay المربوط مباشرة بالباك إند
+function getPirateBayUrl(query, type = 'movie', season = 1, episode = 1) {
+  if (!query) return null;
+
+  const params = new URLSearchParams({
+    q: query,
+    type: type,
+    season: String(season),
+    episode: String(episode),
+  });
+
+  return `${BACKEND_URL}/api/piratebay?${params.toString()}`;
 }
 
-function getVidbingeEpisodeUrl(tmdbId, season, episode) {
-  if (!tmdbId) return null;
-  return `${VIDBINGE_BASE_URL}/embed/tv/${encodeURIComponent(tmdbId)}/${encodeURIComponent(season)}/${encodeURIComponent(episode)}`;
-}
-
-// 3. AutoEmbed
-function getAutoEmbedMovieUrl(tmdbId) {
-  if (!tmdbId) return null;
-  return `${AUTOEMBED_BASE_URL}/embed/movie/${encodeURIComponent(tmdbId)}`;
-}
-
-function getAutoEmbedEpisodeUrl(tmdbId, season, episode) {
-  if (!tmdbId) return null;
-  return `${AUTOEMBED_BASE_URL}/embed/tv/${encodeURIComponent(tmdbId)}/${encodeURIComponent(season)}/${encodeURIComponent(episode)}`;
-}
 
 /* =========================================================
    COMPONENT
@@ -74,12 +64,6 @@ export default function VideoPlayer({
   const [selectedServer, setSelectedServer] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
   const [vipModalOpen, setVipModalOpen] = useState(false);
-
-  // حالات التورنت السيرفر الثاني
-  const [torrentStreams, setTorrentStreams] = useState([]);
-  const [loadingTorrent, setLoadingTorrent] = useState(false);
-  const [torrentError, setTorrentError] = useState('');
-  const [activeTorrentStream, setActiveTorrentStream] = useState(null); // الفيديو الحالي المختار للتشغيل المباشر
 
   const [friends, setFriends] = useState([]);
   const [selectedFriends, setSelectedFriends] = useState([]);
@@ -125,79 +109,32 @@ export default function VideoPlayer({
       : getVidsrcEpisodeUrl(realTmdb, currentSeason, currentEpisodeNumber);
   }, [realTmdb, contentType, currentSeason, currentEpisodeNumber]);
 
-  // سيرفر 3: Vidbinge
-  const server3Url = useMemo(() => {
-    if (!realTmdb) return null;
-    return contentType === 'movie'
-      ? getVidbingeMovieUrl(realTmdb)
-      : getVidbingeEpisodeUrl(realTmdb, currentSeason, currentEpisodeNumber);
-  }, [realTmdb, contentType, currentSeason, currentEpisodeNumber]);
+  // سيرفر 2: Pirate Bay
+  const server2Url = useMemo(() => {
+    if (!contentTitleName) return null;
 
-  // سيرفر 4: AutoEmbed
-  const server4Url = useMemo(() => {
-    if (!realTmdb) return null;
-    return contentType === 'movie'
-      ? getAutoEmbedMovieUrl(realTmdb)
-      : getAutoEmbedEpisodeUrl(realTmdb, currentSeason, currentEpisodeNumber);
-  }, [realTmdb, contentType, currentSeason, currentEpisodeNumber]);
+    return getPirateBayUrl(
+      contentTitleName,
+      contentType,
+      currentSeason,
+      currentEpisodeNumber
+    );
+  }, [contentTitleName, contentType, currentSeason, currentEpisodeNumber]);
+
 
   /* =========================================================
-     SERVERS LIST
+     SERVERS LIST (تم تحويل isIframe إلى true لسيرفر 2)
      ========================================================= */
 
   const servers = useMemo(
     () => [
-      { id: 0, name: 'سيرفر 1', provider: 'Vidsrc', url: server1Url, vip: false, isIframe: true, useSandbox: false },
-      { id: 1, name: 'سيرفر 2', provider: 'Pirate Bay Torrent', url: 'torrent_provider', vip: false, isIframe: false, useSandbox: false },
-      { id: 2, name: 'سيرفر 3', provider: 'Vidbinge (بدون إعلانات)', url: server3Url, vip: false, isIframe: true, useSandbox: false },
-      { id: 3, name: 'سيرفر 4', provider: 'AutoEmbed', url: server4Url, vip: false, isIframe: true, useSandbox: false },
+      { id: 0, name: 'سيرفر 1', provider: 'Vidsrc', url: server1Url, vip: false, isIframe: true },
+      { id: 1, name: 'سيرفر 2', provider: 'Pirate Bay', url: server2Url, vip: false, isIframe: true },
     ],
-    [server1Url, server3Url, server4Url]
+    [server1Url, server2Url]
   );
 
   const currentServer = servers[selectedServer] || servers[0];
-
-  /* =========================================================
-     FETCH TORRENT DATA (SERVER 2)
-     ========================================================= */
-
-  const fetchTorrentData = useCallback(async () => {
-    if (!contentTitleName) return;
-
-    setLoadingTorrent(true);
-    setTorrentError('');
-    setTorrentStreams([]);
-    setActiveTorrentStream(null);
-
-    try {
-      let searchQuery = contentTitleName;
-      if (contentType === 'tv') {
-        const s = currentSeason < 10 ? `S0${currentSeason}` : `S${currentSeason}`;
-        const e = currentEpisodeNumber < 10 ? `E0${currentEpisodeNumber}` : `E${currentEpisodeNumber}`;
-        searchQuery = `${contentTitleName} ${s}${e}`;
-      }
-
-      const response = await fetch(`${BACKEND_URL}/api/torrent-search?q=${encodeURIComponent(searchQuery)}`);
-      const data = await response.json();
-
-      if (data.success && data.results && data.results.length > 0) {
-        setTorrentStreams(data.results);
-      } else {
-        setTorrentError('لم يتم العثور على روابط تورنت لهذا المحتوى');
-      }
-    } catch (err) {
-      console.error('Torrent Fetch Error:', err);
-      setTorrentError('حدث خطأ أثناء جلب روابط التورنت من السيرفر');
-    } finally {
-      setLoadingTorrent(false);
-    }
-  }, [contentTitleName, contentType, currentSeason, currentEpisodeNumber]);
-
-  useEffect(() => {
-    if (selectedServer === 1) {
-      fetchTorrentData();
-    }
-  }, [selectedServer, fetchTorrentData]);
 
   /* =========================================================
      AUTO FALLBACK & AUTO-CORRECT
@@ -283,6 +220,10 @@ export default function VideoPlayer({
 
     setError('');
     setSelectedServer(server.id);
+
+    if (!server.isIframe && server.url) {
+      window.open(server.url, '_blank', 'noopener,noreferrer');
+    }
   }
 
   /* =========================================================
@@ -395,83 +336,26 @@ export default function VideoPlayer({
             allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
             allowFullScreen
             referrerPolicy="no-referrer"
-            {...(currentServer.useSandbox ? { sandbox: "allow-scripts allow-same-origin allow-forms allow-presentation" } : {})}
+            sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
             title={`${currentServer.provider} External Player`}
           />
-        ) : activeTorrentStream ? (
-          /* مشغل الفيديو المباشر لتورنت السيرفر الثاني */
-          <div style={{ width: '100%', height: '420px', background: '#000', position: 'relative', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 10 }}>
-              <button
-                type="button"
-                onClick={() => setActiveTorrentStream(null)}
-                style={{ padding: '6px 12px', background: 'rgba(0,0,0,0.7)', border: '1px solid #d4af37', color: '#ffd700', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 700 }}
-              >
-                ← العودة لقائمة التورنت
-              </button>
-            </div>
-            <video
-              controls
-              autoPlay
-              src={`${BACKEND_URL}/api/stream?magnet=${encodeURIComponent(activeTorrentStream.magnet)}`}
-              style={{ width: '100%', height: '420px', background: '#000' }}
-            >
-              متصفحك لا يدعم تشغيل الفيديو المباشر.
-            </video>
-          </div>
         ) : (
-          /* واجهة نتائج سيرفر التورنت (Pirate Bay Engine) */
-          <div style={{ width: '100%', minHeight: '420px', background: '#0a0a0a', padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
-            <div style={{ fontSize: '36px', marginBottom: '8px' }}>🏴‍☠️</div>
-            <div style={{ fontSize: '18px', fontWeight: 900, color: '#ffd700', marginBottom: '4px' }}>Pirate Bay Engine</div>
-            <div style={{ fontSize: '12px', color: '#888', marginBottom: '20px', textAlign: 'center' }}>
-              اختر ملف التورنت للتشغيل المباشر داخل التطبيق أو تحميله عبر الـ Magnet
+          <div style={{ minHeight: '420px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', color: '#aaa', padding: '20px', textAlign: 'center' }}>
+            <div style={{ fontSize: '40px' }}>🏴‍☠️</div>
+            <div style={{ fontSize: '16px', fontWeight: 700, color: '#fff' }}>Pirate Bay Engine</div>
+            <div style={{ fontSize: '12px', color: '#888', maxWidth: '350px', lineHeight: 1.5 }}>
+              سيرفر Pirate Bay مجهز للربط مع الباك إند وتوليد الستريم المباشر.
             </div>
-
-            {loadingTorrent ? (
-              <div style={{ color: '#d4af37', fontSize: '14px', fontWeight: 700 }}>جاري جلب روابط التورنت... 🔄</div>
-            ) : torrentError ? (
-              <div style={{ color: '#ff6b6b', fontSize: '13px', textAlign: 'center' }}>{torrentError}</div>
-            ) : torrentStreams.length > 0 ? (
-              <div style={{ width: '100%', maxWidth: '600px', maxHeight: '280px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '5px' }}>
-                {torrentStreams.map((torrent, index) => (
-                  <div key={index} style={{ background: '#141414', border: '1px solid #262626', borderRadius: '8px', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                    <div style={{ flex: 1, overflow: 'hidden' }}>
-                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {torrent.title}
-                      </div>
-                      <div style={{ fontSize: '11px', color: '#888', marginTop: '4px', display: 'flex', gap: '12px' }}>
-                        <span> الحجم: <strong style={{ color: '#aaa' }}>{torrent.size}</strong></span>
-                        <span style={{ color: '#4caf50' }}>▲ {torrent.seeders} Seeders</span>
-                        <span style={{ color: '#ff9800' }}>▼ {torrent.leechers} Leechers</span>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      {torrent.magnet && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => setActiveTorrentStream(torrent)}
-                            style={{ padding: '8px 12px', background: 'linear-gradient(135deg, #ffd700, #b8860b)', color: '#111', borderRadius: '6px', border: 'none', fontWeight: 900, fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                          >
-                            ▶ تشغيل
-                          </button>
-                          <a
-                            href={torrent.magnet}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ padding: '8px 10px', background: '#222', color: '#ddd', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '12px', whiteSpace: 'nowrap', border: '1px solid #444' }}
-                            title="رابط Magnet خارجي"
-                          >
-                            🧲
-                          </a>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : null}
+            {currentServer?.url && (
+              <a
+                href={currentServer.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ marginTop: '10px', padding: '10px 20px', background: '#d4af37', color: '#111', borderRadius: '8px', textDecoration: 'none', fontWeight: 900, fontSize: '13px' }}
+              >
+                بحث في Pirate Bay ↗
+              </a>
+            )}
           </div>
         )}
       </div>
