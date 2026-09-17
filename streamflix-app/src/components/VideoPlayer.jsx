@@ -20,6 +20,7 @@ const VIDSRC_BASE_URL = 'https://vidsrc.xyz';
 const VIDBINGE_BASE_URL = 'https://vidsrc.pro';
 const AUTOEMBED_BASE_URL = 'https://player.autoembed.cc';
 const BACKEND_URL = 'https://streamflix-api-x0ku.onrender.com';
+const TMDB_API_KEY = '15d2ea6d0dc1d476efbca3eba2e9bbf3';
 
 /* =========================================================
    URL BUILDERS
@@ -81,7 +82,7 @@ export default function VideoPlayer({
   const [customSearchQuery, setCustomSearchQuery] = useState('');
   const [activePirateQuery, setActivePirateQuery] = useState('');
 
-  // حالات جديدة خاصة بسيرفر التورنت (Client-Side Torrent Engine)
+  // حالات سيرفر التورنت المباشر
   const [torrentStreams, setTorrentStreams] = useState([]);
   const [loadingTorrent, setLoadingTorrent] = useState(false);
   const [torrentError, setTorrentError] = useState('');
@@ -101,7 +102,7 @@ export default function VideoPlayer({
   const currentSeason = Number(title?.current_season || title?.season || 1);
   const currentEpisodeNumber = Number(title?.current_episode_number || title?.episode_number || 1);
 
-  const defaultTitleName = title?.name || title?.title || '';
+  const defaultTitleName = title?.name || title?.title || title?.english_name || '';
 
   useEffect(() => {
     setCustomSearchQuery(defaultTitleName);
@@ -109,7 +110,7 @@ export default function VideoPlayer({
   }, [defaultTitleName]);
 
   /* =========================================================
-     CLIENT-SIDE TORRENT FETCHING (مُحدث بالاعتماد على TMDB ID)
+     CLIENT-SIDE TORRENT FETCHING (نظام جلب متعدد الطبقات)
      ========================================================= */
   useEffect(() => {
     if (selectedServer !== 1) return;
@@ -123,43 +124,71 @@ export default function VideoPlayer({
       try {
         let imdbId = null;
 
-        // 1. محاولة جلب IMDb ID مباشرة باستخدام realTmdb المتوفر في الـ Props
+        // الطبقة 1: محاولة استخراج IMDb ID مباشرة بـ realTmdb
         if (realTmdb) {
           try {
             const tmdbType = contentType === 'tv' ? 'tv' : 'movie';
             const tmdbRes = await fetch(
-              `https://api.themoviedb.org/3/${tmdbType}/${realTmdb}/external_ids?api_key=15d2ea6d0dc1d476efbca3eba2e9bbf3`
+              `https://api.themoviedb.org/3/${tmdbType}/${realTmdb}/external_ids?api_key=${TMDB_API_KEY}`
             );
             const tmdbData = await tmdbRes.json();
             if (tmdbData && tmdbData.imdb_id) {
               imdbId = tmdbData.imdb_id;
             }
           } catch (e) {
-            console.warn('فشل جلب IMDb من TMDB مباشرة، سيتم تجربة الباك إند...');
+            console.warn('فشلت محاولة TMDB Direct ID');
           }
         }
 
-        // 2. إذا لم نجد IMDb ID عبر TMDB، نلجأ إلى الباك إند عبر الاسم
+        // الطبقة 2: إذا لم نجد المعرف، نبحث عن الفيلم/المسلسل بـ TMDB Search API بالاسم
         if (!imdbId && activePirateQuery) {
-          const resId = await fetch(
-            `${BACKEND_URL}/api/get-id?q=${encodeURIComponent(activePirateQuery)}&type=${contentType}`
-          );
-          const dataId = await resId.json();
-          if (dataId.success && dataId.imdbId) {
-            imdbId = dataId.imdbId;
+          try {
+            const tmdbType = contentType === 'tv' ? 'tv' : 'movie';
+            const searchRes = await fetch(
+              `https://api.themoviedb.org/3/search/${tmdbType}?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(activePirateQuery)}`
+            );
+            const searchData = await searchRes.json();
+
+            if (searchData.results && searchData.results.length > 0) {
+              const foundTmdbId = searchData.results[0].id;
+              const extRes = await fetch(
+                `https://api.themoviedb.org/3/${tmdbType}/${foundTmdbId}/external_ids?api_key=${TMDB_API_KEY}`
+              );
+              const extData = await extRes.json();
+              if (extData && extData.imdb_id) {
+                imdbId = extData.imdb_id;
+              }
+            }
+          } catch (e) {
+            console.warn('فشلت محاولة TMDB Search');
           }
         }
 
-        // إذا تعذر الحصول على IMDb ID بجميع الطرق
+        // الطبقة 3: تجربة الباك إند كخيار أخيرة
+        if (!imdbId && activePirateQuery) {
+          try {
+            const resId = await fetch(
+              `${BACKEND_URL}/api/get-id?q=${encodeURIComponent(activePirateQuery)}&type=${contentType}`
+            );
+            const dataId = await resId.json();
+            if (dataId.success && dataId.imdbId) {
+              imdbId = dataId.imdbId;
+            }
+          } catch (e) {
+            console.warn('فشلت محاولة Backend ID');
+          }
+        }
+
+        // حالة التعذر الكلي
         if (!imdbId) {
           if (isMounted) {
-            setTorrentError('لم يتم العثور على معرّف IMDb لهذا المحتوى. جرب كتابة الاسم بالإنجليزية في مربع البحث.');
+            setTorrentError('لم نتمكن من تحديد معرّف المحتوى. يرجى كتابة الاسم بالإنجليزية في خانة البحث بالأسفل وتوليد الروابط.');
             setLoadingTorrent(false);
           }
           return;
         }
 
-        // 3. طلب الروابط مباشرة من Torrentio باستخدام IMDb ID
+        // جلب الروابط المباشرة من Torrentio
         let torrentioUrl = `https://torrentio.strem.fun/stream/movie/${imdbId}.json`;
         if (contentType === 'tv') {
           torrentioUrl = `https://torrentio.strem.fun/stream/series/${imdbId}:${currentSeason}:${currentEpisodeNumber}.json`;
@@ -176,7 +205,7 @@ export default function VideoPlayer({
           }
         }
       } catch (err) {
-        if (isMounted) setTorrentError('تعذر جلب التورنت مباشرة من الشبكة');
+        if (isMounted) setTorrentError('تعذر الاتصال بشبكة التورنت');
       } finally {
         if (isMounted) setLoadingTorrent(false);
       }
@@ -401,7 +430,7 @@ export default function VideoPlayer({
             {loadingTorrent ? (
               <div style={{ color: '#aaa', fontSize: '14px' }}>جاري البحث المباشر عن روابط التورنت...</div>
             ) : torrentError ? (
-              <div style={{ color: '#ff6b6b', fontSize: '13px' }}>{torrentError}</div>
+              <div style={{ color: '#ff6b6b', fontSize: '13px', textAlign: 'center', maxWidth: '480px', lineHeight: '1.5' }}>{torrentError}</div>
             ) : torrentStreams.length > 0 ? (
               <div style={{ width: '100%', maxWidth: '600px', display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '320px', overflowY: 'auto' }}>
                 {torrentStreams.map((s, idx) => {
