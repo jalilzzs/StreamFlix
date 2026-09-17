@@ -4,12 +4,12 @@ const url = require('url');
 
 const PORT = process.env.PORT || 3000;
 
-// دالة جلب البيانات مع استخدام البروكسي المجاني لمنع حظر 403
-function fetchJsonViaProxy(targetUrl) {
+// دالة جلب البيانات من API تورنت مباشر وسريع لا يفرض حظر 403 (SolidTorrents API)
+function fetchTorrentData(query) {
   return new Promise((resolve, reject) => {
-    // نمرر الطلب عبر بروكسي عام لتفادي حظر Render IP
-    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-    const parsed = url.parse(proxyUrl);
+    // نستخدم SolidTorrents API لأنه سريع، مفتوح، ويدعم إرجاع JSON مستقر
+    const targetUrl = `https://solidtorrents.to/api/v1/search?q=${encodeURIComponent(query)}`;
+    const parsed = url.parse(targetUrl);
 
     const options = {
       hostname: parsed.hostname,
@@ -17,10 +17,10 @@ function fetchJsonViaProxy(targetUrl) {
       path: parsed.path,
       method: 'GET',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json, text/plain, */*'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json'
       },
-      timeout: 10000
+      timeout: 8000
     };
 
     const req = https.request(options, (res) => {
@@ -30,14 +30,14 @@ function fetchJsonViaProxy(targetUrl) {
 
       res.on('end', () => {
         if (res.statusCode < 200 || res.statusCode >= 300) {
-          return reject(new Error(`Proxy HTTP Status ${res.statusCode}`));
+          return reject(new Error(`API Status Code: ${res.statusCode}`));
         }
 
         try {
           const parsedData = JSON.parse(rawData);
           resolve(parsedData);
         } catch (e) {
-          reject(new Error('فشل تفكيك الـ JSON المستلم عبر البروكسي'));
+          reject(new Error('فشل تفكيك استجابة JSON'));
         }
       });
     });
@@ -45,7 +45,7 @@ function fetchJsonViaProxy(targetUrl) {
     req.on('error', (err) => reject(err));
     req.on('timeout', () => {
       req.destroy();
-      reject(new Error('انتهت مهلة الاتصال (Timeout)'));
+      reject(new Error('انتهت مهلة الاتصال للسيرفر'));
     });
 
     req.end();
@@ -68,7 +68,7 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
-  // 1. Endpoint للتجربة المباشرة وإرجاع JSON في المتصفح
+  // 1. Endpoint للتجربة المباشرة وإرجاع النتيجة
   if (pathname === '/api/test-pirate') {
     const q = query.q;
     const type = query.type || 'movie';
@@ -88,33 +88,33 @@ const server = http.createServer(async (req, res) => {
     }
 
     try {
-      const targetApi = `https://apibay.org/q.php?q=${encodeURIComponent(searchQuery)}`;
-      const data = await fetchJsonViaProxy(targetApi);
+      const data = await fetchTorrentData(searchQuery);
 
-      if (!data || !Array.isArray(data) || data.length === 0 || data[0].id === '0') {
+      if (!data || !data.results || data.results.length === 0) {
         res.writeHead(200);
         return res.end(JSON.stringify({
           success: false,
           queryUsed: searchQuery,
-          message: 'لا يوجد محتوى متطابق في Pirate Bay',
+          message: 'لم يتم العثور على أي نتائج متطابقة',
           results: []
         }));
       }
+
+      const formattedResults = data.results.slice(0, 10).map((item) => ({
+        title: item.title,
+        size_mb: (item.size / (1024 * 1024)).toFixed(2) + ' MB',
+        seeders: item.swarm.seeders,
+        leechers: item.swarm.leechers,
+        magnet: item.magnet,
+        info_hash: item.infohash
+      }));
 
       res.writeHead(200);
       return res.end(JSON.stringify({
         success: true,
         queryUsed: searchQuery,
-        totalFound: data.length,
-        results: data.slice(0, 10).map((item) => ({
-          id: item.id,
-          name: item.name,
-          info_hash: item.info_hash,
-          size_mb: (Number(item.size) / (1024 * 1024)).toFixed(2) + ' MB',
-          seeders: Number(item.seeders),
-          leechers: Number(item.leechers),
-          magnet: `magnet:?xt=urn:btih:${item.info_hash}&dn=${encodeURIComponent(item.name)}`
-        }))
+        totalFound: data.results.length,
+        results: formattedResults
       }));
     } catch (err) {
       res.writeHead(500);
@@ -122,29 +122,10 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 2. Endpoint الرئيسي للباك إند
-  if (pathname === '/api/piratebay') {
-    const q = query.q;
-    if (!q) {
-      res.writeHead(400);
-      return res.end(JSON.stringify({ error: 'Missing query parameter q' }));
-    }
-
-    try {
-      const targetApi = `https://apibay.org/q.php?q=${encodeURIComponent(q)}`;
-      const data = await fetchJsonViaProxy(targetApi);
-      res.writeHead(200);
-      return res.end(JSON.stringify(data));
-    } catch (err) {
-      res.writeHead(500);
-      return res.end(JSON.stringify({ error: err.message }));
-    }
-  }
-
   // الصفحة الرئيسية
   if (pathname === '/') {
     res.writeHead(200);
-    return res.end(JSON.stringify({ message: 'StreamFlix API is running...' }));
+    return res.end(JSON.stringify({ message: 'StreamFlix Torrent API is active' }));
   }
 
   res.writeHead(404);
