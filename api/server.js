@@ -4,11 +4,13 @@ const url = require('url');
 
 const PORT = process.env.PORT || 3000;
 
-// دالة جلب البيانات من API تورنت مباشر وسريع لا يفرض حظر 403 (SolidTorrents API)
-function fetchTorrentData(query) {
+// دالة جلب البيانات تدعم تتبع التحويلات (Follow Redirects / 301 / 302)
+function fetchTorrentData(targetUrl, maxRedirects = 3) {
   return new Promise((resolve, reject) => {
-    // نستخدم SolidTorrents API لأنه سريع، مفتوح، ويدعم إرجاع JSON مستقر
-    const targetUrl = `https://solidtorrents.to/api/v1/search?q=${encodeURIComponent(query)}`;
+    if (maxRedirects === 0) {
+      return reject(new Error('تجاوز الحد الأقصى للتحويلات (Too many redirects)'));
+    }
+
     const parsed = url.parse(targetUrl);
 
     const options = {
@@ -24,15 +26,25 @@ function fetchTorrentData(query) {
     };
 
     const req = https.request(options, (res) => {
-      let rawData = '';
+      // التعامل مع إعادة التوجيه (301, 302, 307, 308)
+      if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
+        const redirectUrl = res.headers.location;
+        if (!redirectUrl) {
+          return reject(new Error(`Redirected with status ${res.statusCode} but no location header`));
+        }
+        // تتبع الرابط الجديد تلقائياً
+        const nextUrl = redirectUrl.startsWith('http') ? redirectUrl : `https://${parsed.hostname}${redirectUrl}`;
+        return resolve(fetchTorrentData(nextUrl, maxRedirects - 1));
+      }
 
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        return reject(new Error(`API Status Code: ${res.statusCode}`));
+      }
+
+      let rawData = '';
       res.on('data', (chunk) => { rawData += chunk; });
 
       res.on('end', () => {
-        if (res.statusCode < 200 || res.statusCode >= 300) {
-          return reject(new Error(`API Status Code: ${res.statusCode}`));
-        }
-
         try {
           const parsedData = JSON.parse(rawData);
           resolve(parsedData);
@@ -45,7 +57,7 @@ function fetchTorrentData(query) {
     req.on('error', (err) => reject(err));
     req.on('timeout', () => {
       req.destroy();
-      reject(new Error('انتهت مهلة الاتصال للسيرفر'));
+      reject(new Error('انتهت مهلة الاتصال بالسيرفر'));
     });
 
     req.end();
@@ -88,7 +100,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     try {
-      const data = await fetchTorrentData(searchQuery);
+      const initialApiUrl = `https://solidtorrents.net/api/v1/search?q=${encodeURIComponent(searchQuery)}`;
+      const data = await fetchTorrentData(initialApiUrl);
 
       if (!data || !data.results || data.results.length === 0) {
         res.writeHead(200);
@@ -103,8 +116,8 @@ const server = http.createServer(async (req, res) => {
       const formattedResults = data.results.slice(0, 10).map((item) => ({
         title: item.title,
         size_mb: (item.size / (1024 * 1024)).toFixed(2) + ' MB',
-        seeders: item.swarm.seeders,
-        leechers: item.swarm.leechers,
+        seeders: item.swarm ? item.swarm.seeders : 0,
+        leechers: item.swarm ? item.swarm.leechers : 0,
         magnet: item.magnet,
         info_hash: item.infohash
       }));
