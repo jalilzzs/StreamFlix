@@ -517,7 +517,7 @@ export default function VideoPlayer({
             <h3 style={{ margin: '0 0 10px', fontSize: '22px', fontWeight: 900 }}>هذا السيرفر خاص بـ VIP</h3>
             <p style={{ margin: 0, color: '#999', fontSize: '13px', lineHeight: 1.7 }}>متاح فقط للمشتركين في باقة VIP.</p>
             <button type="button" onClick={() => { setVipModalOpen(false); navigate('/subscription'); }} style={{ width: '100%', marginTop: '20px', padding: '13px', border: 'none', borderRadius: '11px', background: 'linear-gradient(135deg,#ffd700,#b8860b)', color: '#171100', fontWeight: 900, cursor: 'pointer', fontSize: '13px' }}>⭐ اشترك في VIP</button>
-            <button type="button" onClick={() => setVipModalOpen(false)} style={{ width: '100%', marginTop: '8px', padding: '11px', border: '1px solid #333', borderRadius: '11px', background: '#171717', color: '#aaa', fontWeight 700, cursor: 'pointer', fontSize: '12px' }}>إغلاق</button>
+            <button type="button" onClick={() => setVipModalOpen(false)} style={{ width: '100%', marginTop: '8px', padding: '11px', border: '1px solid #333', borderRadius: '11px', background: '#171717', color: '#aaa', fontWeight: 700, cursor: 'pointer', fontSize: '12px' }}>إغلاق</button>
           </div>
         </div>
       )}
