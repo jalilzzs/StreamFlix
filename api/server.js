@@ -4,22 +4,23 @@ const url = require('url');
 
 const PORT = process.env.PORT || 3000;
 
-// دالة جلب البيانات باستخدام HTTPS المعياري مع إعدادات متكاملة
-function fetchJson(targetUrl) {
+// دالة جلب البيانات مع استخدام البروكسي المجاني لمنع حظر 403
+function fetchJsonViaProxy(targetUrl) {
   return new Promise((resolve, reject) => {
-    const parsed = url.parse(targetUrl);
-    
+    // نمرر الطلب عبر بروكسي عام لتفادي حظر Render IP
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+    const parsed = url.parse(proxyUrl);
+
     const options = {
       hostname: parsed.hostname,
       port: 443,
       path: parsed.path,
       method: 'GET',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'en-US,en;q=0.9',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json, text/plain, */*'
       },
-      timeout: 8000 // قطع الاتصال بعد 8 ثواني في حال عدم الاستجابة
+      timeout: 10000
     };
 
     const req = https.request(options, (res) => {
@@ -29,18 +30,14 @@ function fetchJson(targetUrl) {
 
       res.on('end', () => {
         if (res.statusCode < 200 || res.statusCode >= 300) {
-          return reject(new Error(`HTTP Status ${res.statusCode}`));
+          return reject(new Error(`Proxy HTTP Status ${res.statusCode}`));
         }
 
         try {
-          if (rawData.trim().startsWith('<')) {
-            return reject(new Error('أرجع السيرفر صفحة HTML بدلاً من JSON'));
-          }
-
           const parsedData = JSON.parse(rawData);
           resolve(parsedData);
         } catch (e) {
-          reject(new Error('فشل تفكيك الـ JSON المستلم'));
+          reject(new Error('فشل تفكيك الـ JSON المستلم عبر البروكسي'));
         }
       });
     });
@@ -91,9 +88,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     try {
-      // تجربة API apibay المستقر
-      const apiUrl = `https://apibay.org/q.php?q=${encodeURIComponent(searchQuery)}`;
-      const data = await fetchJson(apiUrl);
+      const targetApi = `https://apibay.org/q.php?q=${encodeURIComponent(searchQuery)}`;
+      const data = await fetchJsonViaProxy(targetApi);
 
       if (!data || !Array.isArray(data) || data.length === 0 || data[0].id === '0') {
         res.writeHead(200);
@@ -126,7 +122,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 2. Endpoint الرئيسي
+  // 2. Endpoint الرئيسي للباك إند
   if (pathname === '/api/piratebay') {
     const q = query.q;
     if (!q) {
@@ -135,8 +131,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     try {
-      const apiUrl = `https://apibay.org/q.php?q=${encodeURIComponent(q)}`;
-      const data = await fetchJson(apiUrl);
+      const targetApi = `https://apibay.org/q.php?q=${encodeURIComponent(q)}`;
+      const data = await fetchJsonViaProxy(targetApi);
       res.writeHead(200);
       return res.end(JSON.stringify(data));
     } catch (err) {
