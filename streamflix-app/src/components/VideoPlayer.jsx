@@ -79,6 +79,7 @@ export default function VideoPlayer({
   const [torrentStreams, setTorrentStreams] = useState([]);
   const [loadingTorrent, setLoadingTorrent] = useState(false);
   const [torrentError, setTorrentError] = useState('');
+  const [activeTorrentStream, setActiveTorrentStream] = useState(null); // الفيديو الحالي المختار للتشغيل المباشر
 
   const [friends, setFriends] = useState([]);
   const [selectedFriends, setSelectedFriends] = useState([]);
@@ -166,9 +167,9 @@ export default function VideoPlayer({
     setLoadingTorrent(true);
     setTorrentError('');
     setTorrentStreams([]);
+    setActiveTorrentStream(null);
 
     try {
-      // إعداد نص البحث باسم الفيلم أو المسلسل مع الموسم والحلقة
       let searchQuery = contentTitleName;
       if (contentType === 'tv') {
         const s = currentSeason < 10 ? `S0${currentSeason}` : `S${currentSeason}`;
@@ -397,13 +398,34 @@ export default function VideoPlayer({
             {...(currentServer.useSandbox ? { sandbox: "allow-scripts allow-same-origin allow-forms allow-presentation" } : {})}
             title={`${currentServer.provider} External Player`}
           />
+        ) : activeTorrentStream ? (
+          /* مشغل الفيديو المباشر لتورنت السيرفر الثاني */
+          <div style={{ width: '100%', height: '420px', background: '#000', position: 'relative', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 10 }}>
+              <button
+                type="button"
+                onClick={() => setActiveTorrentStream(null)}
+                style={{ padding: '6px 12px', background: 'rgba(0,0,0,0.7)', border: '1px solid #d4af37', color: '#ffd700', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 700 }}
+              >
+                ← العودة لقائمة التورنت
+              </button>
+            </div>
+            <video
+              controls
+              autoPlay
+              src={`${BACKEND_URL}/api/stream?magnet=${encodeURIComponent(activeTorrentStream.magnet)}`}
+              style={{ width: '100%', height: '420px', background: '#000' }}
+            >
+              متصفحك لا يدعم تشغيل الفيديو المباشر.
+            </video>
+          </div>
         ) : (
-          /* واجهة سيرفر التورنت (Pirate Bay Engine) */
+          /* واجهة نتائج سيرفر التورنت (Pirate Bay Engine) */
           <div style={{ width: '100%', minHeight: '420px', background: '#0a0a0a', padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
             <div style={{ fontSize: '36px', marginBottom: '8px' }}>🏴‍☠️</div>
             <div style={{ fontSize: '18px', fontWeight: 900, color: '#ffd700', marginBottom: '4px' }}>Pirate Bay Engine</div>
             <div style={{ fontSize: '12px', color: '#888', marginBottom: '20px', textAlign: 'center' }}>
-              البحث المباشر باسم المحتوى عبر التورنت والـ Magnet Links
+              اختر ملف التورنت للتشغيل المباشر داخل التطبيق أو تحميله عبر الـ Magnet
             </div>
 
             {loadingTorrent ? (
@@ -424,16 +446,28 @@ export default function VideoPlayer({
                         <span style={{ color: '#ff9800' }}>▼ {torrent.leechers} Leechers</span>
                       </div>
                     </div>
-                    {torrent.magnet && (
-                      <a
-                        href={torrent.magnet}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ padding: '8px 14px', background: 'linear-gradient(135deg, #ffd700, #b8860b)', color: '#111', borderRadius: '6px', textDecoration: 'none', fontWeight: 900, fontSize: '12px', whiteSpace: 'nowrap' }}
-                      >
-                        🧲 تشغيل / Magnet
-                      </a>
-                    )}
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      {torrent.magnet && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTorrentStream(torrent)}
+                            style={{ padding: '8px 12px', background: 'linear-gradient(135deg, #ffd700, #b8860b)', color: '#111', borderRadius: '6px', border: 'none', fontWeight: 900, fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                          >
+                            ▶ تشغيل
+                          </button>
+                          <a
+                            href={torrent.magnet}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ padding: '8px 10px', background: '#222', color: '#ddd', borderRadius: '6px', textDecoration: 'none', fontWeight: 700, fontSize: '12px', whiteSpace: 'nowrap', border: '1px solid #444' }}
+                            title="رابط Magnet خارجي"
+                          >
+                            🧲
+                          </a>
+                        </>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
