@@ -109,10 +109,10 @@ export default function VideoPlayer({
   }, [defaultTitleName]);
 
   /* =========================================================
-     CLIENT-SIDE TORRENT FETCHING (تجاوز الحظر كلياً)
+     CLIENT-SIDE TORRENT FETCHING (مُحدث بالاعتماد على TMDB ID)
      ========================================================= */
   useEffect(() => {
-    if (selectedServer !== 1 || !activePirateQuery) return;
+    if (selectedServer !== 1) return;
 
     let isMounted = true;
     async function fetchTorrentsDirectly() {
@@ -121,21 +121,45 @@ export default function VideoPlayer({
       setTorrentStreams([]);
 
       try {
-        // 1. طلب الـ IMDb ID من الباك إند
-        const resId = await fetch(`${BACKEND_URL}/api/get-id?q=${encodeURIComponent(activePirateQuery)}&type=${contentType}`);
-        const dataId = await resId.json();
+        let imdbId = null;
 
-        if (!dataId.success || !dataId.imdbId) {
+        // 1. محاولة جلب IMDb ID مباشرة باستخدام realTmdb المتوفر في الـ Props
+        if (realTmdb) {
+          try {
+            const tmdbType = contentType === 'tv' ? 'tv' : 'movie';
+            const tmdbRes = await fetch(
+              `https://api.themoviedb.org/3/${tmdbType}/${realTmdb}/external_ids?api_key=15d2ea6d0dc1d476efbca3eba2e9bbf3`
+            );
+            const tmdbData = await tmdbRes.json();
+            if (tmdbData && tmdbData.imdb_id) {
+              imdbId = tmdbData.imdb_id;
+            }
+          } catch (e) {
+            console.warn('فشل جلب IMDb من TMDB مباشرة، سيتم تجربة الباك إند...');
+          }
+        }
+
+        // 2. إذا لم نجد IMDb ID عبر TMDB، نلجأ إلى الباك إند عبر الاسم
+        if (!imdbId && activePirateQuery) {
+          const resId = await fetch(
+            `${BACKEND_URL}/api/get-id?q=${encodeURIComponent(activePirateQuery)}&type=${contentType}`
+          );
+          const dataId = await resId.json();
+          if (dataId.success && dataId.imdbId) {
+            imdbId = dataId.imdbId;
+          }
+        }
+
+        // إذا تعذر الحصول على IMDb ID بجميع الطرق
+        if (!imdbId) {
           if (isMounted) {
-            setTorrentError('لم يتم العثور على معرف الفيلم/المسلسل');
+            setTorrentError('لم يتم العثور على معرّف IMDb لهذا المحتوى. جرب كتابة الاسم بالإنجليزية في مربع البحث.');
             setLoadingTorrent(false);
           }
           return;
         }
 
-        const imdbId = dataId.imdbId;
-
-        // 2. طلب الروابط مباشرة من هاتف/متصفح المستخدم عبر Torrentio
+        // 3. طلب الروابط مباشرة من Torrentio باستخدام IMDb ID
         let torrentioUrl = `https://torrentio.strem.fun/stream/movie/${imdbId}.json`;
         if (contentType === 'tv') {
           torrentioUrl = `https://torrentio.strem.fun/stream/series/${imdbId}:${currentSeason}:${currentEpisodeNumber}.json`;
@@ -161,7 +185,7 @@ export default function VideoPlayer({
     fetchTorrentsDirectly();
 
     return () => { isMounted = false; };
-  }, [selectedServer, activePirateQuery, contentType, currentSeason, currentEpisodeNumber]);
+  }, [selectedServer, realTmdb, activePirateQuery, contentType, currentSeason, currentEpisodeNumber]);
 
   /* =========================================================
      SERVER URL GENERATORS
@@ -482,7 +506,7 @@ export default function VideoPlayer({
         </form>
       </div>
 
-      {/* SHARE MODAL & VIP MODAL (KEEP UNCHANGED) */}
+      {/* VIP MODAL */}
       {vipModalOpen && (
         <div onClick={() => setVipModalOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 100000, background: 'rgba(0,0,0,.78)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: '410px', background: '#171717', border: '1px solid rgba(255,215,0,.3)', borderRadius: '20px', padding: '28px 22px', textAlign: 'center', color: '#fff' }}>
@@ -492,6 +516,7 @@ export default function VideoPlayer({
         </div>
       )}
 
+      {/* SHARE MODAL */}
       {shareOpen && (
         <div onClick={() => !sharing && setShareOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(0,0,0,.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: '470px', background: '#151515', border: '1px solid rgba(212,175,55,.25)', borderRadius: '18px', padding: '20px' }}>
@@ -499,9 +524,45 @@ export default function VideoPlayer({
               <h3 style={{ margin: 0, color: '#fff', fontSize: '20px' }}>🎬 مشاركة المشاهدة</h3>
               <button type="button" disabled={sharing} onClick={() => setShareOpen(false)} style={{ border: 'none', background: 'transparent', color: '#fff', fontSize: '20px', cursor: 'pointer' }}>×</button>
             </div>
-            {/* بقية نافذة المشاركة كما هي */}
-            <button type="button" onClick={createParty} disabled={sharing || selectedFriends.length === 0} style={{ width: '100%', marginTop: '15px', padding: '13px', borderRadius: '10px', background: '#d4af37', color: '#111', fontWeight: 900, border: 'none', cursor: 'pointer' }}>
-              إرسال الدعوة
+
+            {loadingFriends ? (
+              <div style={{ textAlign: 'center', padding: '20px', color: '#aaa' }}>جاري تحميل الأصدقاء...</div>
+            ) : friends.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '20px', color: '#aaa' }}>لا يوجد أصدقاء متاحون للمشاركة.</div>
+            ) : (
+              <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {friends.map((friend) => {
+                  const friendId = friend.friend_id || friend.id;
+                  const friendName = friend.friend_name || friend.username || 'صديق';
+                  const isSelected = selectedFriends.includes(friendId);
+
+                  return (
+                    <div
+                      key={friendId}
+                      onClick={() => toggleFriend(friendId)}
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        background: isSelected ? 'rgba(212,175,55,.2)' : '#202020',
+                        border: isSelected ? '1px solid #d4af37' : '1px solid #333',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justify: 'space-between',
+                      }}
+                    >
+                      <span style={{ fontSize: '14px', color: '#fff' }}>{friendName}</span>
+                      <input type="checkbox" checked={isSelected} readOnly />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {error && <div style={{ color: '#ff6b6b', fontSize: '13px', marginTop: '10px' }}>{error}</div>}
+
+            <button type="button" onClick={createParty} disabled={sharing || selectedFriends.length === 0} style={{ width: '100%', marginTop: '15px', padding: '13px', borderRadius: '10px', background: '#d4af37', color: '#111', fontWeight: 900, border: 'none', cursor: sharing || selectedFriends.length === 0 ? 'not-allowed' : 'pointer', opacity: sharing || selectedFriends.length === 0 ? 0.6 : 1 }}>
+              {sharing ? 'جاري الإرسال...' : 'إرسال الدعوة'}
             </button>
           </div>
         </div>
