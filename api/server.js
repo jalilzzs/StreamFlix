@@ -14,7 +14,7 @@ function fetchJson(targetUrl) {
       path: parsed.path,
       method: 'GET',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Accept': 'application/json'
       },
       timeout: 10000
@@ -49,19 +49,30 @@ function fetchJson(targetUrl) {
   });
 }
 
-// دالة جلب IMDb ID عبر كلمة البحث من TMDB API المجاني المفتوح
+// دالة جلب IMDb ID مباشرة وبدون الحاجة لـ API Key محظور
 async function getImdbId(query, type) {
-  const searchType = (type === 'tv' || type === 'series') ? 'tv' : 'movie';
-  const tmdbSearchUrl = `https://api.themoviedb.org/3/search/${searchType}?api_key=15d2fb0e2275f113e185012e1ffaa923&query=${encodeURIComponent(query)}`;
-  
-  const searchRes = await fetchJson(tmdbSearchUrl);
-  if (!searchRes.results || searchRes.results.length === 0) return null;
-  
-  const tmdbId = searchRes.results[0].id;
-  const externalIdsUrl = `https://api.themoviedb.org/3/${searchType}/${tmdbId}/external_ids?api_key=15d2fb0e2275f113e185012e1ffaa923`;
-  const extRes = await fetchJson(externalIdsUrl);
-  
-  return extRes.imdb_id;
+  try {
+    // 1. تجربة جلب المعرف عبر TVMaze للمسلسلات
+    if (type === 'tv' || type === 'series') {
+      const tvmazeUrl = `https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(query)}`;
+      const tvData = await fetchJson(tvmazeUrl);
+      if (tvData && tvData.externals && tvData.externals.imdb) {
+        return tvData.externals.imdb;
+      }
+    }
+
+    // 2. تجربة جلب المعرف عبر محرك البحث المفتوح للسينما
+    const searchUrl = `https://v3-cinemeta.strem.fun/catalog/${type === 'tv' || type === 'series' ? 'series' : 'movie'}/top/search=${encodeURIComponent(query)}.json`;
+    const cinemetaData = await fetchJson(searchUrl);
+
+    if (cinemetaData && cinemetaData.metas && cinemetaData.metas.length > 0) {
+      return cinemetaData.metas[0].id; // يرجع imdb_id مباشرة مثل tt0816692
+    }
+
+    return null;
+  } catch (err) {
+    return null;
+  }
 }
 
 const server = http.createServer(async (req, res) => {
@@ -69,6 +80,7 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname;
   const query = parsedUrl.query;
 
+  // إعدادات CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -91,7 +103,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     try {
-      // 1. تحويل اسم الفيلم/المسلسل إلى IMDb ID
+      // 1. جلب IMDb ID بدون أي API Key خارجي معرض للحظر
       const imdbId = await getImdbId(q, type);
 
       if (!imdbId) {
@@ -104,7 +116,7 @@ const server = http.createServer(async (req, res) => {
         }));
       }
 
-      // 2. الاستعلام عبر Torrentio API (مكفول 100% وبدون حظر DNS)
+      // 2. الاستعلام عبر Torrentio API المضمون والسريع
       let torrentioUrl = `https://torrentio.strem.fun/stream/movie/${imdbId}.json`;
       if (type === 'tv' || type === 'series') {
         torrentioUrl = `https://torrentio.strem.fun/stream/series/${imdbId}:${season}:${episode}.json`;
@@ -147,7 +159,7 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === '/') {
     res.writeHead(200);
-    return res.end(JSON.stringify({ message: 'StreamFlix Torrentio Engine Active' }));
+    return res.end(JSON.stringify({ message: 'StreamFlix Core Engine Active' }));
   }
 
   res.writeHead(404);
