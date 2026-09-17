@@ -4,18 +4,37 @@ const url = require('url');
 
 const PORT = process.env.PORT || 3000;
 
-// دالة مساعدة لعمل طلبات HTTPS وإرجاع Promise
+// دالة جلب البيانات مع إرسال User-Agent لمنع الحظر
 function fetchJson(apiUrl) {
   return new Promise((resolve, reject) => {
-    https.get(apiUrl, (res) => {
+    const options = {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*'
+      }
+    };
+
+    https.get(apiUrl, options, (res) => {
       let rawData = '';
+
       res.on('data', (chunk) => { rawData += chunk; });
+
       res.on('end', () => {
+        // إذا أرجع السيرفر كود غير 200
+        if (res.statusCode !== 200) {
+          return reject(new Error(`Server responded with status code ${res.statusCode}`));
+        }
+
         try {
+          // التحقق مما إذا كانت الاستجابة تبدأ بـ HTML (صفحة حظر)
+          if (rawData.trim().startsWith('<')) {
+            return reject(new Error('المصدر أرجع صفحة HTML بدلاً من JSON (احتمال حظر أو حماية)'));
+          }
+
           const parsed = JSON.parse(rawData);
           resolve(parsed);
         } catch (e) {
-          reject(new Error('خطأ في تحليلات JSON من المصدر'));
+          reject(new Error(`خطأ في تفكيك JSON: ${e.message} - المحتوى المستلم: ${rawData.substring(0, 100)}...`));
         }
       });
     }).on('error', (err) => reject(err));
@@ -27,7 +46,7 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname;
   const query = parsedUrl.query;
 
-  // إعدادات CORS للسماح للواجهة بالاتصال
+  // إعدادات CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -58,8 +77,17 @@ const server = http.createServer(async (req, res) => {
     }
 
     try {
-      const apiUrl = `https://apibay.org/q.php?q=${encodeURIComponent(searchQuery)}`;
-      const data = await fetchJson(apiUrl);
+      // تجربة API احتياطي لـ Pirate Bay إذا فشل الأول
+      const primaryUrl = `https://apibay.org/q.php?q=${encodeURIComponent(searchQuery)}`;
+      let data;
+      
+      try {
+        data = await fetchJson(primaryUrl);
+      } catch (primaryErr) {
+        // استخدام API بديل في حال حظر apibay.org
+        const backupUrl = `https://piratebay-api.vytal.io/search?q=${encodeURIComponent(searchQuery)}`;
+        data = await fetchJson(backupUrl);
+      }
 
       if (!data || data.length === 0 || data[0].id === '0') {
         res.writeHead(200);
@@ -77,13 +105,13 @@ const server = http.createServer(async (req, res) => {
         queryUsed: searchQuery,
         totalFound: data.length,
         results: data.slice(0, 10).map((item) => ({
-          id: item.id,
-          name: item.name,
-          info_hash: item.info_hash,
-          size_mb: (Number(item.size) / (1024 * 1024)).toFixed(2) + ' MB',
-          seeders: Number(item.seeders),
-          leechers: Number(item.leechers),
-          magnet: `magnet:?xt=urn:btih:${item.info_hash}&dn=${encodeURIComponent(item.name)}`
+          id: item.id || item.id,
+          name: item.name || item.title,
+          info_hash: item.info_hash || item.hash,
+          size_mb: item.size ? (Number(item.size) / (1024 * 1024)).toFixed(2) + ' MB' : 'N/A',
+          seeders: Number(item.seeders || 0),
+          leechers: Number(item.leechers || 0),
+          magnet: item.magnet || `magnet:?xt=urn:btih:${item.info_hash || item.hash}&dn=${encodeURIComponent(item.name || item.title)}`
         }))
       }));
     } catch (err) {
@@ -92,7 +120,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 2. Endpoint الرئيسي للباك إند الخاص بك
+  // 2. Endpoint الرئيسي للواجهة
   if (pathname === '/api/piratebay') {
     const q = query.q;
     if (!q) {
@@ -103,7 +131,6 @@ const server = http.createServer(async (req, res) => {
     try {
       const apiUrl = `https://apibay.org/q.php?q=${encodeURIComponent(q)}`;
       const data = await fetchJson(apiUrl);
-
       res.writeHead(200);
       return res.end(JSON.stringify(data));
     } catch (err) {
@@ -112,7 +139,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // الصفحة الرئيسية للتحقق من أن السيرفر يعمل
+  // الصفحة الرئيسية
   if (pathname === '/') {
     res.writeHead(200);
     return res.end(JSON.stringify({ message: 'StreamFlix API is running...' }));
@@ -123,5 +150,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Server executing on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
