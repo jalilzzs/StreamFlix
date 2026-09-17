@@ -13,16 +13,19 @@ import {
 } from '../lib/api';
 
 /* =========================================================
-   VIDEO SOURCES
+   VIDEO SOURCES & BASE URLS
    ========================================================= */
 
 const VIDSRC_BASE_URL = 'https://vidsrc.me';
+const VIDBINGE_BASE_URL = 'https://vidbinge.dev';
+const AUTOEMBED_BASE_URL = 'https://autoembed.cc';
 const BACKEND_URL = 'https://streamflix-api-x0ku.onrender.com';
 
 /* =========================================================
    URL BUILDERS
    ========================================================= */
 
+// 1. Vidsrc
 function getVidsrcMovieUrl(tmdbId) {
   if (!tmdbId) return null;
   return `${VIDSRC_BASE_URL}/embed/movie?tmdb=${encodeURIComponent(tmdbId)}`;
@@ -33,7 +36,7 @@ function getVidsrcEpisodeUrl(tmdbId, season, episode) {
   return `${VIDSRC_BASE_URL}/embed/tv?tmdb=${encodeURIComponent(tmdbId)}&season=${encodeURIComponent(season)}&episode=${encodeURIComponent(episode)}`;
 }
 
-// رابط سيرفر Pirate Bay المربوط مباشرة بالباك إند
+// 2. Pirate Bay
 function getPirateBayUrl(query, type = 'movie', season = 1, episode = 1) {
   if (!query) return null;
 
@@ -47,6 +50,27 @@ function getPirateBayUrl(query, type = 'movie', season = 1, episode = 1) {
   return `${BACKEND_URL}/api/piratebay?${params.toString()}`;
 }
 
+// 3. Vidbinge (بدون إعلانات)
+function getVidbingeMovieUrl(tmdbId) {
+  if (!tmdbId) return null;
+  return `${VIDBINGE_BASE_URL}/embed/movie/${encodeURIComponent(tmdbId)}`;
+}
+
+function getVidbingeEpisodeUrl(tmdbId, season, episode) {
+  if (!tmdbId) return null;
+  return `${VIDBINGE_BASE_URL}/embed/tv/${encodeURIComponent(tmdbId)}/${encodeURIComponent(season)}/${encodeURIComponent(episode)}`;
+}
+
+// 4. AutoEmbed
+function getAutoEmbedMovieUrl(tmdbId) {
+  if (!tmdbId) return null;
+  return `${AUTOEMBED_BASE_URL}/embed/movie/${encodeURIComponent(tmdbId)}`;
+}
+
+function getAutoEmbedEpisodeUrl(tmdbId, season, episode) {
+  if (!tmdbId) return null;
+  return `${AUTOEMBED_BASE_URL}/embed/tv/${encodeURIComponent(tmdbId)}/${encodeURIComponent(season)}/${encodeURIComponent(episode)}`;
+}
 
 /* =========================================================
    COMPONENT
@@ -121,17 +145,34 @@ export default function VideoPlayer({
     );
   }, [contentTitleName, contentType, currentSeason, currentEpisodeNumber]);
 
+  // سيرفر 3: Vidbinge
+  const server3Url = useMemo(() => {
+    if (!realTmdb) return null;
+    return contentType === 'movie'
+      ? getVidbingeMovieUrl(realTmdb)
+      : getVidbingeEpisodeUrl(realTmdb, currentSeason, currentEpisodeNumber);
+  }, [realTmdb, contentType, currentSeason, currentEpisodeNumber]);
+
+  // سيرفر 4: AutoEmbed
+  const server4Url = useMemo(() => {
+    if (!realTmdb) return null;
+    return contentType === 'movie'
+      ? getAutoEmbedMovieUrl(realTmdb)
+      : getAutoEmbedEpisodeUrl(realTmdb, currentSeason, currentEpisodeNumber);
+  }, [realTmdb, contentType, currentSeason, currentEpisodeNumber]);
 
   /* =========================================================
-     SERVERS LIST (تم تحويل isIframe إلى true لسيرفر 2)
+     SERVERS LIST
      ========================================================= */
 
   const servers = useMemo(
     () => [
-      { id: 0, name: 'سيرفر 1', provider: 'Vidsrc', url: server1Url, vip: false, isIframe: true },
-      { id: 1, name: 'سيرفر 2', provider: 'Pirate Bay', url: server2Url, vip: false, isIframe: true },
+      { id: 0, name: 'سيرفر 1', provider: 'Vidsrc', url: server1Url, vip: false, isIframe: true, useSandbox: false },
+      { id: 1, name: 'سيرفر 2', provider: 'Pirate Bay', url: server2Url, vip: false, isIframe: true, useSandbox: false },
+      { id: 2, name: 'سيرفر 3', provider: 'Vidbinge (بدون إعلانات)', url: server3Url, vip: false, isIframe: true, useSandbox: false },
+      { id: 3, name: 'سيرفر 4', provider: 'AutoEmbed', url: server4Url, vip: false, isIframe: true, useSandbox: false },
     ],
-    [server1Url, server2Url]
+    [server1Url, server2Url, server3Url, server4Url]
   );
 
   const currentServer = servers[selectedServer] || servers[0];
@@ -336,7 +377,7 @@ export default function VideoPlayer({
             allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
             allowFullScreen
             referrerPolicy="no-referrer"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
+            {...(currentServer.useSandbox ? { sandbox: "allow-scripts allow-same-origin allow-forms allow-presentation" } : {})}
             title={`${currentServer.provider} External Player`}
           />
         ) : (
