@@ -14,7 +14,7 @@ function fetchJson(targetUrl) {
       path: parsed.path,
       method: 'GET',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': 'application/json'
       },
       timeout: 10000
@@ -49,24 +49,22 @@ function fetchJson(targetUrl) {
   });
 }
 
-// دالة جلب IMDb ID مضمونة عبر أكثر من مصدر مفتوح
+// دالة جلب IMDb ID مضمونة باستخدام OMDb API المجاني
 async function getImdbId(query, type) {
   try {
-    // المصدر الأول: البحث عبر Cinemeta المحدث للسينما
-    const isTv = (type === 'tv' || type === 'series');
-    const catalogType = isTv ? 'series' : 'movie';
-    const searchUrl = `https://v3-cinemeta.strem.fun/catalog/${catalogType}/top/search=${encodeURIComponent(query)}.json`;
+    const cleanQuery = query.trim().toLowerCase();
     
-    const cinemetaData = await fetchJson(searchUrl);
-
-    if (cinemetaData && cinemetaData.metas && cinemetaData.metas.length > 0) {
-      // إرجاع id الفيلم الأول المتطابق (مثلاً tt0816692)
-      return cinemetaData.metas[0].id;
+    // 1. تجربة OMDb API المجاني
+    const omdbUrl = `https://www.omdbapi.com/?t=${encodeURIComponent(cleanQuery)}&apikey=trilogy`;
+    const omdbData = await fetchJson(omdbUrl);
+    
+    if (omdbData && omdbData.imdbID) {
+      return omdbData.imdbID;
     }
 
-    // المصدر الثاني (احتياطي للمسلسلات): TVMaze API
-    if (isTv) {
-      const tvmazeUrl = `https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(query)}`;
+    // 2. مصدر احتياطي للمسلسلات عبر TVMaze
+    if (type === 'tv' || type === 'series') {
+      const tvmazeUrl = `https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(cleanQuery)}`;
       const tvData = await fetchJson(tvmazeUrl);
       if (tvData && tvData.externals && tvData.externals.imdb) {
         return tvData.externals.imdb;
@@ -84,7 +82,6 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname;
   const query = parsedUrl.query;
 
-  // إعدادات CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -107,8 +104,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     try {
-      // 1. جلب الـ IMDb ID
-      const imdbId = await getImdbId(q.trim(), type);
+      const imdbId = await getImdbId(q, type);
 
       if (!imdbId) {
         res.writeHead(200);
@@ -120,7 +116,6 @@ const server = http.createServer(async (req, res) => {
         }));
       }
 
-      // 2. الاستعلام عن روابط التورنت عبر Torrentio
       let torrentioUrl = `https://torrentio.strem.fun/stream/movie/${imdbId}.json`;
       if (type === 'tv' || type === 'series') {
         torrentioUrl = `https://torrentio.strem.fun/stream/series/${imdbId}:${season}:${episode}.json`;
