@@ -111,24 +111,58 @@ app.get('/', (req, res) => {
 });
 
 // 1. مسار البحث عن التورنت (آمن 100% ضد الـ Command Injection)
-app.get('/api/torrent-search', (req, res) => {
+const axios = require('axios'); // تأكد من وجود هذا السطر في أعلى ملف server.js
+
+// مسار البحث الجديد بالجافا سكريبت مباشرة (بدون بايثون)
+app.get('/api/torrent-search', async (req, res) => {
   const q = req.query.q;
   if (!q) {
     return res.status(400).json({ success: false, error: 'يرجى إرسال كلمة البحث q' });
   }
 
-  // استخدام execFile لتمرير الـ query كـ Argument مستقل ومحمّي لنظام التشغيل
-  execFile('python3', ['tpb_search.py', q], (error, stdout) => {
-    if (error) {
-      console.error(error);
-      return res.status(500).json({ success: false, error: 'خطأ في سكربت البحث البرمجي لبايثون' });
+  try {
+    // 1. طلب البيانات مباشرة من واجهة الـ API لـ PirateBay (مستحيل حظرها)
+    // تصفية cat=201,207 لجلب الأفلام والمسلسلات فقط
+    const targetUrl = `https://apibay.org{encodeURIComponent(q)}&cat=201,207`;
+    
+    const response = await axios.get(targetUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      timeout: 6000
+    });
+
+    const results = response.data;
+    let torrents = [];
+
+    // 2. التحقق من النتائج وهيكلتها
+    if (results && Array.isArray(results) && results.length > 0 && results[0].id !== '0') {
+      results.forEach(t => {
+        const infoHash = t.info_hash || '';
+        const magnetLink = `magnet:?xt=urn:btih:${infoHash}&dn=${encodeURIComponent(t.name || '')}&tr=udp://tracker.coppersurfer.tk:6969/announce&tr=udp://://openbittorrent.com`;
+        
+        const rawSize = parseInt(t.size) || 0;
+        const formattedSize = rawSize > 0 ? (rawSize / (1024 * 1024 * 1024)).toFixed(2) + " GB" : "Unknown Size";
+
+        torrents.push({
+          title: t.name || '',
+          seeders: parseInt(t.seeders) || 0,
+          leechers: parseInt(t.leechers) || 0,
+          size: formattedSize,
+          magnet: magnetLink
+        });
+      });
+
+      // ترتيب النتائج حسب الأعلى Seeders لضمان أفضل تشغيل
+      torrents.sort((a, b) => b.seeders - a.seeders);
+
+      return res.json({ success: true, results: torrents.slice(0, 10) });
+    } else {
+      return res.json({ success: true, results: [], message: "لم يتم العثور على تورنت لهذا الفيلم" });
     }
-    try {
-      return res.json(JSON.parse(stdout));
-    } catch (e) {
-      return res.status(500).json({ success: false, error: 'خطأ في معالجة وفك تجميع نتائج الـ JSON' });
-    }
-  });
+
+  } catch (error) {
+    console.error("Error fetching torrents:", error.message);
+    return res.status(500).json({ success: false, error: "خطأ أثناء جلب البيانات من خادم التورنت المتصل" });
+  }
 });
 
 // 2. مسار فحص وتحديث عنصر واحد يدويًا
