@@ -1,11 +1,17 @@
+const express = require('express');
+const cors = require('cors');
 const http = require('http');
 const https = require('https');
-const url = require('url');
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 const { createClient } = require('@supabase/supabase-js');
 const cron = require('node-cron');
 
+const app = express();
 const PORT = process.env.PORT || 3000;
+
+// تفعيل CORS للسماح بالاتصال من أي فرونت-إند مستقبلاً
+app.use(cors());
+app.use(express.json());
 
 // إعداد الاتصال بـ Supabase عبر متغيرات البيئة
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -19,7 +25,7 @@ const supabase = (SUPABASE_URL && SUPABASE_KEY)
 function verifyStreamUrl(embedUrl) {
   return new Promise((resolve) => {
     const client = embedUrl.startsWith('https') ? https : http;
-    const req = client.get(embedUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
+    const req = client.get(embedUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
@@ -44,12 +50,11 @@ function verifyStreamUrl(embedUrl) {
 // دالة فحص وتحديث عنوان معين في Supabase
 async function processTitleCheck(tmdbId, type = 'movie', season = 1, episode = 1) {
   const targetUrl = type === 'movie'
-    ? `https://vidlink.pro/movie/${tmdbId}`
-    : `https://vidlink.pro/tv/${tmdbId}/${season}/${episode}`;
+    ? `https://vidlink.pro{tmdbId}`
+    : `https://vidlink.pro{tmdbId}/${season}/${episode}`;
 
   const checkResult = await verifyStreamUrl(targetUrl);
 
-  // إذا كان المشغل مكسوراً وهناك اتصال بـ Supabase، نغير الحالة إلى hidden
   if (!checkResult.available && supabase) {
     await supabase
       .from('titles')
@@ -73,7 +78,6 @@ cron.schedule('0 3 * * *', async () => {
   if (!supabase) return console.error('❌ Supabase غير متصل. يرجى ضبط المتغيرات.');
 
   try {
-    // جلب العروض النشطة فقط (public)
     const { data: titles, error } = await supabase
       .from('titles')
       .select('id, tmdb_id, type')
@@ -89,7 +93,6 @@ cron.schedule('0 3 * * *', async () => {
       if (!res.available) {
         console.log(`⚠️ تم إخفاء العنوان ذو الـ TMDB: ${item.tmdb_id} لأنه غير متاح.`);
       }
-      // تأخير بسيط لمنع إجهاد السيرفرات (500 ملي ثانية بين كل فحص)
       await new Promise(resolve => setTimeout(resolve, 500));
     }
     console.log('✅ اكتمل الفحص التلقائي بنجاح.');
@@ -99,53 +102,47 @@ cron.schedule('0 3 * * *', async () => {
 });
 
 // =========================================================
-// سيرفر Node.js والـ Endpoints
+// الـ Endpoints (المسارات)
 // =========================================================
-const server = http.createServer(async (req, res) => {
-  const parsedUrl = url.parse(req.url, true);
-  
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
 
-  // 1. EndPoint البحث عن التورنت
-  if (parsedUrl.pathname === '/api/torrent-search') {
-    const q = parsedUrl.query.q;
-    if (!q) {
-      res.writeHead(400);
-      return res.end(JSON.stringify({ success: false, error: 'يرجى إرسال كلمة البحث q' }));
-    }
-
-    const sanitizedQuery = q.replace(/"/g, '\\"');
-    exec(`python3 tpb_search.py "${sanitizedQuery}"`, (error, stdout) => {
-      if (error) {
-        res.writeHead(500);
-        return res.end(JSON.stringify({ success: false, error: 'خطأ في سكربت البحث' }));
-      }
-      try {
-        return res.end(JSON.stringify(JSON.parse(stdout)));
-      } catch (e) {
-        res.writeHead(500);
-        return res.end(JSON.stringify({ success: false, error: 'خطأ معالجة النتائج' }));
-      }
-    });
-    return;
-  }
-
-  // 2. EndPoint فحص وتحديث عنصر واحد يدويًا
-  if (parsedUrl.pathname === '/api/cron/check-stream') {
-    const { tmdbId, type = 'movie', season = 1, episode = 1 } = parsedUrl.query;
-    if (!tmdbId) {
-      res.writeHead(400);
-      return res.end(JSON.stringify({ success: false, error: 'TMDB ID مطلوب' }));
-    }
-
-    const result = await processTitleCheck(tmdbId, type, season, episode);
-    return res.end(JSON.stringify({ success: true, data: result }));
-  }
-
-  res.end(JSON.stringify({ message: 'StreamFlix Backend Service Active' }));
+// رسالة ترحيبية عند فتح الرابط الرئيسي للموقع
+app.get('/', (req, res) => {
+  res.json({ message: 'StreamFlix Backend Service Active 🚀' });
 });
 
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+// 1. مسار البحث عن التورنت (آمن 100% ضد الـ Command Injection)
+app.get('/api/torrent-search', (req, res) => {
+  const q = req.query.q;
+  if (!q) {
+    return res.status(400).json({ success: false, error: 'يرجى إرسال كلمة البحث q' });
+  }
+
+  // استخدام execFile لتمرير الـ query كـ Argument مستقل ومحمّي لنظام التشغيل
+  execFile('python3', ['tpb_search.py', q], (error, stdout) => {
+    if (error) {
+      console.error(error);
+      return res.status(500).json({ success: false, error: 'خطأ في سكربت البحث البرمجي لبايثون' });
+    }
+    try {
+      return res.json(JSON.parse(stdout));
+    } catch (e) {
+      return res.status(500).json({ success: false, error: 'خطأ في معالجة وفك تجميع نتائج الـ JSON' });
+    }
+  });
+});
+
+// 2. مسار فحص وتحديث عنصر واحد يدويًا
+app.get('/api/cron/check-stream', async (req, res) => {
+  const { tmdbId, type = 'movie', season = 1, episode = 1 } = req.query;
+  if (!tmdbId) {
+    return res.status(400).json({ success: false, error: 'TMDB ID مطلوب' });
+  }
+
+  const result = await processTitleCheck(tmdbId, type, season, episode);
+  return res.json({ success: true, data: result });
+});
+
+// تشغيل السيرفر
+app.listen(PORT, () => {
+  console.log(`🚀 StreamFlix Backend running on port ${PORT}`);
 });
