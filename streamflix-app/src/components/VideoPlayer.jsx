@@ -12,12 +12,12 @@ import {
 } from '../lib/api';
 
 /* =========================================================
-   VIDEO SOURCES (المشغلات النظيفة والبديلة)[span_14](start_span)[span_14](end_span)
+   VIDEO SOURCES
    ========================================================= */
 
-const VIDLINK_BASE_URL = 'https://vidlink.pro';[span_15](start_span)[span_15](end_span)
-const AUTOEMBED_BASE_URL = 'https://player.autoembed.cc';[span_16](start_span)[span_16](end_span)
-const SUPEREMBED_BASE_URL = 'https://multiembed.mov';[span_17](start_span)[span_17](end_span)
+const VIDLINK_BASE_URL = 'https://vidlink.pro';
+const AUTOEMBED_BASE_URL = 'https://player.autoembed.cc';
+const SUPEREMBED_BASE_URL = 'https://multiembed.mov';
 const VIDSRC_BASE_URL = 'https://vidsrc.me';
 const STELLAR_BASE_URL = 'https://stellar.rip';
 const YAPGRID_BASE_URL = 'https://yapgrid.com';
@@ -104,28 +104,28 @@ export default function VideoPlayer({
   const currentEpisodeNumber = Number(title?.current_episode_number || title?.episode_number || 1);
 
   /* =========================================================
-     SERVERS CONFIGURATION (تحديث القائمة بناءً على التوصيات)[span_18](start_span)[span_18](end_span)
+     SERVERS CONFIGURATION
      ========================================================= */
 
   const servers = useMemo(() => [
     {
       id: 0,
-      name: 'VidLink (سريع بدون إعلانات)',[span_19](start_span)[span_19](end_span)
-      provider: 'VidLink',[span_20](start_span)[span_20](end_span)
+      name: 'VidLink (سريع بدون إعلانات)',
+      provider: 'VidLink',
       url: getVidlinkUrl(realTmdb, contentType, currentSeason, currentEpisodeNumber),
       vip: false,
     },
     {
       id: 1,
-      name: 'AutoEmbed (تلقائي)',[span_21](start_span)[span_21](end_span)
-      provider: 'AutoEmbed',[span_22](start_span)[span_22](end_span)
+      name: 'AutoEmbed (تلقائي)',
+      provider: 'AutoEmbed',
       url: getAutoembedUrl(realTmdb, contentType, currentSeason, currentEpisodeNumber),
       vip: false,
     },
     {
       id: 2,
-      name: 'SuperEmbed / 2Embed',[span_23](start_span)[span_23](end_span)
-      provider: 'SuperEmbed',[span_24](start_span)[span_24](end_span)
+      name: 'SuperEmbed / 2Embed',
+      provider: 'SuperEmbed',
       url: getSuperembedUrl(realTmdb, contentType, currentSeason, currentEpisodeNumber),
       vip: false,
     },
