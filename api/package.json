@@ -14,3 +14,7 @@
     "https-proxy-agent": "^7.0.5"
   }
 }
+"dependencies": {
+  "@supabase/supabase-js": "^2.39.0",
+  "node-cron": "^3.0.3"
+}
